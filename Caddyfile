@@ -1,0 +1,10 @@
+# Replace with your domain
+insider.yourdomain.com {
+    reverse_proxy insider-detector:8000
+}
+
+# Or use IP with custom port (no HTTPS)
+# :80 {
+#     reverse_proxy insider-detector:8000
+# }
+

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Polymarket Insider Detector</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">🔍</span>
+                    <span class="logo-text">INSIDER<span class="logo-highlight">WATCH</span></span>
+                </div>
+                <span class="tagline">Polymarket Surveillance System</span>
+            </div>
+            <div class="header-right">
+                <div class="status-indicator">
+                    <span class="pulse"></span>
+                    <span class="status-text">LIVE</span>
+                </div>
+                <button class="scan-btn" onclick="triggerScan()">
+                    <span class="scan-icon">⚡</span> Force Scan
+                </button>
+            </div>
+        </header>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-value" id="total-alerts">--</div>
+                <div class="stat-label">Alerts (24h)</div>
+            </div>
+            <div class="stat-card critical">
+                <div class="stat-value" id="critical-alerts">--</div>
+                <div class="stat-label">Critical</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="suspicious-volume">$--</div>
+                <div class="stat-label">Suspicious Volume</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="avg-score">--</div>
+                <div class="stat-label">Avg. Suspicion</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="clusters-detected">--</div>
+                <div class="stat-label">Wallet Clusters</div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Alert Feed -->
+            <div class="panel alert-feed">
+                <div class="panel-header">
+                    <h2>🚨 Suspicious Activity Feed</h2>
+                    <div class="filter-tabs">
+                        <button class="filter-tab active" data-severity="all">All</button>
+                        <button class="filter-tab" data-severity="critical">Critical</button>
+                        <button class="filter-tab" data-severity="high">High</button>
+                        <button class="filter-tab" data-severity="medium">Medium</button>
+                    </div>
+                </div>
+                <div class="alert-list" id="alert-list">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <span>Scanning blockchain...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Side Panels -->
+            <div class="side-panels">
+                <!-- Hot Markets -->
+                <div class="panel hot-markets">
+                    <div class="panel-header">
+                        <h2>🔥 Suspicious Markets</h2>
+                    </div>
+                    <div class="market-list" id="market-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Wallet Clusters -->
+                <div class="panel wallet-clusters">
+                    <div class="panel-header">
+                        <h2>🕸️ Coordinated Wallets</h2>
+                    </div>
+                    <div class="cluster-list" id="cluster-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <span>Last scan: <span id="last-scan">--</span></span>
+            <span class="footer-divider">|</span>
+            <span>Auto-refresh every 30s</span>
+            <span class="footer-divider">|</span>
+            <span class="disclaimer">Not financial advice. For research purposes only.</span>
+        </footer>
+    </div>
+
+    <!-- Alert Detail Modal -->
+    <div class="modal" id="alert-modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <div id="modal-body">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
+
