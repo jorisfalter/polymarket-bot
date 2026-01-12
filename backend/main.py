@@ -63,22 +63,65 @@ async def scan_for_suspicious_activity():
                         
                     wallet_profile = await client.get_wallet_profile(trader_address)
                     
-                    # Get market data
-                    market_id = trade_data.get("market")
-                    market_data = await client.get_market(market_id) if market_id else {}
+                    # Get market data - try multiple sources
+                    market_id = trade_data.get("market") or trade_data.get("conditionId") or trade_data.get("marketId")
+                    market_data = {}
+                    
+                    # First check if trade already has market info embedded
+                    if trade_data.get("market_question"):
+                        market_data = {
+                            "id": market_id or "unknown",
+                            "slug": trade_data.get("market_slug", ""),
+                            "question": trade_data.get("market_question", "Unknown"),
+                            "yes_price": float(trade_data.get("price", 50)),
+                            "no_price": 100 - float(trade_data.get("price", 50)),
+                            "volume_24h": 0,
+                            "volume_total": 0,
+                            "liquidity": 0,
+                            "is_active": True
+                        }
+                    # Otherwise try to fetch from API
+                    elif market_id:
+                        fetched_market = await client.get_market(market_id)
+                        if fetched_market:
+                            market_data = {
+                                "id": fetched_market.get("id", market_id),
+                                "slug": fetched_market.get("slug", ""),
+                                "question": fetched_market.get("question", "Unknown"),
+                                "yes_price": float(fetched_market.get("outcomePrices", [50, 50])[0] if fetched_market.get("outcomePrices") else 50),
+                                "no_price": float(fetched_market.get("outcomePrices", [50, 50])[1] if fetched_market.get("outcomePrices") else 50),
+                                "volume_24h": float(fetched_market.get("volume24hr", 0) or 0),
+                                "volume_total": float(fetched_market.get("volume", 0) or 0),
+                                "liquidity": float(fetched_market.get("liquidity", 0) or 0),
+                                "is_active": fetched_market.get("active", True)
+                            }
+                    
+                    # If still no market data, create minimal placeholder
+                    if not market_data:
+                        market_data = {
+                            "id": market_id or "unknown",
+                            "slug": "",
+                            "question": trade_data.get("title", trade_data.get("description", "Unknown Market")),
+                            "yes_price": float(trade_data.get("price", 50)),
+                            "no_price": 100 - float(trade_data.get("price", 50)),
+                            "volume_24h": 0,
+                            "volume_total": 0,
+                            "liquidity": 0,
+                            "is_active": True
+                        }
                     
                     # Run detection with detailed signals
                     suspicious, signals = detector.analyze_trade_detailed(
                         trade_data=trade_data,
                         wallet_profile=wallet_profile,
-                        market_data=market_data or {}
+                        market_data=market_data
                     )
                     
                     # Log ALL trades to activity log (for debugging/tuning)
                     activity_entry = {
                         "id": str(uuid.uuid4()),
                         "timestamp": datetime.utcnow().isoformat(),
-                        "market": market_data.get("question", trade_data.get("market_question", "Unknown"))[:80],
+                        "market": market_data.get("question", "Unknown")[:80],
                         "market_slug": market_data.get("slug", ""),
                         "trader": trader_address[:12] + "...",
                         "trader_full": trader_address,

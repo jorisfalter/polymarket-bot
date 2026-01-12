@@ -321,6 +321,10 @@ class PolymarketClient:
                     for trade in trades:
                         # Normalize field names
                         trade["maker"] = trade.get("user") or trade.get("proxyWallet") or trade.get("maker")
+                        # Capture market info if available
+                        trade["market"] = trade.get("conditionId") or trade.get("market") or trade.get("marketId")
+                        trade["market_question"] = trade.get("title") or trade.get("question") or trade.get("market_question", "")
+                        trade["market_slug"] = trade.get("slug") or trade.get("market_slug", "")
                         all_trades.append(trade)
         except Exception as e:
             logger.debug(f"Data API trades not available: {e}")
@@ -338,6 +342,10 @@ class PolymarketClient:
                     for item in activity:
                         # Normalize - activity items have user field
                         item["maker"] = item.get("user") or item.get("proxyWallet") or item.get("maker")
+                        # Capture market info if available
+                        item["market"] = item.get("conditionId") or item.get("market") or item.get("marketId")
+                        item["market_question"] = item.get("title") or item.get("question") or item.get("market_question", "")
+                        item["market_slug"] = item.get("slug") or item.get("market_slug", "")
                         all_trades.append(item)
         except Exception as e:
             logger.debug(f"Gamma activity feed not available: {e}")
