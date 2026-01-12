@@ -34,6 +34,9 @@ alerts_store: List[InsiderAlert] = []
 suspicious_trades_store: List[SuspiciousTrade] = []
 wallet_clusters_store: List[WalletCluster] = []
 
+# Activity log - stores ALL analyzed trades with their signal breakdown
+activity_log: List[dict] = []
+
 
 async def scan_for_suspicious_activity():
     """
@@ -64,12 +67,39 @@ async def scan_for_suspicious_activity():
                     market_id = trade_data.get("market")
                     market_data = await client.get_market(market_id) if market_id else {}
                     
-                    # Run detection
-                    suspicious = detector.analyze_trade(
+                    # Run detection with detailed signals
+                    suspicious, signals = detector.analyze_trade_detailed(
                         trade_data=trade_data,
                         wallet_profile=wallet_profile,
                         market_data=market_data or {}
                     )
+                    
+                    # Log ALL trades to activity log (for debugging/tuning)
+                    activity_entry = {
+                        "id": str(uuid.uuid4()),
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "market": market_data.get("question", trade_data.get("market_question", "Unknown"))[:80],
+                        "market_slug": market_data.get("slug", ""),
+                        "trader": trader_address[:12] + "...",
+                        "trader_full": trader_address,
+                        "side": trade_data.get("side", "BUY"),
+                        "notional_usd": trade_data.get("notional_usd", 0),
+                        "price": float(trade_data.get("price", 0)),
+                        "shares": float(trade_data.get("size", 0)),
+                        "signals": signals,
+                        "total_score": sum(s["score"] for s in signals),
+                        "is_alert": suspicious is not None,
+                        "wallet_trades": wallet_profile.get("total_trades", 0),
+                        "wallet_markets": wallet_profile.get("unique_markets", 0),
+                    }
+                    
+                    # Avoid duplicate entries
+                    existing_traders = [(a["trader_full"], a["market"]) for a in activity_log[-100:]]
+                    if (trader_address, activity_entry["market"]) not in existing_traders:
+                        activity_log.insert(0, activity_entry)
+                        # Keep last 500 entries
+                        while len(activity_log) > 500:
+                            activity_log.pop()
                     
                     if suspicious:
                         # Create alert
@@ -332,6 +362,65 @@ async def trigger_scan():
     """Manually trigger a scan for suspicious activity"""
     asyncio.create_task(scan_for_suspicious_activity())
     return {"status": "Scan started"}
+
+
+@app.get("/api/activity")
+async def get_activity_log(limit: int = Query(100, le=500)):
+    """
+    Get ALL analyzed trades with their individual signal breakdown.
+    This helps understand what the detector is seeing even when
+    trades don't meet the alert threshold.
+    """
+    return activity_log[:limit]
+
+
+@app.get("/api/activity/stats")
+async def get_activity_stats():
+    """Get statistics about recent activity for parameter tuning"""
+    if not activity_log:
+        return {"message": "No activity yet", "total_scanned": 0}
+    
+    # Analyze signal distribution
+    signal_counts = {}
+    signal_totals = {}
+    
+    for entry in activity_log:
+        for signal in entry.get("signals", []):
+            name = signal["signal"]
+            score = signal["score"]
+            if name not in signal_counts:
+                signal_counts[name] = 0
+                signal_totals[name] = 0
+            if score > 0:
+                signal_counts[name] += 1
+                signal_totals[name] += score
+    
+    # Calculate which signals fire most often
+    signal_stats = []
+    for name in signal_counts:
+        signal_stats.append({
+            "signal": name,
+            "times_triggered": signal_counts[name],
+            "avg_score_when_triggered": round(signal_totals[name] / signal_counts[name], 1) if signal_counts[name] > 0 else 0,
+            "trigger_rate": f"{(signal_counts[name] / len(activity_log) * 100):.1f}%"
+        })
+    
+    signal_stats.sort(key=lambda x: x["times_triggered"], reverse=True)
+    
+    # Score distribution
+    scores = [e["total_score"] for e in activity_log]
+    alerts = [e for e in activity_log if e["is_alert"]]
+    
+    return {
+        "total_scanned": len(activity_log),
+        "alerts_generated": len(alerts),
+        "alert_rate": f"{(len(alerts) / len(activity_log) * 100):.1f}%" if activity_log else "0%",
+        "avg_score": round(sum(scores) / len(scores), 1) if scores else 0,
+        "max_score": max(scores) if scores else 0,
+        "min_score": min(scores) if scores else 0,
+        "signal_breakdown": signal_stats,
+        "recent_markets": list(set(e["market"][:50] for e in activity_log[:20]))
+    }
 
 
 @app.get("/api/markets/suspicious")

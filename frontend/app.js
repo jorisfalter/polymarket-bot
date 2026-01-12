@@ -5,7 +5,10 @@
 
 const API_BASE = '/api';
 let currentFilter = 'all';
+let currentView = 'alerts';
 let alertsData = [];
+let activityData = [];
+let signalStats = {};
 
 // ==================== INITIALIZATION ====================
 
@@ -39,11 +42,33 @@ async function refreshData() {
             fetchStats(),
             fetchAlerts(),
             fetchSuspiciousMarkets(),
-            fetchWalletClusters()
+            fetchWalletClusters(),
+            fetchActivity(),
+            fetchSignalStats()
         ]);
     } catch (error) {
         console.error('Error refreshing data:', error);
     }
+}
+
+// ==================== VIEW SWITCHING ====================
+
+function switchView(view) {
+    currentView = view;
+    
+    // Update buttons
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.view === view);
+    });
+    
+    // Show/hide views
+    document.getElementById('alerts-view').style.display = view === 'alerts' ? 'flex' : 'none';
+    document.getElementById('activity-view').style.display = view === 'activity' ? 'flex' : 'none';
+    document.getElementById('signals-view').style.display = view === 'signals' ? 'flex' : 'none';
+    
+    // Refresh data for the view
+    if (view === 'activity') renderActivity();
+    if (view === 'signals') renderSignalStats();
 }
 
 async function fetchStats() {
@@ -95,6 +120,26 @@ async function fetchWalletClusters() {
         renderClusters(clusters);
     } catch (error) {
         console.error('Error fetching clusters:', error);
+    }
+}
+
+async function fetchActivity() {
+    try {
+        const response = await fetch(`${API_BASE}/activity?limit=200`);
+        activityData = await response.json();
+        if (currentView === 'activity') renderActivity();
+    } catch (error) {
+        console.error('Error fetching activity:', error);
+    }
+}
+
+async function fetchSignalStats() {
+    try {
+        const response = await fetch(`${API_BASE}/activity/stats`);
+        signalStats = await response.json();
+        if (currentView === 'signals') renderSignalStats();
+    } catch (error) {
+        console.error('Error fetching signal stats:', error);
     }
 }
 
@@ -226,6 +271,123 @@ function renderClusters(clusters) {
             </div>
         </div>
     `).join('');
+}
+
+function renderActivity() {
+    const container = document.getElementById('activity-list');
+    
+    if (!activityData || activityData.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📊</div>
+                <p>No activity scanned yet</p>
+                <p style="font-size: 0.8rem; margin-top: 8px; opacity: 0.7;">
+                    Click "Force Scan" to analyze trades
+                </p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = activityData.map(entry => {
+        const scoreClass = entry.total_score >= 80 ? 'critical' : 
+                          entry.total_score >= 60 ? 'high' : 
+                          entry.total_score >= 40 ? 'medium' : 'low';
+        
+        return `
+            <div class="activity-item ${entry.is_alert ? 'is-alert' : ''}">
+                <div class="activity-main">
+                    <div class="activity-market">${entry.market || 'Unknown Market'}</div>
+                    <div class="activity-meta">
+                        <span>${entry.side} ${formatCurrency(entry.notional_usd)}</span>
+                        <span>@ ${entry.price?.toFixed(1) || 0}¢</span>
+                        <span>👛 ${entry.trader}</span>
+                        <span>📈 ${entry.wallet_trades} trades / ${entry.wallet_markets} markets</span>
+                    </div>
+                    <div class="activity-signals">
+                        ${(entry.signals || []).map(s => `
+                            <span class="signal-chip ${s.score > 0 ? 'active' : ''}">
+                                ${s.signal.split(' ')[0]} 
+                                <span class="score">${s.score > 0 ? '+' + s.score : '0'}</span>
+                            </span>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="activity-score">
+                    <span class="score-value ${scoreClass}">${entry.total_score}</span>
+                    <span class="score-label">${entry.is_alert ? 'ALERT' : 'score'}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderSignalStats() {
+    const container = document.getElementById('signal-stats');
+    
+    if (!signalStats || signalStats.total_scanned === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">🔬</div>
+                <p>No data for analysis yet</p>
+                <p style="font-size: 0.8rem; margin-top: 8px; opacity: 0.7;">
+                    Scan some trades first to see signal statistics
+                </p>
+            </div>
+        `;
+        return;
+    }
+    
+    const breakdown = signalStats.signal_breakdown || [];
+    const maxTriggers = Math.max(...breakdown.map(s => s.times_triggered), 1);
+    
+    container.innerHTML = `
+        <div class="stats-overview">
+            <div class="overview-stat">
+                <div class="value">${signalStats.total_scanned}</div>
+                <div class="label">Trades Scanned</div>
+            </div>
+            <div class="overview-stat">
+                <div class="value">${signalStats.alerts_generated}</div>
+                <div class="label">Alerts Generated</div>
+            </div>
+            <div class="overview-stat">
+                <div class="value">${signalStats.alert_rate}</div>
+                <div class="label">Alert Rate</div>
+            </div>
+            <div class="overview-stat">
+                <div class="value">${signalStats.avg_score}</div>
+                <div class="label">Avg Score</div>
+            </div>
+        </div>
+        
+        <h3 style="margin-bottom: 16px; color: var(--text-secondary);">Signal Breakdown</h3>
+        <div class="signal-breakdown">
+            <div class="signal-row header">
+                <div>Signal</div>
+                <div>Trigger Frequency</div>
+                <div>Rate</div>
+                <div>Avg Score</div>
+            </div>
+            ${breakdown.map(signal => `
+                <div class="signal-row">
+                    <div class="signal-name">${signal.signal}</div>
+                    <div class="signal-bar-container">
+                        <div class="signal-bar" style="width: ${(signal.times_triggered / maxTriggers) * 100}%"></div>
+                    </div>
+                    <div class="signal-rate">${signal.trigger_rate}</div>
+                    <div class="signal-avg">+${signal.avg_score_when_triggered}</div>
+                </div>
+            `).join('')}
+        </div>
+        
+        <h3 style="margin: 24px 0 16px; color: var(--text-secondary);">Recent Markets Scanned</h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            ${(signalStats.recent_markets || []).map(m => `
+                <span class="flag-tag">${m}</span>
+            `).join('')}
+        </div>
+    `;
 }
 
 // ==================== MODAL ====================

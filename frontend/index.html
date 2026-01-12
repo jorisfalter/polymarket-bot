@@ -55,10 +55,17 @@
             </div>
         </div>
 
+        <!-- View Toggle -->
+        <div class="view-toggle">
+            <button class="view-btn active" data-view="alerts" onclick="switchView('alerts')">🚨 Alerts</button>
+            <button class="view-btn" data-view="activity" onclick="switchView('activity')">📊 Activity Log</button>
+            <button class="view-btn" data-view="signals" onclick="switchView('signals')">🔬 Signal Analysis</button>
+        </div>
+
         <!-- Main Content -->
         <div class="main-content">
             <!-- Alert Feed -->
-            <div class="panel alert-feed">
+            <div class="panel alert-feed" id="alerts-view">
                 <div class="panel-header">
                     <h2>🚨 Suspicious Activity Feed</h2>
                     <div class="filter-tabs">
@@ -72,6 +79,34 @@
                     <div class="loading">
                         <div class="spinner"></div>
                         <span>Scanning blockchain...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity Log (hidden by default) -->
+            <div class="panel activity-log" id="activity-view" style="display: none;">
+                <div class="panel-header">
+                    <h2>📊 All Scanned Trades</h2>
+                    <span class="panel-subtitle">See every trade analyzed with signal breakdown</span>
+                </div>
+                <div class="activity-list" id="activity-list">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <span>Loading activity...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Signal Analysis (hidden by default) -->
+            <div class="panel signal-analysis" id="signals-view" style="display: none;">
+                <div class="panel-header">
+                    <h2>🔬 Signal Analysis</h2>
+                    <span class="panel-subtitle">Understand which signals fire and how often</span>
+                </div>
+                <div class="signal-stats" id="signal-stats">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <span>Analyzing signals...</span>
                     </div>
                 </div>
             </div>

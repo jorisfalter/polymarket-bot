@@ -45,8 +45,24 @@ class InsiderDetector:
         Analyze a single trade for suspicious patterns
         Returns SuspiciousTrade if suspicious, None otherwise
         """
+        suspicious, _ = self.analyze_trade_detailed(trade_data, wallet_profile, market_data)
+        return suspicious
+    
+    def analyze_trade_detailed(
+        self,
+        trade_data: Dict,
+        wallet_profile: Dict,
+        market_data: Dict
+    ) -> Tuple[Optional[SuspiciousTrade], List[Dict]]:
+        """
+        Analyze a single trade and return BOTH the result AND detailed signal breakdown.
+        This is useful for debugging and understanding why trades are/aren't flagged.
+        
+        Returns: (SuspiciousTrade or None, list of signal details)
+        """
         flags = []
         severity_score = 0
+        signals = []  # Detailed breakdown of each signal
         
         # Build models from raw data
         wallet = self._build_wallet_profile(wallet_profile)
@@ -56,51 +72,93 @@ class InsiderDetector:
         
         # 1. Fresh Wallet Check (🐣 Low Activity Wallet)
         fresh_wallet_score = self._check_fresh_wallet(wallet)
+        signals.append({
+            "signal": "🐣 Fresh Wallet",
+            "score": fresh_wallet_score,
+            "details": f"{wallet.total_trades} trades, {wallet.unique_markets} markets",
+            "threshold": f"<{settings.fresh_wallet_max_trades} trades"
+        })
         if fresh_wallet_score > 0:
             flags.append(f"🐣 Low activity wallet ({wallet.total_trades} trades, {wallet.unique_markets} markets)")
             severity_score += fresh_wallet_score
             
         # 2. Unusual Position Size
         size_score = self._check_unusual_size(trade, wallet)
+        signals.append({
+            "signal": "💰 Position Size",
+            "score": size_score,
+            "details": f"${trade.notional_usd:,.0f}",
+            "threshold": f">${settings.whale_threshold_usd:,} whale"
+        })
         if size_score > 0:
             flags.append(f"💰 Large position: ${trade.notional_usd:,.0f} ({self._get_size_context(trade, wallet)})")
             severity_score += size_score
             
         # 3. Low Market Diversity  
         diversity_score = self._check_low_diversity(wallet)
+        signals.append({
+            "signal": "🎯 Market Diversity",
+            "score": diversity_score,
+            "details": f"{wallet.unique_markets} unique markets",
+            "threshold": f"<{settings.max_unique_markets_suspicious} suspicious"
+        })
         if diversity_score > 0:
             flags.append(f"🎯 Only {wallet.unique_markets} unique markets traded")
             severity_score += diversity_score
             
         # 4. Volume Anomaly (market-wide)
         volume_score, zscore = self._check_volume_anomaly(trade, market_data)
+        signals.append({
+            "signal": "📈 Volume Spike",
+            "score": volume_score,
+            "details": f"Z-score: {zscore:.2f}",
+            "threshold": f">{settings.volume_spike_zscore}σ"
+        })
         if volume_score > 0:
             flags.append(f"📈 Volume spike: {zscore:.1f}σ above normal")
             severity_score += volume_score
             
         # 5. Win Rate Anomaly
         winrate_score = self._check_win_rate_anomaly(wallet)
+        signals.append({
+            "signal": "🏆 Win Rate",
+            "score": winrate_score,
+            "details": f"{wallet.win_rate*100:.0f}%" if wallet.win_rate else "N/A",
+            "threshold": f">{settings.win_rate_suspicious_threshold*100:.0f}%"
+        })
         if winrate_score > 0:
             flags.append(f"🏆 Suspicious win rate: {wallet.win_rate*100:.0f}%")
             severity_score += winrate_score
             
         # 6. Timing Analysis (close to likely resolution)
         timing_score = self._check_timing(trade, market_data)
+        signals.append({
+            "signal": "⏰ Timing",
+            "score": timing_score,
+            "details": "Near resolution" if timing_score > 0 else "Normal",
+            "threshold": "<24h to resolution"
+        })
         if timing_score > 0:
             flags.append("⏰ Trade placed close to expected resolution")
             severity_score += timing_score
             
         # 7. Extreme Odds Bet
         odds_score = self._check_extreme_odds(trade)
+        potential_return = ((100 - trade.price) / trade.price) * 100 if trade.price > 0 else 0
+        signals.append({
+            "signal": "🎲 Extreme Odds",
+            "score": odds_score,
+            "details": f"{trade.price:.1f}¢ ({potential_return:.0f}% potential)",
+            "threshold": "<20¢ price"
+        })
         if odds_score > 0:
-            potential_return = ((100 - trade.price) / trade.price) * 100
             flags.append(f"🎲 Betting on {trade.price:.1f}¢ outcome ({potential_return:.0f}% potential return)")
             severity_score += odds_score
             
         # ========== DETERMINE IF SUSPICIOUS ==========
         
         if severity_score < 20:
-            return None  # Not suspicious enough
+            return None, signals  # Not suspicious enough, but return signals for logging
             
         # Determine severity level
         if severity_score >= 80:
@@ -112,7 +170,7 @@ class InsiderDetector:
         else:
             severity = AlertSeverity.LOW
             
-        return SuspiciousTrade(
+        suspicious_trade = SuspiciousTrade(
             trade=trade,
             wallet=wallet,
             severity=severity,
@@ -121,6 +179,8 @@ class InsiderDetector:
             volume_zscore=zscore if volume_score > 0 else None,
             potential_profit=self._calculate_potential_profit(trade)
         )
+        
+        return suspicious_trade, signals
     
     # ==================== INDIVIDUAL DETECTORS ====================
     
