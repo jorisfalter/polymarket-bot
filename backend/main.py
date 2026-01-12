@@ -464,7 +464,10 @@ async def get_suspicious_markets(limit: int = 10):
 # Serve frontend
 @app.get("/")
 async def serve_frontend():
-    return FileResponse("frontend/index.html")
+    return FileResponse(
+        "frontend/index.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
 
 
 # Mount static files
