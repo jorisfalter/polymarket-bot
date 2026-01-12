@@ -58,8 +58,8 @@ async def scan_for_suspicious_activity():
                 try:
                     # Get wallet profile
                     trader_address = trade_data.get("maker")
-                    if not trader_address:
-                        continue
+                    if not trader_address or trader_address == "unknown":
+                        continue  # Skip synthetic market entries without real wallets
                         
                     wallet_profile = await client.get_wallet_profile(trader_address)
                     

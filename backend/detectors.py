@@ -200,11 +200,20 @@ class InsiderDetector:
             
         # Recent account (less than 30 days old)
         if wallet.first_seen:
-            account_age = (datetime.utcnow() - wallet.first_seen).days
-            if account_age < 7:
-                score += 20
-            elif account_age < 30:
-                score += 10
+            try:
+                # Handle both timezone-aware and naive datetimes
+                now = datetime.utcnow()
+                first_seen = wallet.first_seen
+                # Make both naive for comparison
+                if hasattr(first_seen, 'tzinfo') and first_seen.tzinfo is not None:
+                    first_seen = first_seen.replace(tzinfo=None)
+                account_age = (now - first_seen).days
+                if account_age < 7:
+                    score += 20
+                elif account_age < 30:
+                    score += 10
+            except Exception:
+                pass  # Skip age check if datetime parsing fails
                 
         return score
     
