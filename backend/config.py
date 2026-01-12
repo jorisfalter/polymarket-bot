@@ -8,10 +8,15 @@ from typing import Optional
 class Settings(BaseSettings):
     """Application settings with sensible defaults"""
     
-    # Polymarket API URLs (public, no auth needed)
+    # Polymarket API URLs
     gamma_api_url: str = "https://gamma-api.polymarket.com"
     clob_api_url: str = "https://clob.polymarket.com"
     data_api_url: str = "https://data-api.polymarket.com"
+    
+    # Polymarket API Credentials (optional - for full trade data access)
+    poly_api_key: Optional[str] = None
+    poly_api_secret: Optional[str] = None
+    poly_passphrase: Optional[str] = None
     
     # Detection Thresholds - Based on the Polymarket Watch parameters
     min_notional_alert: float = 1000  # Minimum $ bet to track

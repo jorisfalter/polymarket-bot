@@ -1,7 +1,5 @@
 # 🔍 Polymarket Insider Detector
 
-test
-
 A real-time surveillance system that monitors Polymarket for unusual trading patterns that may indicate insider information.
 
 ![Dashboard Preview](https://img.shields.io/badge/status-active-brightgreen) ![Python](https://img.shields.io/badge/python-3.10+-blue) ![License](https://img.shields.io/badge/license-MIT-green)
@@ -85,6 +83,35 @@ whale_threshold_usd: float = 5000      # Large bet threshold
 fresh_wallet_max_trades: int = 5       # "New wallet" definition
 win_rate_suspicious_threshold: float = 0.85  # Win rate flag
 ```
+
+## 🔑 Polymarket API Credentials (Optional)
+
+The app works with **public endpoints by default**, analyzing market volumes and activity. For **full trade-level data**, you can add API credentials:
+
+### Getting API Keys
+
+1. Go to [Polymarket](https://polymarket.com) → **Settings** → **API**
+2. Enable API trading
+3. Generate an API key + secret
+4. Add to your `.env`:
+
+```bash
+POLY_API_KEY=your-api-key
+POLY_API_SECRET=your-api-secret
+POLY_PASSPHRASE=your-passphrase  # optional
+```
+
+### What Credentials Unlock
+
+| Feature                  | Without API Key | With API Key |
+| ------------------------ | --------------- | ------------ |
+| Market data & volumes    | ✅              | ✅           |
+| Global activity feed     | ✅              | ✅           |
+| Individual trade history | ❌              | ✅           |
+| Order book depth         | ❌              | ✅           |
+| Wallet trade details     | ⚠️ Limited      | ✅ Full      |
+
+The app will automatically use credentials if provided, falling back to public endpoints otherwise.
 
 ## 📬 Notifications
 
