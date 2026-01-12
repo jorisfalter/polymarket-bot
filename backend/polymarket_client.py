@@ -301,89 +301,77 @@ class PolymarketClient:
         This is the core data source for detecting suspicious activity
         
         Uses multiple strategies:
-        1. Gamma API global activity feed
-        2. High-volume markets with embedded activity
-        3. Market-specific activity queries
+        1. Data API trades endpoint for recent activity
+        2. Gamma API activity feed
+        3. High-volume markets analysis
         """
         all_trades = []
         cutoff = datetime.utcnow() - timedelta(hours=hours)
         
-        # Strategy 1: Try global activity feed from Gamma API
+        # Strategy 1: Try Data API trades endpoint (has real wallet addresses)
+        try:
+            response = await self.client.get(
+                f"{self.data_url}/trades",
+                params={"limit": 200}  # Get recent trades
+            )
+            if response.status_code == 200:
+                trades = response.json()
+                if isinstance(trades, list):
+                    logger.info(f"Got {len(trades)} trades from Data API")
+                    for trade in trades:
+                        # Normalize field names
+                        trade["maker"] = trade.get("user") or trade.get("proxyWallet") or trade.get("maker")
+                        all_trades.append(trade)
+        except Exception as e:
+            logger.debug(f"Data API trades not available: {e}")
+        
+        # Strategy 2: Try Gamma API activity feed
         try:
             response = await self.client.get(
                 f"{self.gamma_url}/activity",
-                params={"limit": 500}
+                params={"limit": 200}
             )
             if response.status_code == 200:
                 activity = response.json()
                 if isinstance(activity, list):
-                    all_trades.extend(activity)
                     logger.info(f"Got {len(activity)} activities from Gamma API")
-        except Exception as e:
-            logger.debug(f"Global activity feed not available: {e}")
-        
-        # Strategy 2: Get high-volume markets and check for recent large positions
-        markets = await self.get_markets(limit=50, order="volume24hr")
-        logger.info(f"Analyzing {len(markets)} high-volume markets")
-        
-        for market in markets[:30]:
-            try:
-                # Markets often have embedded activity/trade data
-                market_id = market.get("id")
-                condition_id = market.get("conditionId")
-                
-                # Try to get activity for this market
-                if condition_id:
-                    activity = await self.get_market_activity(condition_id, limit=50)
                     for item in activity:
-                        item["market_question"] = market.get("question", "")
-                        item["market_slug"] = market.get("slug", "")
-                        item["market_id"] = market_id
-                    all_trades.extend(activity)
+                        # Normalize - activity items have user field
+                        item["maker"] = item.get("user") or item.get("proxyWallet") or item.get("maker")
+                        all_trades.append(item)
+        except Exception as e:
+            logger.debug(f"Gamma activity feed not available: {e}")
+        
+        # Strategy 3: Get top markets and fetch their recent activity
+        markets = await self.get_markets(limit=20, order="volume24hr")
+        logger.info(f"Checking activity from {len(markets)} high-volume markets")
+        
+        for market in markets[:10]:
+            try:
+                condition_id = market.get("conditionId")
+                clob_token_ids = market.get("clobTokenIds", [])
                 
-                # Also create synthetic trade entries from market volume changes
-                # High volume in a market = potential large trades
-                volume_24h = float(market.get("volume24hr", 0) or 0)
-                liquidity = float(market.get("liquidity", 0) or 0)
+                # Try to get trades for this market via CLOB if we have auth
+                if self.has_credentials and clob_token_ids:
+                    for token_id in clob_token_ids[:1]:  # Just check first outcome
+                        try:
+                            path = "/trades"
+                            headers = self._get_auth_headers("GET", path)
+                            response = await self.client.get(
+                                f"{self.clob_url}{path}",
+                                params={"asset_id": token_id, "limit": 20},
+                                headers=headers
+                            )
+                            if response.status_code == 200:
+                                trades = response.json()
+                                for trade in trades:
+                                    trade["market_question"] = market.get("question", "")
+                                    trade["market_slug"] = market.get("slug", "")
+                                    trade["market"] = market.get("id")
+                                    all_trades.append(trade)
+                        except Exception as e:
+                            logger.debug(f"CLOB trades error: {e}")
                 
-                if volume_24h >= min_notional:
-                    # Parse the price - can be JSON array string or comma-separated
-                    price = 50  # default
-                    try:
-                        outcome_prices = market.get("outcomePrices", "")
-                        if outcome_prices:
-                            # Handle JSON array format: '["0.55", "0.45"]'
-                            if str(outcome_prices).startswith("["):
-                                prices = json.loads(outcome_prices)
-                                if prices:
-                                    price = float(prices[0]) * 100  # Convert to cents
-                            # Handle comma-separated format: "0.55,0.45"
-                            elif "," in str(outcome_prices):
-                                price = float(str(outcome_prices).split(",")[0]) * 100
-                            else:
-                                price = float(outcome_prices) * 100
-                    except (json.JSONDecodeError, ValueError, TypeError):
-                        logger.debug(f"Could not parse price: {outcome_prices}")
-                        price = 50
-                    
-                    # Create a market-level entry for analysis
-                    synthetic_trade = {
-                        "id": f"market_{market_id}",
-                        "market": market_id,
-                        "market_question": market.get("question", ""),
-                        "market_slug": market.get("slug", ""),
-                        "type": "market_volume",
-                        "volume_24h": volume_24h,
-                        "liquidity": liquidity,
-                        "notional_usd": volume_24h,  # Use volume as proxy
-                        "price": price,
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "size": volume_24h / max(price, 1),  # Estimate shares
-                        "side": "BUY",
-                        "maker": market.get("creator", "unknown"),
-                    }
-                    all_trades.append(synthetic_trade)
-                    
             except Exception as e:
                 logger.debug(f"Error processing market {market.get('id')}: {e}")
                 continue
@@ -394,41 +382,61 @@ class PolymarketClient:
         
         for trade in all_trades:
             try:
-                trade_id = trade.get("id", str(hash(str(trade))))
+                trade_id = trade.get("id") or trade.get("transactionHash") or str(hash(str(trade)))
                 if trade_id in seen_ids:
                     continue
                 seen_ids.add(trade_id)
+                
+                # Get wallet address - try multiple fields
+                wallet = (trade.get("maker") or trade.get("user") or 
+                         trade.get("proxyWallet") or trade.get("taker") or "")
+                
+                # Skip if no real wallet address
+                if not wallet or wallet == "unknown" or len(wallet) < 10:
+                    continue
+                
+                trade["maker"] = wallet
                 
                 # Calculate notional if not present
                 if "notional_usd" not in trade:
                     shares = float(trade.get("size", 0) or trade.get("amount", 0) or 0)
                     price = float(trade.get("price", 50) or 50)
+                    # Price might be 0-1 or 0-100 depending on source
+                    if price <= 1:
+                        price = price * 100
                     trade["notional_usd"] = shares * price / 100
                 
+                # Also check for USD value fields
+                if trade.get("notional_usd", 0) < min_notional:
+                    usd_value = float(trade.get("usdcSize", 0) or trade.get("value", 0) or 0)
+                    if usd_value > 0:
+                        trade["notional_usd"] = usd_value
+                
                 # Parse timestamp
-                trade_time = trade.get("timestamp", "") or trade.get("createdAt", "")
+                trade_time = trade.get("timestamp") or trade.get("createdAt") or trade.get("matchTime")
                 if isinstance(trade_time, str) and trade_time:
                     try:
                         trade_time = datetime.fromisoformat(trade_time.replace("Z", "+00:00"))
                     except:
                         trade_time = datetime.utcnow()
+                elif isinstance(trade_time, (int, float)):
+                    # Unix timestamp
+                    trade_time = datetime.fromtimestamp(trade_time / 1000 if trade_time > 1e12 else trade_time)
                 elif not trade_time:
                     trade_time = datetime.utcnow()
                 
                 trade["timestamp"] = trade_time
+                trade["side"] = trade.get("side") or trade.get("type") or "BUY"
                 
-                # Filter by notional and time
+                # Filter by notional
                 if trade.get("notional_usd", 0) >= min_notional:
-                    # Ensure required fields
-                    trade["maker"] = trade.get("maker") or trade.get("user") or trade.get("proxyWallet") or "unknown"
-                    trade["side"] = trade.get("side") or trade.get("type") or "BUY"
                     filtered.append(trade)
                     
             except Exception as e:
                 logger.debug(f"Error processing trade: {e}")
                 continue
         
-        logger.info(f"Found {len(filtered)} trades meeting criteria (min ${min_notional})")
+        logger.info(f"Found {len(filtered)} trades with wallet addresses (min ${min_notional})")
         return sorted(filtered, key=lambda x: x.get("notional_usd", 0), reverse=True)
     
     async def get_wallet_profile(self, address: str) -> Dict[str, Any]:
