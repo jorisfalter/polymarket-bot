@@ -8,6 +8,7 @@ and authenticated endpoints when API credentials are configured.
 import httpx
 import hmac
 import hashlib
+import json
 import time
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
@@ -238,17 +239,10 @@ class PolymarketClient:
         return []
     
     async def get_market_activity(self, condition_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get activity for a specific market using condition ID"""
-        try:
-            response = await self.client.get(
-                f"{self.gamma_url}/activity",
-                params={"conditionId": condition_id, "limit": limit}
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.debug(f"Error fetching market activity: {e}")
-            return []
+        """Get activity for a specific market - currently not available via public API"""
+        # Note: The /activity endpoint doesn't exist on Gamma API
+        # We rely on authenticated CLOB trades or market volume analysis instead
+        return []
     
     # ==================== DATA API (User/Portfolio) ====================
     
@@ -353,6 +347,25 @@ class PolymarketClient:
                 liquidity = float(market.get("liquidity", 0) or 0)
                 
                 if volume_24h >= min_notional:
+                    # Parse the price - can be JSON array string or comma-separated
+                    price = 50  # default
+                    try:
+                        outcome_prices = market.get("outcomePrices", "")
+                        if outcome_prices:
+                            # Handle JSON array format: '["0.55", "0.45"]'
+                            if str(outcome_prices).startswith("["):
+                                prices = json.loads(outcome_prices)
+                                if prices:
+                                    price = float(prices[0]) * 100  # Convert to cents
+                            # Handle comma-separated format: "0.55,0.45"
+                            elif "," in str(outcome_prices):
+                                price = float(str(outcome_prices).split(",")[0]) * 100
+                            else:
+                                price = float(outcome_prices) * 100
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        logger.debug(f"Could not parse price: {outcome_prices}")
+                        price = 50
+                    
                     # Create a market-level entry for analysis
                     synthetic_trade = {
                         "id": f"market_{market_id}",
@@ -363,9 +376,9 @@ class PolymarketClient:
                         "volume_24h": volume_24h,
                         "liquidity": liquidity,
                         "notional_usd": volume_24h,  # Use volume as proxy
-                        "price": float(market.get("outcomePrices", "50,50").split(",")[0] or 50),
+                        "price": price,
                         "timestamp": datetime.utcnow().isoformat(),
-                        "size": volume_24h / 50,  # Estimate shares
+                        "size": volume_24h / max(price, 1),  # Estimate shares
                         "side": "BUY",
                         "maker": market.get("creator", "unknown"),
                     }
