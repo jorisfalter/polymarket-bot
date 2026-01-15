@@ -192,10 +192,10 @@ function createAlertCard(alert) {
   const wallet = alert.wallet;
   const flags = alert.flags.slice(0, 3); // Show first 3 flags
 
-  // Build Polymarket link if slug is available
+  // Build Polymarket link - use slug if available, otherwise search URL
   const marketLink = trade.market_slug
     ? `https://polymarket.com/event/${trade.market_slug}`
-    : null;
+    : `https://polymarket.com/markets?_q=${encodeURIComponent((trade.market_question || '').slice(0, 50))}`;
 
   return `
         <div class="alert-item ${alert.severity}" onclick="showAlertDetail('${
@@ -213,11 +213,7 @@ function createAlertCard(alert) {
                 <div class="alert-header">
                     <div class="alert-market">
                         ${truncate(trade.market_question, 80)}
-                        ${
-                          marketLink
-                            ? `<a href="${marketLink}" target="_blank" class="polymarket-link-icon" onclick="event.stopPropagation()" title="Open on Polymarket">↗</a>`
-                            : ""
-                        }
+                        <a href="${marketLink}" target="_blank" class="polymarket-link-icon" onclick="event.stopPropagation()" title="Open on Polymarket">↗</a>
                     </div>
                     <div class="alert-time">${formatTimeAgo(
                       alert.created_at
@@ -363,10 +359,10 @@ function renderActivity() {
           ? "medium"
           : "low";
 
-      // Build Polymarket link if slug is available
+      // Build Polymarket link - use slug if available, otherwise search URL
       const marketLink = entry.market_slug
         ? `https://polymarket.com/event/${entry.market_slug}`
-        : null;
+        : `https://polymarket.com/markets?_q=${encodeURIComponent((entry.market || '').slice(0, 50))}`;
 
       return `
             <div class="activity-item ${entry.is_alert ? "is-alert" : ""}">
@@ -433,25 +429,18 @@ function renderActivity() {
 
 function getSignalTooltip(signal) {
   const descriptions = {
-    "🐣 Fresh Wallet":
-      "Detects new or low-activity wallets making significant bets. Fresh wallets are suspicious when making large trades.",
-    "💰 Position Size":
-      "Flags unusually large bets relative to the trader's history or absolute thresholds.",
-    "🎯 Market Diversity":
-      "Low market diversity suggests focused betting, which may indicate informed trading.",
-    "📈 Volume Spike":
-      "Detects unusual trading volume spikes using statistical analysis (Z-score).",
-    "🏆 Win Rate":
-      "Identifies traders with suspiciously high win rates that may indicate insider information.",
-    "⏰ Timing":
-      "Flags trades placed close to expected market resolution, especially at extreme odds.",
-    "🎲 Extreme Odds":
-      'Betting on low probability outcomes offers high risk/reward - insiders often bet on "unlikely" outcomes they know will happen.',
+    "🐣 Fresh Wallet": "Low-activity wallet making large bets",
+    "💰 Position Size": "Unusually large bet size",
+    "🎯 Market Diversity": "Focused betting on few markets",
+    "📈 Volume Spike": "Unusual volume spike detected",
+    "🏆 Win Rate": "Suspiciously high win rate",
+    "⏰ Timing": "Trade close to market resolution",
+    "🎲 Extreme Odds": "Betting on low probability outcome",
   };
 
   const desc = descriptions[signal.signal] || signal.signal;
-  const details = signal.details ? `\n\nCurrent: ${signal.details}` : "";
-  const threshold = signal.threshold ? `\nThreshold: ${signal.threshold}` : "";
+  const details = signal.details ? ` | ${signal.details}` : "";
+  const threshold = signal.threshold ? ` | Threshold: ${signal.threshold}` : "";
 
   // Escape HTML entities for safe attribute usage
   return escapeHtml(`${desc}${details}${threshold}`);
@@ -552,20 +541,16 @@ function showAlertDetail(alertId) {
   const trade = alert.trade;
   const wallet = alert.wallet;
 
-  // Build Polymarket link if slug is available
+  // Build Polymarket link - use slug if available, otherwise search URL
   const marketLink = trade.market_slug
     ? `https://polymarket.com/event/${trade.market_slug}`
-    : null;
+    : `https://polymarket.com/markets?_q=${encodeURIComponent((trade.market_question || '').slice(0, 50))}`;
 
   document.getElementById("modal-body").innerHTML = `
         <div class="modal-header">
             <div class="modal-title">
                 ${trade.market_question}
-                ${
-                  marketLink
-                    ? `<a href="${marketLink}" target="_blank" class="polymarket-btn" title="View on Polymarket">View on Polymarket ↗</a>`
-                    : ""
-                }
+                <a href="${marketLink}" target="_blank" class="polymarket-btn" title="View on Polymarket">View on Polymarket ↗</a>
             </div>
             <div class="severity-badge ${
               alert.severity
