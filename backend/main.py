@@ -27,6 +27,8 @@ from .models import (
 from .polymarket_client import PolymarketClient
 from .detectors import detector
 from .notifications import get_notifier
+from .backtester import backtester, KNOWN_CASES
+from .leaderboard import tracker
 
 
 def _get_trade_key(trade) -> str:
@@ -265,6 +267,12 @@ async def lifespan(app: FastAPI):
         'interval',
         minutes=5,  # Scan every 5 minutes
         id='scan_job'
+    )
+    scheduler.add_job(
+        tracker.check_watched_traders,
+        'interval',
+        minutes=5,  # Check watched traders every 5 minutes
+        id='watch_job'
     )
     scheduler.start()
 
@@ -533,6 +541,148 @@ async def get_suspicious_markets(limit: int = 10):
     )
 
     return sorted_markets[:limit]
+
+
+# ==================== BACKTEST ENDPOINTS ====================
+
+@app.get("/api/backtest/cases")
+async def get_backtest_cases():
+    """Get all known insider trading cases for backtesting"""
+    return [
+        {
+            "id": case["id"],
+            "name": case["name"],
+            "description": case["description"],
+            "expected_min_score": case["expected_min_score"],
+            "expected_signals": case["expected_signals"],
+        }
+        for case in KNOWN_CASES.values()
+    ]
+
+
+@app.post("/api/backtest/case/{case_id}")
+async def run_backtest_case(case_id: str):
+    """Run backtest for a known insider case"""
+    if case_id not in KNOWN_CASES:
+        raise HTTPException(status_code=404, detail=f"Unknown case: {case_id}")
+
+    result = await backtester.run_known_case(case_id)
+    return {
+        "case_id": result.case_id,
+        "case_name": result.case_name,
+        "market_question": result.market_question,
+        "market_id": result.market_id,
+        "market_slug": result.market_slug,
+        "total_trades": result.total_trades,
+        "trades_analyzed": result.trades_analyzed,
+        "suspicious_trades": result.suspicious_trades,
+        "top_score": result.top_score,
+        "expected_min_score": result.expected_min_score,
+        "passed": result.passed,
+        "error": result.error,
+        "duration_seconds": result.duration_seconds,
+    }
+
+
+@app.post("/api/backtest/market")
+async def run_market_backtest(
+    condition_id: str = Query(..., description="Market conditionId"),
+    question: str = Query("", description="Market question for display"),
+    slug: str = Query("", description="Market slug"),
+):
+    """Backtest a specific market by conditionId"""
+    result = await backtester.backtest_market(condition_id, question, slug)
+    return {
+        "market_question": result.market_question,
+        "market_id": result.market_id,
+        "market_slug": result.market_slug,
+        "total_trades": result.total_trades,
+        "trades_analyzed": result.trades_analyzed,
+        "suspicious_trades": result.suspicious_trades,
+        "top_score": result.top_score,
+        "error": result.error,
+        "duration_seconds": result.duration_seconds,
+    }
+
+
+@app.get("/api/backtest/search")
+async def search_backtest_markets(
+    q: str = Query(..., description="Search term"),
+    limit: int = Query(20, le=50),
+):
+    """Search for resolved markets to backtest"""
+    results = await backtester.search_resolved_markets(q, limit=limit)
+    return results
+
+
+# ==================== EARNINGS ENDPOINT ====================
+
+EARNINGS_TERMS = [
+    "earnings", "revenue", "Q1", "Q2", "Q3", "Q4",
+    "EPS", "beat", "miss", "quarterly", "profit",
+]
+
+@app.get("/api/markets/earnings")
+async def search_earnings_markets(
+    limit: int = Query(20, le=50),
+):
+    """Search for earnings-related markets (resolved, for backtesting)"""
+    all_markets = []
+    seen_ids = set()
+
+    for term in EARNINGS_TERMS:
+        results = await backtester.search_resolved_markets(term, limit=10)
+        for m in results:
+            mid = m.get("id") or m.get("conditionId")
+            if mid and mid not in seen_ids:
+                seen_ids.add(mid)
+                all_markets.append(m)
+
+    return all_markets[:limit]
+
+
+# ==================== LEADERBOARD ENDPOINTS ====================
+
+@app.get("/api/leaderboard")
+async def get_leaderboard(
+    category: Optional[str] = None,
+    time_period: str = Query("all"),
+    order_by: str = Query("pnl"),
+    limit: int = Query(50, le=100),
+):
+    """Fetch leaderboard rankings"""
+    return await tracker.fetch_leaderboard(
+        category=category,
+        time_period=time_period,
+        order_by=order_by,
+        limit=limit,
+    )
+
+
+@app.get("/api/leaderboard/trader/{address}")
+async def get_trader_detail(address: str):
+    """Get detailed profile for a leaderboard trader"""
+    return await tracker.get_trader_profile(address)
+
+
+@app.post("/api/leaderboard/watch/{address}")
+async def watch_trader(address: str):
+    """Add a trader to the watchlist"""
+    tracker.watch(address)
+    return {"status": "watching", "address": address}
+
+
+@app.delete("/api/leaderboard/watch/{address}")
+async def unwatch_trader(address: str):
+    """Remove a trader from the watchlist"""
+    tracker.unwatch(address)
+    return {"status": "unwatched", "address": address}
+
+
+@app.get("/api/leaderboard/watching")
+async def get_watching():
+    """Get list of watched wallet addresses"""
+    return {"wallets": tracker.get_watching()}
 
 
 # Serve frontend

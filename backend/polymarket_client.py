@@ -275,6 +275,56 @@ class PolymarketClient:
         except Exception as e:
             logger.error(f"Error fetching trades for {address}: {e}")
             return []
+
+    async def get_market_trades(
+        self,
+        condition_id: str,
+        limit: int = 500
+    ) -> List[Dict[str, Any]]:
+        """Get trade history for a specific market by conditionId"""
+        try:
+            response = await self.client.get(
+                f"{self.data_url}/trades",
+                params={"market": condition_id, "limit": limit}
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error fetching trades for market {condition_id}: {e}")
+            return []
+
+    async def get_leaderboard(
+        self,
+        category: Optional[str] = None,
+        time_period: str = "all",
+        order_by: str = "pnl",
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch leaderboard from the Data API.
+
+        Args:
+            category: Optional market category filter
+            time_period: "all", "daily", "weekly", "monthly"
+            order_by: "pnl", "volume", "markets_traded"
+            limit: Number of results
+        """
+        try:
+            params = {"limit": limit, "sortBy": order_by}
+            if time_period and time_period != "all":
+                params["window"] = time_period
+            if category:
+                params["category"] = category
+
+            response = await self.client.get(
+                f"{self.data_url}/leaderboard",
+                params=params
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error fetching leaderboard: {e}")
+            return []
             
     async def get_user_profit_loss(self, address: str) -> Optional[Dict[str, Any]]:
         """Get P&L summary for a wallet"""

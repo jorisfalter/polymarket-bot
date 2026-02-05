@@ -197,6 +197,109 @@ View: https://polymarket.com/{trade.market_slug}
             )
             response.raise_for_status()
     
+    async def notify_smart_money(self, trader: str, trade: dict) -> bool:
+        """
+        Send notification when a watched trader places a new bet.
+        Simpler format than insider alerts.
+        """
+        sent = False
+        market = trade.get("market", "Unknown Market")
+        side = trade.get("side", "BUY")
+        usdc_size = trade.get("usdcSize", 0)
+        price = trade.get("price", 0)
+
+        subject = f"💰 Smart Money Alert: Watched trader placed a bet"
+
+        # Email via Postmark
+        if self.postmark_token and self.alert_email:
+            try:
+                html_body = f"""
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #1a1a2e; color: #eee; padding: 24px; border-radius: 12px;">
+                    <h1 style="color: #00d4ff; margin: 0 0 8px 0; font-size: 18px;">💰 Smart Money Alert</h1>
+                    <p style="color: #888; margin: 0 0 24px 0; font-size: 14px;">{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</p>
+
+                    <div style="background: #252540; padding: 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid #00d4ff;">
+                        <p style="margin: 0; font-size: 14px; color: #00d4ff;">Watched trader placed a new bet</p>
+                        <h2 style="margin: 8px 0; font-size: 16px; color: #fff;">{market[:100]}</h2>
+                    </div>
+
+                    <table style="width: 100%; font-size: 14px;">
+                        <tr><td style="color: #888; padding: 4px 0;">Trader</td><td style="font-family: monospace; font-size: 12px;"><a href="https://polymarket.com/profile/{trader}" style="color: #00d4ff;">{trader[:20]}...</a></td></tr>
+                        <tr><td style="color: #888; padding: 4px 0;">Side</td><td style="color: {'#00ff88' if side == 'BUY' else '#ff3366'}; font-weight: 600;">{side}</td></tr>
+                        <tr><td style="color: #888; padding: 4px 0;">Size</td><td style="color: #00d4ff; font-weight: 600;">${usdc_size:,.0f}</td></tr>
+                        <tr><td style="color: #888; padding: 4px 0;">Price</td><td>{price:.1f}¢</td></tr>
+                    </table>
+
+                    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #333; font-size: 12px; color: #666;">
+                        <a href="{self.dashboard_url}" style="color: #00d4ff;">Open Dashboard</a>
+                    </div>
+                </div>
+                """
+
+                text_body = f"""
+💰 SMART MONEY ALERT
+{'-' * 40}
+Watched trader placed a new bet
+
+Market: {market[:80]}
+Trader: {trader[:20]}...
+Side: {side}
+Size: ${usdc_size:,.0f}
+Price: {price:.1f}¢
+
+Dashboard: {self.dashboard_url}
+                """
+
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        "https://api.postmarkapp.com/email",
+                        headers={
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                            "X-Postmark-Server-Token": self.postmark_token,
+                        },
+                        json={
+                            "From": self.postmark_from,
+                            "To": self.alert_email,
+                            "Subject": subject,
+                            "HtmlBody": html_body,
+                            "TextBody": text_body,
+                            "MessageStream": "outbound",
+                        },
+                    )
+                    response.raise_for_status()
+                sent = True
+                logger.info(f"📧 Smart money email sent for {trader[:12]}...")
+            except Exception as e:
+                logger.error(f"Failed to send smart money email: {e}")
+
+        # Webhook
+        if self.webhook_url:
+            try:
+                payload = {
+                    "event": "smart_money_alert",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "trader": trader,
+                    "trader_url": f"https://polymarket.com/profile/{trader}",
+                    "trade": {
+                        "market": market,
+                        "side": side,
+                        "usdc_size": usdc_size,
+                        "price": price,
+                    },
+                }
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        self.webhook_url, json=payload, timeout=10.0
+                    )
+                    response.raise_for_status()
+                sent = True
+                logger.info(f"🔗 Smart money webhook sent for {trader[:12]}...")
+            except Exception as e:
+                logger.error(f"Failed to send smart money webhook: {e}")
+
+        return sent
+
     def _severity_color(self, severity: AlertSeverity) -> str:
         colors = {
             AlertSeverity.CRITICAL: "#ff3366",

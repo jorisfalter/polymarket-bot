@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=5">
+    <link rel="stylesheet" href="/static/styles.css?v=6">
 </head>
 <body>
     <div class="app">
@@ -60,6 +60,8 @@
             <button class="view-btn active" data-view="alerts" onclick="switchView('alerts')">🚨 Alerts</button>
             <button class="view-btn" data-view="activity" onclick="switchView('activity')">📊 Activity Log</button>
             <button class="view-btn" data-view="signals" onclick="switchView('signals')">🔬 Signal Analysis</button>
+            <button class="view-btn" data-view="backtest" onclick="switchView('backtest')">🧪 Backtest</button>
+            <button class="view-btn" data-view="smartmoney" onclick="switchView('smartmoney')">💰 Smart Money</button>
         </div>
 
         <!-- Main Content -->
@@ -111,6 +113,83 @@
                 </div>
             </div>
 
+            <!-- Backtest View (hidden by default) -->
+            <div class="panel backtest-view" id="backtest-view" style="display: none;">
+                <div class="panel-header">
+                    <h2>🧪 Backtest Engine</h2>
+                    <span class="panel-subtitle">Validate detection on resolved markets</span>
+                </div>
+                <div class="backtest-content" id="backtest-content">
+                    <!-- Known Cases -->
+                    <div class="backtest-section">
+                        <h3>Known Insider Cases</h3>
+                        <div class="backtest-cases" id="backtest-cases">
+                            <div class="loading">
+                                <div class="spinner"></div>
+                                <span>Loading cases...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Market Search -->
+                    <div class="backtest-section">
+                        <h3>Search Resolved Markets</h3>
+                        <div class="backtest-search">
+                            <div class="search-input-group">
+                                <input type="text" class="search-input" id="backtest-search-input" placeholder="Search markets (e.g. 'Bitcoin', 'election')..." />
+                                <button class="search-btn" onclick="searchBacktestMarkets()">Search</button>
+                                <button class="search-btn earnings-btn" onclick="searchEarningsMarkets()">📈 Earnings</button>
+                            </div>
+                        </div>
+                        <div class="backtest-search-results" id="backtest-search-results"></div>
+                    </div>
+
+                    <!-- Backtest Result -->
+                    <div class="backtest-result" id="backtest-result" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- Smart Money View (hidden by default) -->
+            <div class="panel smartmoney-view" id="smartmoney-view" style="display: none;">
+                <div class="panel-header">
+                    <h2>💰 Smart Money Tracker</h2>
+                    <span class="panel-subtitle">Track top performers and their trades</span>
+                </div>
+                <div class="smartmoney-content" id="smartmoney-content">
+                    <!-- Filters -->
+                    <div class="leaderboard-filters">
+                        <select id="lb-time-period" onchange="fetchLeaderboard()">
+                            <option value="all">All Time</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                        </select>
+                        <select id="lb-order-by" onchange="fetchLeaderboard()">
+                            <option value="pnl">By PnL</option>
+                            <option value="volume">By Volume</option>
+                            <option value="markets_traded">By Markets</option>
+                        </select>
+                    </div>
+
+                    <!-- Watchlist -->
+                    <div class="watchlist-section" id="watchlist-section" style="display: none;">
+                        <h3>👁 Watchlist</h3>
+                        <div class="watchlist" id="watchlist"></div>
+                    </div>
+
+                    <!-- Leaderboard Table -->
+                    <div class="leaderboard-section">
+                        <h3>Leaderboard</h3>
+                        <div class="leaderboard-table" id="leaderboard-table">
+                            <div class="loading">
+                                <div class="spinner"></div>
+                                <span>Loading leaderboard...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Side Panels -->
             <div class="side-panels">
                 <!-- Hot Markets -->
@@ -155,7 +234,7 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=5"></script>
+    <script src="/static/app.js?v=6"></script>
 </body>
 </html>
 

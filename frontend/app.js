@@ -63,17 +63,26 @@ function switchView(view) {
     btn.classList.toggle("active", btn.dataset.view === view);
   });
 
-  // Show/hide views
-  document.getElementById("alerts-view").style.display =
-    view === "alerts" ? "flex" : "none";
-  document.getElementById("activity-view").style.display =
-    view === "activity" ? "flex" : "none";
-  document.getElementById("signals-view").style.display =
-    view === "signals" ? "flex" : "none";
+  // All view IDs
+  const views = ["alerts-view", "activity-view", "signals-view", "backtest-view", "smartmoney-view"];
+  const viewMap = {
+    alerts: "alerts-view",
+    activity: "activity-view",
+    signals: "signals-view",
+    backtest: "backtest-view",
+    smartmoney: "smartmoney-view",
+  };
+
+  views.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = id === viewMap[view] ? "flex" : "none";
+  });
 
   // Refresh data for the view
   if (view === "activity") renderActivity();
   if (view === "signals") renderSignalStats();
+  if (view === "backtest") loadBacktestCases();
+  if (view === "smartmoney") { fetchLeaderboard(); loadWatchlist(); }
 }
 
 async function fetchStats() {
@@ -730,6 +739,344 @@ async function triggerScan() {
     console.error("Error triggering scan:", error);
     btn.innerHTML = '<span class="scan-icon">⚡</span> Force Scan';
     btn.disabled = false;
+  }
+}
+
+// ==================== BACKTEST ====================
+
+let backtestCasesLoaded = false;
+
+async function loadBacktestCases() {
+  if (backtestCasesLoaded) return;
+  const container = document.getElementById("backtest-cases");
+  try {
+    const response = await fetch(`${API_BASE}/backtest/cases`);
+    const cases = await response.json();
+    backtestCasesLoaded = true;
+
+    if (cases.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No known cases configured</p></div>';
+      return;
+    }
+
+    container.innerHTML = cases
+      .map(
+        (c) => `
+        <div class="backtest-case-card" id="case-${c.id}">
+          <div class="case-header">
+            <div class="case-name">${escapeHtml(c.name)}</div>
+            <button class="run-backtest-btn" onclick="runBacktestCase('${c.id}')">Run Backtest</button>
+          </div>
+          <div class="case-description">${escapeHtml(c.description)}</div>
+          <div class="case-meta">
+            <span>Expected min score: ${c.expected_min_score}</span>
+            <span>Signals: ${c.expected_signals.join(", ")}</span>
+          </div>
+          <div class="case-result" id="case-result-${c.id}"></div>
+        </div>
+      `
+      )
+      .join("");
+  } catch (error) {
+    console.error("Error loading backtest cases:", error);
+    container.innerHTML = '<div class="empty-state"><p>Failed to load cases</p></div>';
+  }
+}
+
+async function runBacktestCase(caseId) {
+  const resultEl = document.getElementById(`case-result-${caseId}`);
+  const btn = document.querySelector(`#case-${caseId} .run-backtest-btn`);
+  btn.disabled = true;
+  btn.textContent = "Running...";
+  resultEl.innerHTML = '<div class="loading"><div class="spinner"></div><span>Analyzing trades...</span></div>';
+  resultEl.style.display = "block";
+
+  try {
+    const response = await fetch(`${API_BASE}/backtest/case/${caseId}`, { method: "POST" });
+    const result = await response.json();
+    renderBacktestResult(resultEl, result);
+  } catch (error) {
+    resultEl.innerHTML = `<div class="backtest-error">Error: ${error.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Run Backtest";
+  }
+}
+
+async function searchBacktestMarkets() {
+  const input = document.getElementById("backtest-search-input");
+  const query = input.value.trim();
+  if (!query) return;
+
+  const container = document.getElementById("backtest-search-results");
+  container.innerHTML = '<div class="loading"><div class="spinner"></div><span>Searching...</span></div>';
+
+  try {
+    const response = await fetch(`${API_BASE}/backtest/search?q=${encodeURIComponent(query)}&limit=20`);
+    const markets = await response.json();
+
+    if (markets.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No resolved markets found</p></div>';
+      return;
+    }
+
+    container.innerHTML = markets
+      .map(
+        (m) => `
+        <div class="backtest-market-item">
+          <div class="market-question">${escapeHtml(m.question || "Unknown")}</div>
+          <div class="market-meta">
+            <span>Volume: ${formatCurrency(m.volume)}</span>
+            ${m.conditionId ? `<button class="run-backtest-btn small" onclick="runMarketBacktest('${m.conditionId}', '${escapeHtml(m.question || "")}', '${escapeHtml(m.slug || "")}')">Backtest</button>` : ""}
+          </div>
+        </div>
+      `
+      )
+      .join("");
+  } catch (error) {
+    container.innerHTML = `<div class="backtest-error">Search failed: ${error.message}</div>`;
+  }
+}
+
+async function searchEarningsMarkets() {
+  const container = document.getElementById("backtest-search-results");
+  container.innerHTML = '<div class="loading"><div class="spinner"></div><span>Searching earnings markets...</span></div>';
+
+  try {
+    const response = await fetch(`${API_BASE}/markets/earnings?limit=20`);
+    const markets = await response.json();
+
+    if (markets.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No earnings markets found</p></div>';
+      return;
+    }
+
+    container.innerHTML = markets
+      .map(
+        (m) => `
+        <div class="backtest-market-item">
+          <div class="market-question">${escapeHtml(m.question || "Unknown")}</div>
+          <div class="market-meta">
+            <span>Volume: ${formatCurrency(m.volume)}</span>
+            ${m.conditionId ? `<button class="run-backtest-btn small" onclick="runMarketBacktest('${m.conditionId}', '${escapeHtml(m.question || "")}', '${escapeHtml(m.slug || "")}')">Backtest</button>` : ""}
+          </div>
+        </div>
+      `
+      )
+      .join("");
+  } catch (error) {
+    container.innerHTML = `<div class="backtest-error">Search failed: ${error.message}</div>`;
+  }
+}
+
+async function runMarketBacktest(conditionId, question, slug) {
+  const resultEl = document.getElementById("backtest-result");
+  resultEl.style.display = "block";
+  resultEl.innerHTML = '<div class="loading"><div class="spinner"></div><span>Backtesting market...</span></div>';
+
+  try {
+    const params = new URLSearchParams({ condition_id: conditionId, question, slug });
+    const response = await fetch(`${API_BASE}/backtest/market?${params}`, { method: "POST" });
+    const result = await response.json();
+    renderBacktestResult(resultEl, result);
+  } catch (error) {
+    resultEl.innerHTML = `<div class="backtest-error">Backtest failed: ${error.message}</div>`;
+  }
+}
+
+// Allow Enter key in search input
+document.addEventListener("DOMContentLoaded", () => {
+  const searchInput = document.getElementById("backtest-search-input");
+  if (searchInput) {
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") searchBacktestMarkets();
+    });
+  }
+});
+
+function renderBacktestResult(container, result) {
+  if (result.error) {
+    container.innerHTML = `<div class="backtest-error">Error: ${escapeHtml(result.error)}</div>`;
+    return;
+  }
+
+  const verdictClass = result.passed === true ? "pass" : result.passed === false ? "fail" : "neutral";
+  const verdictText = result.passed === true ? "PASS" : result.passed === false ? "FAIL" : "COMPLETE";
+
+  container.innerHTML = `
+    <div class="backtest-summary">
+      <div class="backtest-summary-header">
+        <div>
+          <div class="backtest-market-title">${escapeHtml(result.market_question || result.case_name || "Market")}</div>
+          ${result.case_name ? `<div class="backtest-case-label">${escapeHtml(result.case_name)}</div>` : ""}
+        </div>
+        <div class="verdict ${verdictClass}">${verdictText}</div>
+      </div>
+      <div class="backtest-stats">
+        <div class="backtest-stat">
+          <div class="value">${result.total_trades}</div>
+          <div class="label">Total Trades</div>
+        </div>
+        <div class="backtest-stat">
+          <div class="value">${result.trades_analyzed}</div>
+          <div class="label">Analyzed</div>
+        </div>
+        <div class="backtest-stat">
+          <div class="value">${(result.suspicious_trades || []).length}</div>
+          <div class="label">Suspicious</div>
+        </div>
+        <div class="backtest-stat">
+          <div class="value" style="color: ${result.top_score >= 60 ? 'var(--severity-critical)' : result.top_score >= 40 ? 'var(--severity-medium)' : 'var(--text-secondary)'};">${result.top_score}</div>
+          <div class="label">Top Score</div>
+        </div>
+        <div class="backtest-stat">
+          <div class="value">${result.duration_seconds?.toFixed(1) || 0}s</div>
+          <div class="label">Duration</div>
+        </div>
+      </div>
+      ${(result.suspicious_trades || []).length > 0 ? `
+        <h4 style="margin: 16px 0 8px; color: var(--text-secondary);">Top Suspicious Trades</h4>
+        <div class="backtest-trades">
+          ${result.suspicious_trades.slice(0, 10).map((t) => `
+            <div class="backtest-trade-item ${t.is_alert ? 'is-alert' : ''}">
+              <div class="bt-trade-main">
+                <a href="https://polymarket.com/profile/${t.trader}" target="_blank" class="trader-link">👛 ${t.trader.substring(0, 12)}...</a>
+                <span>${t.side} ${formatCurrency(t.notional_usd)} @ ${t.price?.toFixed(1) || 0}¢</span>
+                <span>📈 ${t.wallet_trades} trades / ${t.wallet_markets} markets</span>
+              </div>
+              <div class="bt-trade-signals">
+                ${(t.signals || []).filter(s => s.score > 0).map(s => `<span class="signal-chip active">${s.signal.split(' ')[0]} +${s.score}</span>`).join('')}
+              </div>
+              <div class="activity-score">
+                <span class="score-value ${t.score >= 80 ? 'critical' : t.score >= 60 ? 'high' : t.score >= 40 ? 'medium' : 'low'}">${t.score}</span>
+                ${t.severity ? `<span class="score-label">${t.severity.toUpperCase()}</span>` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : '<p style="color: var(--text-muted); margin-top: 16px;">No suspicious trades found.</p>'}
+    </div>
+  `;
+}
+
+// ==================== SMART MONEY ====================
+
+async function fetchLeaderboard() {
+  const container = document.getElementById("leaderboard-table");
+  const timePeriod = document.getElementById("lb-time-period")?.value || "all";
+  const orderBy = document.getElementById("lb-order-by")?.value || "pnl";
+
+  try {
+    const params = new URLSearchParams({ time_period: timePeriod, order_by: orderBy, limit: "50" });
+    const response = await fetch(`${API_BASE}/leaderboard?${params}`);
+    const traders = await response.json();
+    renderLeaderboard(traders);
+  } catch (error) {
+    console.error("Error fetching leaderboard:", error);
+    container.innerHTML = '<div class="empty-state"><p>Failed to load leaderboard</p></div>';
+  }
+}
+
+function renderLeaderboard(traders) {
+  const container = document.getElementById("leaderboard-table");
+
+  if (!traders || traders.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">💰</div>
+        <p>No leaderboard data available</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="lb-header-row">
+      <div class="lb-rank">#</div>
+      <div class="lb-trader">Trader</div>
+      <div class="lb-pnl">PnL</div>
+      <div class="lb-volume">Volume</div>
+      <div class="lb-markets">Markets</div>
+      <div class="lb-winrate">Win Rate</div>
+      <div class="lb-action">Watch</div>
+    </div>
+    ${traders.map((t, i) => `
+      <div class="lb-row ${t.is_watched ? 'watched' : ''}">
+        <div class="lb-rank">${t.rank || i + 1}</div>
+        <div class="lb-trader">
+          <a href="https://polymarket.com/profile/${t.address}" target="_blank" class="trader-link">${t.display_name || (t.address ? t.address.substring(0, 12) + '...' : 'Unknown')}</a>
+        </div>
+        <div class="lb-pnl ${t.pnl >= 0 ? 'positive' : 'negative'}">${t.pnl >= 0 ? '+' : ''}${formatCurrency(t.pnl)}</div>
+        <div class="lb-volume">${formatCurrency(t.volume)}</div>
+        <div class="lb-markets">${t.markets_traded}</div>
+        <div class="lb-winrate">${t.win_rate ? (t.win_rate * 100).toFixed(0) + '%' : 'N/A'}</div>
+        <div class="lb-action">
+          <button class="watch-btn ${t.is_watched ? 'watching' : ''}" onclick="toggleWatch('${t.address}', this)">
+            ${t.is_watched ? '👁 Watching' : '+ Watch'}
+          </button>
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function toggleWatch(address, btn) {
+  const isWatching = btn.classList.contains("watching");
+
+  try {
+    if (isWatching) {
+      await fetch(`${API_BASE}/leaderboard/watch/${address}`, { method: "DELETE" });
+      btn.classList.remove("watching");
+      btn.textContent = "+ Watch";
+    } else {
+      await fetch(`${API_BASE}/leaderboard/watch/${address}`, { method: "POST" });
+      btn.classList.add("watching");
+      btn.textContent = "👁 Watching";
+    }
+    loadWatchlist();
+  } catch (error) {
+    console.error("Error toggling watch:", error);
+  }
+}
+
+async function loadWatchlist() {
+  try {
+    const response = await fetch(`${API_BASE}/leaderboard/watching`);
+    const data = await response.json();
+    const wallets = data.wallets || [];
+
+    const section = document.getElementById("watchlist-section");
+    const container = document.getElementById("watchlist");
+
+    if (wallets.length === 0) {
+      section.style.display = "none";
+      return;
+    }
+
+    section.style.display = "block";
+    container.innerHTML = wallets
+      .map(
+        (w) => `
+        <div class="watchlist-item">
+          <a href="https://polymarket.com/profile/${w}" target="_blank" class="trader-link">👛 ${w.substring(0, 16)}...</a>
+          <button class="unwatch-btn" onclick="unwatchTrader('${w}')">Remove</button>
+        </div>
+      `
+      )
+      .join("");
+  } catch (error) {
+    console.error("Error loading watchlist:", error);
+  }
+}
+
+async function unwatchTrader(address) {
+  try {
+    await fetch(`${API_BASE}/leaderboard/watch/${address}`, { method: "DELETE" });
+    loadWatchlist();
+    // Refresh leaderboard to update watch buttons
+    if (currentView === "smartmoney") fetchLeaderboard();
+  } catch (error) {
+    console.error("Error unwatching trader:", error);
   }
 }
 
