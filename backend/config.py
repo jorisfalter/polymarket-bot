@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     whale_threshold_usd: float = 5000  # Large bet threshold
     fresh_wallet_max_trades: int = 5  # "Low activity wallet" threshold
     win_rate_suspicious_threshold: float = 0.85  # Unusually high win rate
+
+    # Minimum notional for each severity level (small bets can't be high severity)
+    min_notional_critical: float = 5000  # Must be $5k+ for CRITICAL
+    min_notional_high: float = 2000      # Must be $2k+ for HIGH
+    min_notional_medium: float = 500     # Must be $500+ for MEDIUM
+    min_notional_low: float = 100        # Minimum to generate any alert
     
     # Time windows for analysis
     volume_lookback_hours: int = 168  # 7 days for baseline
@@ -40,6 +46,7 @@ class Settings(BaseSettings):
     
     # Notification settings
     notification_min_severity: str = "medium"  # low, medium, high, critical
+    dashboard_url: str = "http://localhost:8000"  # Public URL for email links
     
     # Database
     database_url: str = "sqlite+aiosqlite:///./insider_detector.db"

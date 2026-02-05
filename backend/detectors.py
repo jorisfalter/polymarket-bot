@@ -28,7 +28,7 @@ class InsiderDetector:
     """
     Main detection engine combining multiple signals
     """
-    
+
     def __init__(self):
         # Historical data for baseline calculations
         self.volume_history: Dict[str, List[float]] = defaultdict(list)
@@ -63,7 +63,7 @@ class InsiderDetector:
         flags = []
         severity_score = 0
         signals = []  # Detailed breakdown of each signal
-        
+
         # Build models from raw data
         wallet = self._build_wallet_profile(wallet_profile)
         trade = self._build_trade(trade_data, market_data)
@@ -156,11 +156,11 @@ class InsiderDetector:
             severity_score += odds_score
             
         # ========== DETERMINE IF SUSPICIOUS ==========
-        
+
         if severity_score < 20:
             return None, signals  # Not suspicious enough, but return signals for logging
-            
-        # Determine severity level
+
+        # Determine severity level based on score
         if severity_score >= 80:
             severity = AlertSeverity.CRITICAL
         elif severity_score >= 60:
@@ -169,6 +169,43 @@ class InsiderDetector:
             severity = AlertSeverity.MEDIUM
         else:
             severity = AlertSeverity.LOW
+
+        # Cap severity based on trade size - small bets can't be high severity
+        # A $28 bet should never be CRITICAL, regardless of other signals
+        notional = trade.notional_usd
+        if notional < settings.min_notional_critical and severity == AlertSeverity.CRITICAL:
+            severity = AlertSeverity.HIGH
+            signals.append({
+                "signal": "📉 Severity Capped",
+                "score": 0,
+                "details": f"${notional:.0f} below ${settings.min_notional_critical:.0f} CRITICAL threshold",
+                "threshold": f">${settings.min_notional_critical:.0f} for CRITICAL"
+            })
+        if notional < settings.min_notional_high and severity == AlertSeverity.HIGH:
+            severity = AlertSeverity.MEDIUM
+            signals.append({
+                "signal": "📉 Severity Capped",
+                "score": 0,
+                "details": f"${notional:.0f} below ${settings.min_notional_high:.0f} HIGH threshold",
+                "threshold": f">${settings.min_notional_high:.0f} for HIGH"
+            })
+        if notional < settings.min_notional_medium and severity == AlertSeverity.MEDIUM:
+            severity = AlertSeverity.LOW
+            signals.append({
+                "signal": "📉 Severity Capped",
+                "score": 0,
+                "details": f"${notional:.0f} below ${settings.min_notional_medium:.0f} MEDIUM threshold",
+                "threshold": f">${settings.min_notional_medium:.0f} for MEDIUM"
+            })
+        if notional < settings.min_notional_low:
+            # Trade too small to even be LOW severity - skip entirely
+            signals.append({
+                "signal": "⏭️ Skipped",
+                "score": 0,
+                "details": f"${notional:.0f} below ${settings.min_notional_low:.0f} minimum",
+                "threshold": f">${settings.min_notional_low:.0f} minimum"
+            })
+            return None, signals
             
         suspicious_trade = SuspiciousTrade(
             trade=trade,

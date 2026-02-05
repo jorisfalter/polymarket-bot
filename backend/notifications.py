@@ -22,6 +22,7 @@ class NotificationService:
         self.alert_email = settings.alert_email
         self.webhook_url = settings.webhook_url
         self.min_severity = settings.notification_min_severity
+        self.dashboard_url = settings.dashboard_url
         
     async def notify(self, suspicious: SuspiciousTrade) -> bool:
         """
@@ -107,7 +108,7 @@ class NotificationService:
             </table>
             
             <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #333; font-size: 12px; color: #666;">
-                <a href="http://localhost:8000" style="color: #00d4ff;">Open Dashboard</a> • 
+                <a href="{self.dashboard_url}" style="color: #00d4ff;">Open Dashboard</a> •
                 <a href="https://polymarket.com/{trade.market_slug}" style="color: #00d4ff;">View Market</a>
             </div>
         </div>
