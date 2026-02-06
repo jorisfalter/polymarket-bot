@@ -29,6 +29,8 @@ from .detectors import detector
 from .notifications import get_notifier
 from .backtester import backtester, KNOWN_CASES
 from .leaderboard import tracker
+from .copy_trader import copy_trader, CopyTradeConfig, CopyMode
+from .paper_trader import paper_trader
 
 
 def _get_trade_key(trade) -> str:
@@ -273,6 +275,18 @@ async def lifespan(app: FastAPI):
         'interval',
         minutes=5,  # Check watched traders every 5 minutes
         id='watch_job'
+    )
+    scheduler.add_job(
+        paper_trader.check_and_copy_new_trades,
+        'interval',
+        minutes=2,  # Check for copy trades every 2 minutes
+        id='paper_copy_job'
+    )
+    scheduler.add_job(
+        paper_trader.update_prices,
+        'interval',
+        minutes=10,  # Update prices every 10 minutes
+        id='paper_price_job'
     )
     scheduler.start()
 
@@ -581,6 +595,12 @@ async def run_backtest_case(case_id: str):
         "passed": result.passed,
         "error": result.error,
         "duration_seconds": result.duration_seconds,
+        # Known insider tracking
+        "insider_wallet": result.insider_wallet,
+        "insider_name": result.insider_name,
+        "insider_found": result.insider_found,
+        "insider_score": result.insider_score,
+        "insider_rank": result.insider_rank,
     }
 
 
@@ -683,6 +703,120 @@ async def unwatch_trader(address: str):
 async def get_watching():
     """Get list of watched wallet addresses"""
     return {"wallets": tracker.get_watching()}
+
+
+# ==================== COPY TRADING ====================
+
+@app.get("/api/copy-trader/status")
+async def get_copy_trader_status():
+    """Get copy trader status and recent activity"""
+    return copy_trader.get_stats()
+
+
+@app.post("/api/copy-trader/config")
+async def update_copy_trader_config(
+    enabled: Optional[bool] = None,
+    dry_run: Optional[bool] = None,
+    mode: Optional[str] = None,
+    fixed_amount: Optional[float] = None,
+    max_slippage: Optional[float] = None,
+    max_position: Optional[float] = None,
+):
+    """Update copy trader configuration"""
+    if enabled is not None:
+        copy_trader.config.enabled = enabled
+    if dry_run is not None:
+        copy_trader.config.dry_run = dry_run
+    if mode is not None:
+        copy_trader.config.mode = CopyMode(mode)
+    if fixed_amount is not None:
+        copy_trader.config.fixed_amount_usd = fixed_amount
+    if max_slippage is not None:
+        copy_trader.config.max_slippage_pct = max_slippage
+    if max_position is not None:
+        copy_trader.config.max_position_usd = max_position
+
+    return {
+        "enabled": copy_trader.config.enabled,
+        "dry_run": copy_trader.config.dry_run,
+        "mode": copy_trader.config.mode.value,
+        "fixed_amount_usd": copy_trader.config.fixed_amount_usd,
+        "max_slippage_pct": copy_trader.config.max_slippage_pct,
+        "max_position_usd": copy_trader.config.max_position_usd,
+    }
+
+
+@app.post("/api/copy-trader/simulate")
+async def simulate_copy_trading():
+    """Run one cycle of copy trading (always in dry-run mode for safety)"""
+    # Force dry run for simulation
+    original_dry_run = copy_trader.config.dry_run
+    copy_trader.config.dry_run = True
+
+    results = await copy_trader.run_copy_cycle()
+
+    copy_trader.config.dry_run = original_dry_run
+
+    return {
+        "trades_found": len(results),
+        "results": [
+            {
+                "market": r.market[:60] if r.market else "",
+                "side": r.side,
+                "original_trader": r.original_trader[:16] + "...",
+                "original_price": r.original_price,
+                "our_price": r.our_price,
+                "original_size_usd": r.original_size_usd,
+                "our_size_usd": r.our_size_usd,
+                "slippage_pct": r.slippage_pct,
+                "would_copy": r.success,
+                "skip_reason": r.error,
+            }
+            for r in results
+        ],
+    }
+
+
+# ==================== PAPER TRADING ====================
+
+@app.get("/api/paper-trader/stats")
+async def get_paper_trading_stats():
+    """Get paper trading statistics and recent trades"""
+    return paper_trader.get_stats()
+
+
+@app.get("/api/paper-trader/positions")
+async def get_paper_trading_positions():
+    """Get all open paper trading positions"""
+    return {"positions": paper_trader.get_open_positions()}
+
+
+@app.post("/api/paper-trader/scan")
+async def scan_for_paper_trades():
+    """Manually trigger a scan for new copy trades"""
+    new_trades = await paper_trader.check_and_copy_new_trades()
+    return {
+        "new_trades": len(new_trades),
+        "trades": [
+            {
+                "id": t.id,
+                "market": t.market_title[:50],
+                "outcome": t.outcome,
+                "copied_from": t.copied_from_name,
+                "entry_price": t.entry_price,
+                "their_entry": t.their_entry_price,
+                "position_usd": t.position_usd,
+            }
+            for t in new_trades
+        ],
+    }
+
+
+@app.post("/api/paper-trader/update-prices")
+async def update_paper_trade_prices():
+    """Update current prices and check for resolved markets"""
+    await paper_trader.update_prices()
+    return paper_trader.get_stats()
 
 
 # Serve frontend

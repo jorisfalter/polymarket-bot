@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=6">
+    <link rel="stylesheet" href="/static/styles.css?v=8">
 </head>
 <body>
     <div class="app">
@@ -62,6 +62,7 @@
             <button class="view-btn" data-view="signals" onclick="switchView('signals')">🔬 Signal Analysis</button>
             <button class="view-btn" data-view="backtest" onclick="switchView('backtest')">🧪 Backtest</button>
             <button class="view-btn" data-view="smartmoney" onclick="switchView('smartmoney')">💰 Smart Money</button>
+            <button class="view-btn" data-view="paper" onclick="switchView('paper')">📄 Paper Trading</button>
         </div>
 
         <!-- Main Content -->
@@ -190,6 +191,71 @@
                 </div>
             </div>
 
+            <!-- Paper Trading View (hidden by default) -->
+            <div class="panel paper-view" id="paper-view" style="display: none;">
+                <div class="panel-header">
+                    <h2>📄 Paper Trading</h2>
+                    <span class="panel-subtitle">Track hypothetical copy-trades without real money</span>
+                </div>
+                <div class="paper-content" id="paper-content">
+                    <!-- Stats Cards -->
+                    <div class="paper-stats" id="paper-stats">
+                        <div class="paper-stat-card">
+                            <div class="paper-stat-value" id="paper-total-positions">--</div>
+                            <div class="paper-stat-label">Positions</div>
+                        </div>
+                        <div class="paper-stat-card">
+                            <div class="paper-stat-value" id="paper-invested">$--</div>
+                            <div class="paper-stat-label">Invested</div>
+                        </div>
+                        <div class="paper-stat-card positive">
+                            <div class="paper-stat-value" id="paper-won">--</div>
+                            <div class="paper-stat-label">Won</div>
+                        </div>
+                        <div class="paper-stat-card negative">
+                            <div class="paper-stat-value" id="paper-lost">--</div>
+                            <div class="paper-stat-label">Lost</div>
+                        </div>
+                        <div class="paper-stat-card">
+                            <div class="paper-stat-value" id="paper-winrate">--%</div>
+                            <div class="paper-stat-label">Win Rate</div>
+                        </div>
+                        <div class="paper-stat-card highlight">
+                            <div class="paper-stat-value" id="paper-pnl">$--</div>
+                            <div class="paper-stat-label">Total P&L</div>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="paper-actions">
+                        <button class="paper-btn" onclick="updatePaperPrices()">🔄 Update Prices</button>
+                        <button class="paper-btn" onclick="scanPaperTrades()">🔍 Scan for Trades</button>
+                    </div>
+
+                    <!-- Open Positions -->
+                    <div class="paper-section">
+                        <h3>📊 Open Positions</h3>
+                        <div class="paper-positions" id="paper-positions">
+                            <div class="loading">
+                                <div class="spinner"></div>
+                                <span>Loading positions...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trade History -->
+                    <div class="paper-section">
+                        <h3>📜 Recent Trades</h3>
+                        <div class="paper-history" id="paper-history">
+                            <div class="loading">
+                                <div class="spinner"></div>
+                                <span>Loading history...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Side Panels -->
             <div class="side-panels">
                 <!-- Hot Markets -->
@@ -234,7 +300,7 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=6"></script>
+    <script src="/static/app.js?v=8"></script>
 </body>
 </html>
 

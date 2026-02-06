@@ -14,16 +14,17 @@ from .detectors import detector
 
 
 # Known insider trading cases for validation
-# Each case has a hardcoded conditionId and slug so we don't rely on search
+# Each case has a hardcoded conditionId, slug, and the actual insider wallet address
 KNOWN_CASES = {
     "maduro_capture": {
         "id": "maduro_capture",
         "name": "Maduro Capture (Jan 2026)",
         "description": 'User "Burdensome-Mix" wagered ~$32k at ~7% odds on Maduro capture hours before the raid was announced, netting $436k profit.',
-        "condition_id": "0xbfa45527ec959aacc36f7c312bd4f328171a7681ef1aeb3a7e34db5fb47d3f1d",
-        "slug": "maduro-in-us-custody-by-january-31",
-        "question": "Maduro in U.S. custody by January 31?",
-        "expected_trader": "Burdensome-Mix",
+        "condition_id": "0x580adc1327de9bf7c179ef5aaffa3377bb5cb252b7d6390b027172d43fd6f993",
+        "slug": "maduro-out-by-january-31-2026",
+        "question": "Maduro out by January 31, 2026?",
+        "insider_wallet": "0x31a56e9E690c621eD21De08Cb559e9524Cdb8eD9",
+        "insider_name": "Burdensome-Mix",
         "expected_min_score": 60,
         "expected_signals": ["Fresh Wallet", "Extreme Odds", "Position Size"],
     },
@@ -34,7 +35,8 @@ KNOWN_CASES = {
         "condition_id": "0x14a3dfeba8b22a32feb0f10763db68bc4d2abeb5bff90e9ae20de53793b35a1d",
         "slug": "will-mara-corina-machado-win-the-nobel-peace-prize-in-2025",
         "question": "Will Maria Corina Machado win the Nobel Peace Prize in 2025?",
-        "expected_trader": "dirtycup",
+        "insider_wallet": "0x234cc49e43dff8b3207bbd3a8a2579f339cb9867",
+        "insider_name": "dirtycup",
         "expected_min_score": 60,
         "expected_signals": ["Extreme Odds", "Position Size", "Timing"],
     },
@@ -45,7 +47,8 @@ KNOWN_CASES = {
         "condition_id": "0x89ac32e18929185f5bd0dc00e70337571f546e64ae5cd16dceb6026ac2679c1e",
         "slug": "taylor-swift-and-travis-kelce-engaged-in-2025",
         "question": "Taylor Swift and Travis Kelce engaged in 2025?",
-        "expected_trader": "romanticpaul",
+        "insider_wallet": "0xf5cfe6f998d597085e366f915b140e82e0869fc6",
+        "insider_name": "romanticpaul",
         "expected_min_score": 60,
         "expected_signals": ["Fresh Wallet", "Timing"],
     },
@@ -56,7 +59,8 @@ KNOWN_CASES = {
         "condition_id": "0xea17b1284d10617a57f910b2ea63bdef481b1724a4b899d454ff104bea67b657",
         "slug": "will-d4vd-be-the-1-searched-person-on-google-this-year",
         "question": "Will d4vd be the #1 searched person on Google this year?",
-        "expected_trader": None,
+        "insider_wallet": "0xee50a31c3f5a7c77824b12a941a54388a2827ed6",
+        "insider_name": "AlphaRaccoon",
         "expected_min_score": 60,
         "expected_signals": ["Position Size", "Extreme Odds"],
     },
@@ -79,6 +83,12 @@ class BacktestResult:
     passed: Optional[bool] = None
     error: Optional[str] = None
     duration_seconds: float = 0
+    # Known insider tracking
+    insider_wallet: Optional[str] = None
+    insider_name: Optional[str] = None
+    insider_found: bool = False
+    insider_score: Optional[float] = None
+    insider_rank: Optional[int] = None  # Where the insider ranked in suspicious trades
 
 
 class Backtester:
@@ -266,6 +276,7 @@ class Backtester:
         """
         Run backtest for a known insider trading case.
         Uses the hardcoded conditionId directly — no search needed.
+        Checks if the known insider wallet was detected and at what score.
         """
         case = KNOWN_CASES.get(case_id)
         if not case:
@@ -283,7 +294,30 @@ class Backtester:
             result.case_id = case_id
             result.case_name = case["name"]
             result.expected_min_score = case["expected_min_score"]
-            result.passed = result.top_score >= case["expected_min_score"]
+
+            # Track the known insider
+            insider_wallet = case.get("insider_wallet", "").lower()
+            result.insider_wallet = case.get("insider_wallet")
+            result.insider_name = case.get("insider_name")
+
+            # Check if the insider was found in suspicious trades
+            if insider_wallet:
+                for i, trade in enumerate(result.suspicious_trades):
+                    trader_addr = (trade.get("trader") or "").lower()
+                    if trader_addr == insider_wallet:
+                        result.insider_found = True
+                        result.insider_score = trade.get("score", 0)
+                        result.insider_rank = i + 1  # 1-indexed rank
+                        # Mark this trade as the known insider in the results
+                        trade["is_known_insider"] = True
+                        trade["insider_name"] = case.get("insider_name")
+                        break
+
+            # Pass if we found the insider with a good score, or if top score is high
+            result.passed = (
+                (result.insider_found and result.insider_score and result.insider_score >= case["expected_min_score"])
+                or result.top_score >= case["expected_min_score"]
+            )
 
         except Exception as e:
             logger.error(f"Known case backtest error for {case_id}: {e}")

@@ -317,7 +317,7 @@ class PolymarketClient:
                 params["category"] = category
 
             response = await self.client.get(
-                f"{self.data_url}/leaderboard",
+                f"{self.data_url}/v1/leaderboard",
                 params=params
             )
             response.raise_for_status()

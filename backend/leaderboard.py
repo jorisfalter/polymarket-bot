@@ -90,15 +90,17 @@ class LeaderboardTracker:
             results = []
             if isinstance(data, list):
                 for entry in data:
+                    # API returns: proxyWallet, userName, vol, pnl, rank
+                    address = entry.get("proxyWallet") or entry.get("address") or entry.get("user") or ""
                     results.append({
-                        "address": entry.get("address") or entry.get("user") or "",
-                        "display_name": entry.get("displayName") or entry.get("username") or entry.get("name") or "",
+                        "address": address,
+                        "display_name": entry.get("userName") or entry.get("displayName") or entry.get("username") or "",
                         "pnl": float(entry.get("pnl") or entry.get("profit") or 0),
-                        "volume": float(entry.get("volume") or 0),
+                        "volume": float(entry.get("vol") or entry.get("volume") or 0),
                         "markets_traded": int(entry.get("marketsTraded") or entry.get("markets_traded") or 0),
                         "win_rate": float(entry.get("winRate") or entry.get("win_rate") or 0),
-                        "rank": entry.get("rank") or (len(results) + 1),
-                        "is_watched": (entry.get("address") or "").lower() in self.watched_wallets,
+                        "rank": int(entry.get("rank") or (len(results) + 1)),
+                        "is_watched": address.lower() in self.watched_wallets,
                     })
             return results
 

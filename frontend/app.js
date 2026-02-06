@@ -64,13 +64,14 @@ function switchView(view) {
   });
 
   // All view IDs
-  const views = ["alerts-view", "activity-view", "signals-view", "backtest-view", "smartmoney-view"];
+  const views = ["alerts-view", "activity-view", "signals-view", "backtest-view", "smartmoney-view", "paper-view"];
   const viewMap = {
     alerts: "alerts-view",
     activity: "activity-view",
     signals: "signals-view",
     backtest: "backtest-view",
     smartmoney: "smartmoney-view",
+    paper: "paper-view",
   };
 
   views.forEach((id) => {
@@ -83,6 +84,7 @@ function switchView(view) {
   if (view === "signals") renderSignalStats();
   if (view === "backtest") loadBacktestCases();
   if (view === "smartmoney") { fetchLeaderboard(); loadWatchlist(); }
+  if (view === "paper") { fetchPaperStats(); fetchPaperPositions(); }
 }
 
 async function fetchStats() {
@@ -903,6 +905,25 @@ function renderBacktestResult(container, result) {
   const verdictClass = result.passed === true ? "pass" : result.passed === false ? "fail" : "neutral";
   const verdictText = result.passed === true ? "PASS" : result.passed === false ? "FAIL" : "COMPLETE";
 
+  // Build insider tracking section if this is a known case
+  let insiderSection = "";
+  if (result.insider_wallet) {
+    const insiderStatus = result.insider_found
+      ? `<span class="insider-found">✅ FOUND</span> at rank #${result.insider_rank} with score ${result.insider_score}`
+      : `<span class="insider-not-found">❌ NOT FOUND</span> in suspicious trades`;
+    insiderSection = `
+      <div class="insider-tracking">
+        <h4>🎯 Known Insider: ${escapeHtml(result.insider_name || "Unknown")}</h4>
+        <div class="insider-details">
+          <a href="https://polymarket.com/profile/${result.insider_wallet}" target="_blank" class="trader-link">
+            👛 ${result.insider_wallet.substring(0, 16)}...
+          </a>
+          <span class="insider-status">${insiderStatus}</span>
+        </div>
+      </div>
+    `;
+  }
+
   container.innerHTML = `
     <div class="backtest-summary">
       <div class="backtest-summary-header">
@@ -912,6 +933,7 @@ function renderBacktestResult(container, result) {
         </div>
         <div class="verdict ${verdictClass}">${verdictText}</div>
       </div>
+      ${insiderSection}
       <div class="backtest-stats">
         <div class="backtest-stat">
           <div class="value">${result.total_trades}</div>
@@ -938,8 +960,9 @@ function renderBacktestResult(container, result) {
         <h4 style="margin: 16px 0 8px; color: var(--text-secondary);">Top Suspicious Trades</h4>
         <div class="backtest-trades">
           ${result.suspicious_trades.slice(0, 10).map((t) => `
-            <div class="backtest-trade-item ${t.is_alert ? 'is-alert' : ''}">
+            <div class="backtest-trade-item ${t.is_alert ? 'is-alert' : ''} ${t.is_known_insider ? 'known-insider' : ''}">
               <div class="bt-trade-main">
+                ${t.is_known_insider ? `<span class="insider-badge">🎯 ${escapeHtml(t.insider_name)}</span>` : ''}
                 <a href="https://polymarket.com/profile/${t.trader}" target="_blank" class="trader-link">👛 ${t.trader.substring(0, 12)}...</a>
                 <span>${t.side} ${formatCurrency(t.notional_usd)} @ ${t.price?.toFixed(1) || 0}¢</span>
                 <span>📈 ${t.wallet_trades} trades / ${t.wallet_markets} markets</span>
@@ -1077,6 +1100,163 @@ async function unwatchTrader(address) {
     if (currentView === "smartmoney") fetchLeaderboard();
   } catch (error) {
     console.error("Error unwatching trader:", error);
+  }
+}
+
+// ==================== PAPER TRADING ====================
+
+async function fetchPaperStats() {
+  try {
+    const response = await fetch(`${API_BASE}/paper-trader/stats`);
+    const stats = await response.json();
+
+    document.getElementById("paper-total-positions").textContent = stats.total_trades || 0;
+    document.getElementById("paper-invested").textContent = `$${(stats.total_trades * 100).toLocaleString()}`;
+    document.getElementById("paper-won").textContent = stats.won_trades || 0;
+    document.getElementById("paper-lost").textContent = stats.lost_trades || 0;
+    document.getElementById("paper-winrate").textContent = `${stats.win_rate?.toFixed(0) || 0}%`;
+
+    const totalPnl = (stats.realized_pnl || 0) + (stats.unrealized_pnl || 0);
+    const pnlEl = document.getElementById("paper-pnl");
+    pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`;
+    pnlEl.classList.toggle("positive", totalPnl >= 0);
+    pnlEl.classList.toggle("negative", totalPnl < 0);
+
+    // Render trade history
+    renderPaperHistory(stats.recent_trades || []);
+  } catch (error) {
+    console.error("Error fetching paper stats:", error);
+  }
+}
+
+async function fetchPaperPositions() {
+  const container = document.getElementById("paper-positions");
+
+  try {
+    const response = await fetch(`${API_BASE}/paper-trader/positions`);
+    const data = await response.json();
+    const positions = data.positions || [];
+
+    if (positions.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📄</div>
+          <p>No open positions</p>
+          <p class="empty-state-hint">Add traders to your watchlist in Smart Money tab to start copy-trading</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="paper-positions-header">
+        <div class="pp-market">Market</div>
+        <div class="pp-outcome">Position</div>
+        <div class="pp-entry">Entry</div>
+        <div class="pp-current">Current</div>
+        <div class="pp-pnl">Unrealized P&L</div>
+        <div class="pp-copied">Copied From</div>
+      </div>
+      ${positions.map(p => {
+        const pnl = p.unrealized_pnl || 0;
+        const pnlPct = p.entry_price > 0 ? ((p.current_price - p.entry_price) / p.entry_price * 100) : 0;
+        return `
+          <div class="paper-position-row">
+            <div class="pp-market">
+              <a href="https://polymarket.com/event/${p.market_slug}" target="_blank" class="market-link">
+                ${p.market?.substring(0, 50) || 'Unknown'}...
+              </a>
+            </div>
+            <div class="pp-outcome">${p.outcome}</div>
+            <div class="pp-entry">${(p.entry_price * 100).toFixed(1)}¢</div>
+            <div class="pp-current">${(p.current_price * 100).toFixed(1)}¢</div>
+            <div class="pp-pnl ${pnl >= 0 ? 'positive' : 'negative'}">
+              ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}
+              <span class="pnl-pct">(${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</span>
+            </div>
+            <div class="pp-copied">
+              <a href="https://polymarket.com/profile/${p.copied_from}" target="_blank" class="trader-link">
+                ${p.copied_from_name?.substring(0, 12) || p.copied_from?.substring(0, 12)}...
+              </a>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    `;
+  } catch (error) {
+    console.error("Error fetching paper positions:", error);
+    container.innerHTML = '<div class="empty-state"><p>Failed to load positions</p></div>';
+  }
+}
+
+function renderPaperHistory(trades) {
+  const container = document.getElementById("paper-history");
+
+  if (!trades || trades.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <p>No trade history yet</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = trades.map(t => {
+    const statusIcon = t.status === 'open' ? '🟡' : (t.status === 'won' ? '✅' : '❌');
+    const pnlClass = t.pnl_usd >= 0 ? 'positive' : 'negative';
+
+    return `
+      <div class="paper-history-row ${t.status}">
+        <div class="ph-status">${statusIcon}</div>
+        <div class="ph-market">${t.market?.substring(0, 45) || 'Unknown'}...</div>
+        <div class="ph-outcome">${t.outcome}</div>
+        <div class="ph-entry">${(t.entry * 100).toFixed(1)}¢</div>
+        <div class="ph-pnl ${t.status !== 'open' ? pnlClass : ''}">
+          ${t.status === 'open' ? '--' : `${t.pnl_usd >= 0 ? '+' : ''}$${t.pnl_usd.toFixed(2)}`}
+        </div>
+        <div class="ph-copied">${t.copied_from?.substring(0, 10)}...</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function updatePaperPrices() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Updating...';
+
+  try {
+    await fetch(`${API_BASE}/paper-trader/update-prices`, { method: "POST" });
+    await fetchPaperStats();
+    await fetchPaperPositions();
+  } catch (error) {
+    console.error("Error updating paper prices:", error);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔄 Update Prices';
+  }
+}
+
+async function scanPaperTrades() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Scanning...';
+
+  try {
+    const response = await fetch(`${API_BASE}/paper-trader/scan`, { method: "POST" });
+    const result = await response.json();
+
+    if (result.new_trades > 0) {
+      alert(`Found ${result.new_trades} new trades to copy!`);
+    }
+
+    await fetchPaperStats();
+    await fetchPaperPositions();
+  } catch (error) {
+    console.error("Error scanning paper trades:", error);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 Scan for Trades';
   }
 }
 
