@@ -237,10 +237,15 @@ class PaperTrader:
 
                         # Skip small trades
                         usdc_size = float(trade.get("usdcSize") or 0)
+                        their_price = float(trade.get("price") or 0)
+
+                        # Fallback: calculate USD from size * price if usdcSize not provided
+                        if not usdc_size and their_price > 0:
+                            size = float(trade.get("size") or 0)
+                            usdc_size = size * their_price
+
                         if usdc_size < 50:
                             continue
-
-                        their_price = float(trade.get("price") or 0)
                         if their_price <= 0:
                             continue
 
