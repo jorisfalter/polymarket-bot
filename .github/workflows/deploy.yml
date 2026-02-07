@@ -18,7 +18,9 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             cd /opt/polymarket-insider
-            git pull origin main
-            docker compose up -d --build insider-detector
+            git fetch origin
+            git reset --hard origin/main
+            docker compose build --no-cache insider-detector
+            docker compose up -d insider-detector
             echo "✅ Deployed at $(date)"
 
