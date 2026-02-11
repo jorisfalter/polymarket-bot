@@ -31,6 +31,8 @@ from .backtester import backtester, KNOWN_CASES
 from .leaderboard import tracker
 from .copy_trader import copy_trader, CopyTradeConfig, CopyMode
 from .paper_trader import paper_trader
+from .trade_tracker import trade_tracker
+from .auto_seller import auto_seller
 
 
 def _get_trade_key(trade) -> str:
@@ -287,6 +289,12 @@ async def lifespan(app: FastAPI):
         'interval',
         minutes=10,  # Update prices every 10 minutes
         id='paper_price_job'
+    )
+    scheduler.add_job(
+        trade_tracker.check_targets,
+        'interval',
+        seconds=30,  # Check trade targets every 30 seconds
+        id='trade_monitor_job'
     )
     scheduler.start()
 
@@ -819,6 +827,211 @@ async def update_paper_trade_prices():
     return paper_trader.get_stats()
 
 
+# ==================== TRADE TRACKER ====================
+
+@app.get("/api/trades")
+async def get_tracked_trades():
+    """Get all tracked trades with current prices"""
+    await trade_tracker.update_prices()
+    trades = trade_tracker.get_all_trades()
+    return {
+        "trades": [t.to_dict() for t in trades],
+        "stats": trade_tracker.get_stats(),
+    }
+
+
+@app.post("/api/trades")
+async def add_tracked_trade(
+    market_slug: str = Query(..., description="Market slug from Polymarket URL"),
+    token_id: str = Query(..., description="CLOB token ID for the outcome"),
+    condition_id: str = Query("", description="Market condition ID"),
+    side: str = Query("YES", description="YES or NO"),
+    entry_price: float = Query(..., description="Entry price in cents (e.g., 4.0)"),
+    target_price: float = Query(..., description="Target sell price in cents"),
+    shares: float = Query(..., description="Number of shares"),
+    market_question: str = Query("", description="Market question text"),
+    auto_sell: bool = Query(True, description="Enable auto-sell at target"),
+    notes: str = Query("", description="Optional notes"),
+):
+    """Add a new trade to track"""
+    trade = trade_tracker.add_trade(
+        market_slug=market_slug,
+        token_id=token_id,
+        condition_id=condition_id,
+        side=side,
+        entry_price=entry_price,
+        target_price=target_price,
+        shares=shares,
+        market_question=market_question,
+        auto_sell=auto_sell,
+        notes=notes,
+    )
+    return trade.to_dict()
+
+
+@app.get("/api/trades/{trade_id}")
+async def get_tracked_trade(trade_id: str):
+    """Get a specific tracked trade"""
+    trade = trade_tracker.get_trade(trade_id)
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    return trade.to_dict()
+
+
+@app.get("/api/trades/{trade_id}/price")
+async def get_trade_price(trade_id: str):
+    """Get current price for a tracked trade"""
+    trade = trade_tracker.get_trade(trade_id)
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+
+    price = await trade_tracker.fetch_price(trade.token_id)
+    if price is not None:
+        trade.current_price = price
+        trade.updated_at = datetime.utcnow().isoformat()
+        trade_tracker._save()
+
+    return {
+        "trade_id": trade_id,
+        "current_price": trade.current_price,
+        "entry_price": trade.entry_price,
+        "target_price": trade.target_price,
+        "pnl_pct": trade.pnl_pct,
+        "progress_pct": trade.progress_pct,
+        "target_hit": trade.target_hit,
+        "status": trade.status,
+        "updated_at": trade.updated_at,
+    }
+
+
+@app.patch("/api/trades/{trade_id}")
+async def update_tracked_trade(
+    trade_id: str,
+    target_price: Optional[float] = None,
+    auto_sell: Optional[bool] = None,
+    status: Optional[str] = None,
+    notes: Optional[str] = None,
+):
+    """Update a tracked trade"""
+    updates = {}
+    if target_price is not None:
+        updates["target_price"] = target_price
+    if auto_sell is not None:
+        updates["auto_sell"] = auto_sell
+    if status is not None:
+        updates["status"] = status
+    if notes is not None:
+        updates["notes"] = notes
+
+    trade = trade_tracker.update_trade(trade_id, **updates)
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    return trade.to_dict()
+
+
+@app.delete("/api/trades/{trade_id}")
+async def delete_tracked_trade(trade_id: str):
+    """Remove a trade from tracking"""
+    if trade_tracker.delete_trade(trade_id):
+        return {"status": "deleted", "trade_id": trade_id}
+    raise HTTPException(status_code=404, detail="Trade not found")
+
+
+@app.post("/api/trades/{trade_id}/sell")
+async def execute_trade_sell(trade_id: str, manual: bool = Query(False, description="Mark sold without executing")):
+    """
+    Execute a sell order for a tracked trade.
+    If auto_seller is ready, executes actual sell on Polymarket.
+    If manual=True or auto_seller not ready, just marks as sold for tracking.
+    """
+    trade = trade_tracker.get_trade(trade_id)
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+
+    # If manual mode or auto-seller not ready, just mark as sold
+    if manual or not auto_seller.is_ready():
+        trade = trade_tracker.update_trade(trade_id, status="sold")
+        return {
+            "status": "sold",
+            "trade_id": trade_id,
+            "execution": "manual",
+            "final_price": trade.current_price,
+            "pnl_usd": trade.pnl_usd,
+            "pnl_pct": trade.pnl_pct,
+        }
+
+    # Execute actual sell
+    result = await auto_seller.execute_sell(
+        trade_id=trade_id,
+        token_id=trade.token_id,
+        shares=trade.shares,
+        min_price=None,  # Market order
+    )
+
+    if result.success:
+        trade = trade_tracker.update_trade(
+            trade_id,
+            status="sold",
+            notes=f"{trade.notes} | Sold at {result.price*100:.2f}¢ (Order: {result.order_id})"
+        )
+        return {
+            "status": "sold",
+            "trade_id": trade_id,
+            "execution": "auto",
+            "order_id": result.order_id,
+            "shares_sold": result.shares_sold,
+            "price": result.price * 100,  # Convert to cents
+            "pnl_usd": trade.pnl_usd,
+            "pnl_pct": trade.pnl_pct,
+        }
+    else:
+        raise HTTPException(status_code=500, detail=f"Sell failed: {result.error}")
+
+
+@app.get("/api/trades/auto-seller/status")
+async def get_auto_seller_status():
+    """Get auto-seller status and configuration."""
+    return auto_seller.get_status()
+
+
+@app.get("/api/trades/search/markets")
+async def search_markets_for_tracking(
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(10, le=20),
+):
+    """Search for markets to add for tracking"""
+    markets = await trade_tracker.search_markets(q, limit)
+    return [
+        {
+            "slug": m.get("slug", ""),
+            "question": m.get("question", ""),
+            "condition_id": m.get("conditionId", ""),
+            "clob_token_ids": m.get("clobTokenIds", []),
+            "outcomes": m.get("outcomes", ["Yes", "No"]),
+            "outcome_prices": m.get("outcomePrices", []),
+        }
+        for m in markets
+    ]
+
+
+@app.get("/api/trades/lookup/{slug}")
+async def lookup_market_by_slug(slug: str):
+    """Look up market details by slug"""
+    market = await trade_tracker.lookup_market(slug)
+    if not market:
+        raise HTTPException(status_code=404, detail="Market not found")
+    return {
+        "slug": market.get("slug", ""),
+        "question": market.get("question", ""),
+        "condition_id": market.get("conditionId", ""),
+        "clob_token_ids": market.get("clobTokenIds", []),
+        "outcomes": market.get("outcomes", ["Yes", "No"]),
+        "outcome_prices": market.get("outcomePrices", []),
+        "volume_24h": market.get("volume24hr", 0),
+        "liquidity": market.get("liquidity", 0),
+    }
+
+
 # Serve frontend
 @app.get("/")
 async def serve_frontend():
@@ -832,6 +1045,14 @@ async def serve_frontend():
 async def serve_copy_trading():
     return FileResponse(
         "frontend/copy.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
+@app.get("/trades")
+async def serve_trades():
+    return FileResponse(
+        "frontend/trades.html",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
     )
 

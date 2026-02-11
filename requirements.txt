@@ -28,3 +28,6 @@ loguru==0.7.2
 # Date/Time
 python-dateutil==2.8.2
 
+# Polymarket Trading (for auto-sell functionality)
+py-clob-client>=0.17.0
+

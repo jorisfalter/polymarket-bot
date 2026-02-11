@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     poly_api_key: Optional[str] = None
     poly_api_secret: Optional[str] = None
     poly_passphrase: Optional[str] = None
+
+    # Polymarket Trading Credentials (for auto-sell execution)
+    # Export private key from: https://reveal.magic.link/polymarket
+    poly_private_key: Optional[str] = None
+    poly_wallet_address: Optional[str] = None
     
     # Detection Thresholds - Based on the Polymarket Watch parameters
     min_notional_alert: float = 1000  # Minimum $ bet to track

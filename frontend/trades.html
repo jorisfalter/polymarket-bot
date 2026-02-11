@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trade Tracker | Polymarket</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=11">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">🎯</span>
+                    <span class="logo-text">TRADE<span class="logo-highlight">TRACKER</span></span>
+                </div>
+                <span class="tagline">Auto-Sell Position Monitor</span>
+            </div>
+            <div class="header-right">
+                <nav class="main-nav">
+                    <a href="/" class="nav-link">🔍 Insider Detection</a>
+                    <a href="/copy" class="nav-link">📄 Copy Trading</a>
+                    <a href="/trades" class="nav-link active">🎯 Trade Tracker</a>
+                </nav>
+                <div class="auto-seller-indicator" id="auto-seller-indicator">
+                    <span class="pulse orange"></span> CHECKING...
+                </div>
+                <button class="scan-btn" onclick="openAddTradeModal()">
+                    <span class="scan-icon">+</span> Add Trade
+                </button>
+            </div>
+        </header>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-value" id="stat-total">--</div>
+                <div class="stat-label">Total Trades</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-active">--</div>
+                <div class="stat-label">Monitoring</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-targets">--</div>
+                <div class="stat-label">Targets Hit</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-invested">$--</div>
+                <div class="stat-label">Invested</div>
+            </div>
+            <div class="stat-card highlight" id="stat-pnl-card">
+                <div class="stat-value" id="stat-pnl">$--</div>
+                <div class="stat-label">Total P&L</div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content single-panel">
+            <div class="panel trades-view">
+                <div class="panel-header">
+                    <h2>🎯 Tracked Positions</h2>
+                    <div class="panel-actions">
+                        <button class="refresh-btn" onclick="refreshTrades()">🔄 Refresh Prices</button>
+                    </div>
+                </div>
+                <div class="trades-list" id="trades-list">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <span>Loading trades...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <span>Price updates every 10 seconds</span>
+            <span class="footer-divider">|</span>
+            <span>Last update: <span id="last-update">--</span></span>
+            <span class="footer-divider">|</span>
+            <span class="disclaimer">Not financial advice. For research purposes only.</span>
+        </footer>
+    </div>
+
+    <!-- Add Trade Modal -->
+    <div class="modal" id="add-trade-modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeAddTradeModal()">&times;</button>
+            <div id="modal-body">
+                <h2 style="margin-bottom: 20px;">Add Trade to Track</h2>
+
+                <!-- Search Section -->
+                <div class="modal-section">
+                    <h3>Search Market</h3>
+                    <div class="search-input-group">
+                        <input type="text" class="search-input" id="market-search" placeholder="Search markets (e.g., 'Jesus', 'Bitcoin')..." />
+                        <button class="search-btn" onclick="searchMarkets()">Search</button>
+                    </div>
+                    <div class="market-search-results" id="market-search-results"></div>
+                </div>
+
+                <!-- Trade Form (hidden until market selected) -->
+                <div class="trade-form" id="trade-form" style="display: none;">
+                    <div class="selected-market" id="selected-market"></div>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Side</label>
+                            <select id="trade-side" class="form-input">
+                                <option value="YES">YES</option>
+                                <option value="NO">NO</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Token ID</label>
+                            <input type="text" id="trade-token-id" class="form-input" readonly />
+                        </div>
+                        <div class="form-group">
+                            <label>Entry Price (cents)</label>
+                            <input type="number" id="trade-entry" class="form-input" step="0.1" placeholder="4.0" />
+                        </div>
+                        <div class="form-group">
+                            <label>Target Price (cents)</label>
+                            <input type="number" id="trade-target" class="form-input" step="0.1" placeholder="4.5" />
+                        </div>
+                        <div class="form-group">
+                            <label>Shares</label>
+                            <input type="number" id="trade-shares" class="form-input" placeholder="100" />
+                        </div>
+                        <div class="form-group">
+                            <label>Auto-Sell</label>
+                            <select id="trade-autosell" class="form-input">
+                                <option value="true">Enabled</option>
+                                <option value="false">Disabled</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label>Notes (optional)</label>
+                        <input type="text" id="trade-notes" class="form-input" placeholder="Any notes about this trade..." />
+                    </div>
+
+                    <input type="hidden" id="trade-slug" />
+                    <input type="hidden" id="trade-condition-id" />
+                    <input type="hidden" id="trade-question" />
+
+                    <div class="form-actions">
+                        <button class="cancel-btn" onclick="resetTradeForm()">Cancel</button>
+                        <button class="submit-btn" onclick="submitTrade()">Add Trade</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trade Detail Modal -->
+    <div class="modal" id="trade-detail-modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeTradeDetailModal()">&times;</button>
+            <div id="trade-detail-body">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/trades.js?v=11"></script>
+</body>
+</html>
