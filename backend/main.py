@@ -828,6 +828,14 @@ async def serve_frontend():
     )
 
 
+@app.get("/copy")
+async def serve_copy_trading():
+    return FileResponse(
+        "frontend/copy.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
 # Mount static files
 try:
     app.mount("/static", StaticFiles(directory="frontend"), name="static")
