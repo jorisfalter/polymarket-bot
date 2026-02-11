@@ -82,3 +82,4 @@ yarn-error.log*
 *.pyc
 *.pyo
 
+data/
