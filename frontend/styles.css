@@ -256,6 +256,54 @@ body::after {
     box-shadow: 0 5px 20px rgba(0, 255, 136, 0.4);
 }
 
+/* Navigation Menu */
+.main-nav {
+    display: flex;
+    gap: var(--spacing-xs);
+    background: var(--bg-tertiary);
+    padding: 4px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.nav-link:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.nav-link.active {
+    color: var(--bg-primary);
+    background: var(--accent-primary);
+    box-shadow: 0 2px 8px rgba(0, 255, 136, 0.3);
+}
+
+.nav-link.active:hover {
+    background: var(--accent-primary);
+}
+
+.nav-icon {
+    font-size: 1rem;
+}
+
+.nav-text {
+    font-weight: 600;
+}
+
 .scan-icon {
     font-size: 1rem;
 }
