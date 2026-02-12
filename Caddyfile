@@ -1,11 +1,11 @@
-insider.aitigers.com {
-    reverse_proxy insider-detector:8000
+insider.ai-tigers.com {
+    reverse_proxy 127.0.0.1:8000
 }
 
-animations.aitigers.com {
-    root * /srv
+animations.ai-tigers.com {
+    root * /srv/animations
     file_server
-    try_files {path} /animation-showcase.html
+    try_files {path} /index.html
     encode gzip
     header Cache-Control "no-cache"
 }

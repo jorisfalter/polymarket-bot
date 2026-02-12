@@ -21,6 +21,11 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             docker compose build --no-cache insider-detector
-            docker compose up -d
+            docker compose up -d insider-detector
+            # Deploy animation showcase to host Caddy
+            sudo mkdir -p /srv/animations
+            sudo cp animation-showcase.html /srv/animations/index.html
+            sudo cp Caddyfile /etc/caddy/Caddyfile
+            sudo systemctl reload caddy || sudo caddy reload --config /etc/caddy/Caddyfile
             echo "✅ Deployed at $(date)"
 
