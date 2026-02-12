@@ -1057,6 +1057,14 @@ async def serve_trades():
     )
 
 
+@app.get("/animations")
+async def serve_animations():
+    return FileResponse(
+        "animation-showcase.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
 # Mount static files
 try:
     app.mount("/static", StaticFiles(directory="frontend"), name="static")
