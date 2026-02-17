@@ -214,42 +214,74 @@ class TradeTracker:
 
     async def fetch_price(self, token_id: str, side: str = "sell") -> Optional[float]:
         """
-        Fetch current price for a token from CLOB API.
+        Fetch current price for a token from multiple sources.
         Returns price in cents (0-100).
         """
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                # Try the price endpoint
-                response = await client.get(
-                    f"{self.CLOB_URL}/price",
-                    params={"token_id": token_id, "side": side}
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    price = float(data.get("price", 0))
-                    # Price is 0-1, convert to cents
-                    return price * 100
+                # Method 1: Try the CLOB price endpoint
+                try:
+                    response = await client.get(
+                        f"{self.CLOB_URL}/price",
+                        params={"token_id": token_id, "side": side}
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        price = float(data.get("price", 0))
+                        if price > 0:
+                            return price * 100
+                except Exception as e:
+                    logger.debug(f"CLOB price endpoint failed: {e}")
 
-                # Fallback: try midpoint from order book
-                response = await client.get(
-                    f"{self.CLOB_URL}/book",
-                    params={"token_id": token_id}
-                )
-                if response.status_code == 200:
-                    book = response.json()
-                    bids = book.get("bids", [])
-                    asks = book.get("asks", [])
+                # Method 2: Try order book midpoint
+                try:
+                    response = await client.get(
+                        f"{self.CLOB_URL}/book",
+                        params={"token_id": token_id}
+                    )
+                    if response.status_code == 200:
+                        book = response.json()
+                        bids = book.get("bids", [])
+                        asks = book.get("asks", [])
 
-                    best_bid = float(bids[0]["price"]) if bids else 0
-                    best_ask = float(asks[0]["price"]) if asks else 0
+                        best_bid = float(bids[0]["price"]) if bids else 0
+                        best_ask = float(asks[0]["price"]) if asks else 0
 
-                    if best_bid > 0 and best_ask > 0:
-                        midpoint = (best_bid + best_ask) / 2
-                        return midpoint * 100
-                    elif best_bid > 0:
-                        return best_bid * 100
-                    elif best_ask > 0:
-                        return best_ask * 100
+                        # Only use if spread is reasonable (< 50%)
+                        if best_bid > 0 and best_ask > 0 and best_ask < 0.99:
+                            midpoint = (best_bid + best_ask) / 2
+                            return midpoint * 100
+                        elif best_bid > 0 and best_bid < 0.99:
+                            return best_bid * 100
+                except Exception as e:
+                    logger.debug(f"CLOB book endpoint failed: {e}")
+
+                # Method 3: Try Gamma API as fallback
+                try:
+                    # Find the market by token_id to get slug
+                    for trade in self.trades.values():
+                        if trade.token_id == token_id and trade.market_slug:
+                            response = await client.get(
+                                f"{self.GAMMA_URL}/markets",
+                                params={"slug": trade.market_slug}
+                            )
+                            if response.status_code == 200:
+                                markets = response.json()
+                                if markets:
+                                    market = markets[0]
+                                    # Get price from outcomePrices
+                                    prices = market.get("outcomePrices", "[]")
+                                    if isinstance(prices, str):
+                                        import json as json_module
+                                        prices = json_module.loads(prices)
+                                    if prices and len(prices) > 0:
+                                        # YES is index 0
+                                        price = float(prices[0])
+                                        logger.debug(f"Gamma API price for {trade.market_slug}: {price*100:.2f}c")
+                                        return price * 100
+                            break
+                except Exception as e:
+                    logger.debug(f"Gamma API fallback failed: {e}")
 
         except Exception as e:
             logger.error(f"Error fetching price for {token_id}: {e}")
@@ -262,8 +294,6 @@ class TradeTracker:
         if not active_trades:
             return
 
-        logger.info(f"Updating prices for {len(active_trades)} active trades")
-
         for trade in active_trades:
             price = await self.fetch_price(trade.token_id)
             if price is not None:
@@ -271,18 +301,20 @@ class TradeTracker:
                 trade.current_price = price
                 trade.updated_at = datetime.utcnow().isoformat()
 
+                # Log every price check for debugging
+                progress = trade.progress_pct
+                logger.info(
+                    f"[{trade.id}] {trade.market_question[:30]}... | "
+                    f"Price: {price:.2f}c | Target: {trade.target_price:.2f}c | "
+                    f"Progress: {progress:.1f}%"
+                )
+
                 # Check for target hit
                 if trade.target_hit and trade.status == "monitoring":
                     trade.status = "target_hit"
-                    logger.info(
-                        f"TARGET HIT for trade {trade.id}: "
-                        f"{trade.current_price:.2f}c >= {trade.target_price:.2f}c"
-                    )
-
-                if abs(old_price - price) > 0.01:
-                    logger.debug(
-                        f"Trade {trade.id}: {old_price:.2f}c -> {price:.2f}c "
-                        f"(target: {trade.target_price:.2f}c)"
+                    logger.warning(
+                        f"🎯 TARGET HIT for trade {trade.id}: "
+                        f"{trade.current_price:.2f}c >= {trade.target_price:.2f}c - TRIGGERING AUTO-SELL"
                     )
 
         self._save()

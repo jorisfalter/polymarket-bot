@@ -293,7 +293,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         trade_tracker.check_targets,
         'interval',
-        seconds=30,  # Check trade targets every 30 seconds
+        seconds=10,  # Check trade targets every 10 seconds
         id='trade_monitor_job'
     )
     scheduler.start()
