@@ -15,7 +15,23 @@ class NotificationService:
     """
     Send alerts via email (Postmark) or webhook (n8n, etc.)
     """
-    
+
+    # Sports-related keywords to filter out
+    SPORTS_KEYWORDS = [
+        "nfl", "nba", "mlb", "nhl", "mls", "ufc", "pga", "ncaa", "nascar",
+        "football", "basketball", "baseball", "hockey", "soccer", "golf",
+        "tennis", "boxing", "mma", "wrestling", "cricket", "rugby",
+        "super bowl", "world series", "stanley cup", "champions league",
+        "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
+        "march madness", "playoffs", "finals",
+        "patriots", "chiefs", "eagles", "cowboys", "packers", "49ers",
+        "lakers", "celtics", "warriors", "bulls", "nets", "knicks",
+        "yankees", "dodgers", "red sox", "cubs", "mets", "giants",
+        "f1", "formula 1", "grand prix", "indy 500", "daytona",
+        "wimbledon", "us open", "french open", "australian open",
+        "mvp", "touchdown", "home run", "slam dunk", "hat trick",
+    ]
+
     def __init__(self):
         self.postmark_token = settings.postmark_api_token
         self.postmark_from = settings.postmark_from_email
@@ -23,12 +39,25 @@ class NotificationService:
         self.webhook_url = settings.webhook_url
         self.min_severity = settings.notification_min_severity
         self.dashboard_url = settings.dashboard_url
+        self.exclude_sports = settings.exclude_sports_alerts
+
+    def _is_sports_market(self, market_question: str, market_slug: str) -> bool:
+        """Check if market is sports-related based on keywords."""
+        text = f"{market_question} {market_slug}".lower()
+        return any(keyword in text for keyword in self.SPORTS_KEYWORDS)
         
     async def notify(self, suspicious: SuspiciousTrade) -> bool:
         """
         Send notification for a suspicious trade
         Returns True if at least one notification was sent
         """
+        trade = suspicious.trade
+
+        # Skip sports markets if configured
+        if self.exclude_sports and self._is_sports_market(trade.market_question, trade.market_slug):
+            logger.debug(f"Skipping sports alert: {trade.market_question[:50]}...")
+            return False
+
         # Check severity threshold
         severity_levels = {
             AlertSeverity.LOW: 1,
@@ -36,10 +65,10 @@ class NotificationService:
             AlertSeverity.HIGH: 3,
             AlertSeverity.CRITICAL: 4
         }
-        
+
         min_level = severity_levels.get(AlertSeverity(self.min_severity), 2)
         trade_level = severity_levels.get(suspicious.severity, 1)
-        
+
         if trade_level < min_level:
             return False
         

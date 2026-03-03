@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     # Notification settings
     notification_min_severity: str = "medium"  # low, medium, high, critical
     dashboard_url: str = "http://localhost:8000"  # Public URL for email links
+    exclude_sports_alerts: bool = True  # Skip alerts for sports events
     
     # Database
     database_url: str = "sqlite+aiosqlite:///./insider_detector.db"
