@@ -359,52 +359,69 @@ class PolymarketClient:
         cutoff = datetime.utcnow() - timedelta(hours=hours)
         
         # Strategy 1: Try Data API trades endpoint (has real wallet addresses)
-        try:
-            response = await self.client.get(
-                f"{self.data_url}/trades",
-                params={"limit": 200}  # Get recent trades
-            )
-            if response.status_code == 200:
-                trades = response.json()
-                if isinstance(trades, list):
-                    logger.info(f"Got {len(trades)} trades from Data API")
-                    for trade in trades:
-                        # Normalize field names
-                        trade["maker"] = trade.get("user") or trade.get("proxyWallet") or trade.get("maker")
-                        # Capture market info if available
-                        trade["market"] = trade.get("conditionId") or trade.get("market") or trade.get("marketId")
-                        trade["market_question"] = trade.get("title") or trade.get("question") or trade.get("market_question", "")
-                        trade["market_slug"] = trade.get("slug") or trade.get("market_slug", "")
-                        all_trades.append(trade)
-        except Exception as e:
-            logger.debug(f"Data API trades not available: {e}")
-        
-        # Strategy 2: Try Gamma API activity feed
-        try:
-            response = await self.client.get(
-                f"{self.gamma_url}/activity",
-                params={"limit": 200}
-            )
-            if response.status_code == 200:
-                activity = response.json()
-                if isinstance(activity, list):
-                    logger.info(f"Got {len(activity)} activities from Gamma API")
-                    for item in activity:
-                        # Normalize - activity items have user field
-                        item["maker"] = item.get("user") or item.get("proxyWallet") or item.get("maker")
-                        # Capture market info if available
-                        item["market"] = item.get("conditionId") or item.get("market") or item.get("marketId")
-                        item["market_question"] = item.get("title") or item.get("question") or item.get("market_question", "")
-                        item["market_slug"] = item.get("slug") or item.get("market_slug", "")
-                        all_trades.append(item)
-        except Exception as e:
-            logger.debug(f"Gamma activity feed not available: {e}")
+        # Paginate to get up to 1500 trades (3 pages of 500)
+        for page_offset in range(0, 1500, 500):
+            try:
+                response = await self.client.get(
+                    f"{self.data_url}/trades",
+                    params={"limit": 500, "offset": page_offset}
+                )
+                if response.status_code == 200:
+                    trades = response.json()
+                    if isinstance(trades, list) and trades:
+                        if page_offset == 0:
+                            logger.info(f"Got {len(trades)} trades from Data API (page 1)")
+                        for trade in trades:
+                            trade["maker"] = trade.get("user") or trade.get("proxyWallet") or trade.get("maker")
+                            trade["market"] = trade.get("conditionId") or trade.get("market") or trade.get("marketId")
+                            trade["market_question"] = trade.get("title") or trade.get("question") or trade.get("market_question", "")
+                            trade["market_slug"] = trade.get("slug") or trade.get("market_slug", "")
+                            all_trades.append(trade)
+                        if len(trades) < 500:
+                            break  # No more pages
+                    else:
+                        break
+            except Exception as e:
+                logger.debug(f"Data API trades not available: {e}")
+                break
+
+        if all_trades:
+            logger.info(f"Total from Data API: {len(all_trades)} trades ({(len(all_trades)-1)//500 + 1} pages)")
+
+        # Strategy 2: Try Gamma API activity feed (paginated)
+        gamma_count = 0
+        for page_offset in range(0, 1500, 500):
+            try:
+                response = await self.client.get(
+                    f"{self.gamma_url}/activity",
+                    params={"limit": 500, "offset": page_offset}
+                )
+                if response.status_code == 200:
+                    activity = response.json()
+                    if isinstance(activity, list) and activity:
+                        for item in activity:
+                            item["maker"] = item.get("user") or item.get("proxyWallet") or item.get("maker")
+                            item["market"] = item.get("conditionId") or item.get("market") or item.get("marketId")
+                            item["market_question"] = item.get("title") or item.get("question") or item.get("market_question", "")
+                            item["market_slug"] = item.get("slug") or item.get("market_slug", "")
+                            all_trades.append(item)
+                        gamma_count += len(activity)
+                        if len(activity) < 500:
+                            break
+                    else:
+                        break
+            except Exception as e:
+                logger.debug(f"Gamma activity feed not available: {e}")
+                break
+
+        if gamma_count:
+            logger.info(f"Total from Gamma API: {gamma_count} activities")
         
         # Strategy 3: Get top markets and fetch their recent activity
-        markets = await self.get_markets(limit=20, order="volume24hr")
+        markets = await self.get_markets(limit=40, order="volume24hr")
         logger.info(f"Checking activity from {len(markets)} high-volume markets")
-        
-        for market in markets[:10]:
+
+        for market in markets[:20]:
             try:
                 condition_id = market.get("conditionId")
                 clob_token_ids = market.get("clobTokenIds", [])
@@ -497,6 +514,46 @@ class PolymarketClient:
         logger.info(f"Found {len(filtered)} trades with wallet addresses (min ${min_notional})")
         return sorted(filtered, key=lambda x: x.get("notional_usd", 0), reverse=True)
     
+    async def get_wallet_trade_count(self, address: str) -> int:
+        """Lightweight check: fetch minimal trades to determine wallet activity level."""
+        try:
+            response = await self.client.get(
+                f"{self.data_url}/trades",
+                params={"user": address, "limit": 10}
+            )
+            response.raise_for_status()
+            data = response.json()
+            return len(data) if isinstance(data, list) else 0
+        except Exception:
+            return -1  # Unknown, don't penalize
+
+    async def get_market_trades_deep(
+        self,
+        condition_id: str,
+        limit: int = 500
+    ) -> List[Dict[str, Any]]:
+        """Deep fetch trades for a specific market, normalized for the scan pipeline."""
+        trades = await self.get_market_trades(condition_id, limit=limit)
+        normalized = []
+        for trade in trades:
+            wallet = trade.get("user") or trade.get("proxyWallet") or trade.get("maker") or ""
+            if not wallet or len(wallet) < 10:
+                continue
+            trade["maker"] = wallet
+            trade["market"] = condition_id
+            trade["side"] = trade.get("side") or trade.get("type") or "BUY"
+            # Calculate notional
+            shares = float(trade.get("size", 0) or trade.get("amount", 0) or 0)
+            price = float(trade.get("price", 50) or 50)
+            if price <= 1:
+                price = price * 100
+            trade["notional_usd"] = float(trade.get("usdcSize", 0) or 0) or (shares * price / 100)
+            if isinstance(trade["notional_usd"], str):
+                trade["notional_usd"] = float(trade["notional_usd"])
+            trade["price"] = price
+            normalized.append(trade)
+        return normalized
+
     async def get_wallet_profile(self, address: str) -> Dict[str, Any]:
         """
         Build a comprehensive profile for a wallet

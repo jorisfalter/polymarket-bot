@@ -8,7 +8,7 @@ Run with: uvicorn backend.main:app --reload
 """
 import asyncio
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional
 from contextlib import asynccontextmanager
 import uuid
 
@@ -55,161 +55,324 @@ wallet_clusters_store: List[WalletCluster] = []
 activity_log: List[dict] = []
 
 
+async def _prioritize_trades(client: PolymarketClient, trades: List[dict]) -> List[dict]:
+    """
+    Score and sort trades by priority for analysis.
+    Fresh wallets and extreme odds get boosted to the top so they aren't
+    drowned out by whale activity.
+    """
+    if not settings.fresh_wallet_priority_boost:
+        return trades
+
+    # Collect unique wallets and batch-check trade counts
+    unique_wallets = list(set(
+        t.get("maker", "") for t in trades if t.get("maker") and t.get("maker") != "unknown"
+    ))
+    logger.info(f"Checking trade counts for {len(unique_wallets)} unique wallets")
+
+    wallet_trade_counts: dict = {}
+    batch_size = 20
+    for i in range(0, len(unique_wallets), batch_size):
+        batch = unique_wallets[i:i + batch_size]
+        results = await asyncio.gather(
+            *[client.get_wallet_trade_count(addr) for addr in batch],
+            return_exceptions=True
+        )
+        for addr, count in zip(batch, results):
+            wallet_trade_counts[addr] = count if isinstance(count, int) else -1
+
+    # Score each trade
+    for trade in trades:
+        priority = 0
+        wallet = trade.get("maker", "")
+        trade_count = wallet_trade_counts.get(wallet, -1)
+
+        # Fresh wallet boost
+        if 0 <= trade_count < 5:
+            priority += 500
+        elif 0 <= trade_count < 10:
+            priority += 200
+
+        # Extreme odds boost
+        price = float(trade.get("price", 50) or 50)
+        if price <= 1:
+            price = price * 100
+        if price < 10:
+            priority += 300
+        elif price < 20:
+            priority += 150
+
+        # Notional as tiebreaker (scaled down)
+        notional = float(trade.get("notional_usd", 0) or 0)
+        priority += min(notional / 100, 100)  # Cap at 100
+
+        trade["_priority"] = priority
+        trade["_wallet_trade_count"] = trade_count
+
+    trades.sort(key=lambda t: t.get("_priority", 0), reverse=True)
+    fresh_count = sum(1 for t in trades if t.get("_priority", 0) >= 200)
+    logger.info(f"Priority scoring done: {fresh_count} high-priority trades (fresh/extreme odds)")
+    return trades
+
+
+async def _batch_fetch_profiles(
+    client: PolymarketClient, addresses: List[str]
+) -> Dict[str, dict]:
+    """Pre-fetch wallet profiles in parallel batches."""
+    cache: Dict[str, dict] = {}
+    batch_size = 10
+    for i in range(0, len(addresses), batch_size):
+        batch = addresses[i:i + batch_size]
+        results = await asyncio.gather(
+            *[client.get_wallet_profile(addr) for addr in batch],
+            return_exceptions=True
+        )
+        for addr, result in zip(batch, results):
+            if isinstance(result, dict):
+                cache[addr] = result
+            else:
+                cache[addr] = {"address": addr, "total_trades": 0, "unique_markets": 0, "total_volume_usd": 0}
+    return cache
+
+
+def _build_market_data(trade_data: dict, fetched_market: Optional[dict] = None) -> dict:
+    """Build normalized market_data dict from trade info and/or fetched market."""
+    market_id = trade_data.get("market") or trade_data.get("conditionId") or trade_data.get("marketId")
+
+    if trade_data.get("market_question"):
+        return {
+            "id": market_id or "unknown",
+            "slug": trade_data.get("market_slug", ""),
+            "question": trade_data.get("market_question", "Unknown"),
+            "yes_price": float(trade_data.get("price", 50)),
+            "no_price": 100 - float(trade_data.get("price", 50)),
+            "volume_24h": 0, "volume_total": 0, "liquidity": 0, "is_active": True,
+        }
+
+    if fetched_market:
+        return {
+            "id": fetched_market.get("id", market_id),
+            "slug": fetched_market.get("slug", ""),
+            "question": fetched_market.get("question", "Unknown"),
+            "yes_price": float(fetched_market.get("outcomePrices", [50, 50])[0] if fetched_market.get("outcomePrices") else 50),
+            "no_price": float(fetched_market.get("outcomePrices", [50, 50])[1] if fetched_market.get("outcomePrices") else 50),
+            "volume_24h": float(fetched_market.get("volume24hr", 0) or 0),
+            "volume_total": float(fetched_market.get("volume", 0) or 0),
+            "liquidity": float(fetched_market.get("liquidity", 0) or 0),
+            "is_active": fetched_market.get("active", True),
+        }
+
+    return {
+        "id": market_id or "unknown",
+        "slug": "",
+        "question": trade_data.get("title", trade_data.get("description", "Unknown Market")),
+        "yes_price": float(trade_data.get("price", 50)),
+        "no_price": 100 - float(trade_data.get("price", 50)),
+        "volume_24h": 0, "volume_total": 0, "liquidity": 0, "is_active": True,
+    }
+
+
+async def _analyze_and_record(
+    trade_data: dict,
+    wallet_profile: dict,
+    market_data: dict,
+) -> tuple:
+    """Run detection on a single trade, record to activity log. Returns (suspicious, new_alert_bool)."""
+    trader_address = trade_data.get("maker", "")
+    suspicious, signals = detector.analyze_trade_detailed(
+        trade_data=trade_data,
+        wallet_profile=wallet_profile,
+        market_data=market_data,
+    )
+
+    activity_entry = {
+        "id": str(uuid.uuid4()),
+        "timestamp": datetime.utcnow().isoformat(),
+        "market": market_data.get("question", "Unknown")[:80],
+        "market_slug": market_data.get("slug", ""),
+        "trader": trader_address[:12] + "...",
+        "trader_full": trader_address,
+        "side": trade_data.get("side", "BUY"),
+        "notional_usd": trade_data.get("notional_usd", 0),
+        "price": float(trade_data.get("price", 0)),
+        "shares": float(trade_data.get("size", 0)),
+        "signals": signals,
+        "total_score": sum(s["score"] for s in signals),
+        "is_alert": suspicious is not None,
+        "wallet_trades": wallet_profile.get("total_trades", 0),
+        "wallet_markets": wallet_profile.get("unique_markets", 0),
+    }
+
+    existing_traders = [(a["trader_full"], a["market"]) for a in activity_log[-100:]]
+    if (trader_address, activity_entry["market"]) not in existing_traders:
+        activity_log.insert(0, activity_entry)
+        while len(activity_log) > 500:
+            activity_log.pop()
+
+    new_alert = False
+    if suspicious:
+        alert = InsiderAlert(
+            id=str(uuid.uuid4()),
+            created_at=datetime.utcnow(),
+            suspicious_trade=suspicious,
+            market=market_data,
+            insider_probability=suspicious.suspicion_score / 100,
+            narrative=_generate_narrative(suspicious),
+        )
+        trade_key = _get_trade_key(suspicious.trade)
+        if trade_key not in seen_trade_keys:
+            seen_trade_keys.add(trade_key)
+            alerts_store.insert(0, alert)
+            suspicious_trades_store.insert(0, suspicious)
+            new_alert = True
+            logger.info(f"🚨 New alert: {suspicious.severity.value.upper()} - {suspicious.flags[0] if suspicious.flags else 'Suspicious'}")
+            try:
+                notifier = get_notifier()
+                await notifier.notify(suspicious)
+            except Exception as e:
+                logger.error(f"Notification failed: {e}")
+
+        while len(alerts_store) > 500:
+            alerts_store.pop()
+        if len(seen_trade_keys) > 10000:
+            seen_trade_keys.clear()
+            for a in alerts_store:
+                seen_trade_keys.add(_get_trade_key(a.suspicious_trade.trade))
+
+    return suspicious, new_alert
+
+
 async def scan_for_suspicious_activity():
     """
-    Background task that periodically scans for suspicious trades
+    Background task that periodically scans for suspicious trades.
+
+    Pipeline:
+    1. Fetch large trades (now 500 from each source)
+    2. Priority-score trades (fresh wallets + extreme odds first)
+    3. Batch-fetch wallet profiles
+    4. Analyze top N trades (configurable, default 200)
+    5. Deep scan hot markets with multiple alerts or many fresh wallets
     """
     logger.info("🔍 Scanning for suspicious activity...")
 
     try:
         async with PolymarketClient() as client:
-            # Get recent large trades
+            # Step 1: Fetch trades
             large_trades = await client.get_recent_large_trades(
                 min_notional=settings.min_notional_alert,
-                hours=settings.alert_window_hours
+                hours=settings.alert_window_hours,
             )
-
             logger.info(f"Found {len(large_trades)} large trades to analyze")
 
+            # Step 2: Priority scoring
+            large_trades = await _prioritize_trades(client, large_trades)
+
+            # Step 3: Select top N and batch-fetch profiles
+            analysis_cap = settings.scan_analysis_cap
+            trades_to_analyze = large_trades[:analysis_cap]
+            unique_wallets = list(set(
+                t.get("maker", "") for t in trades_to_analyze
+                if t.get("maker") and t.get("maker") != "unknown"
+            ))
+            logger.info(f"Batch-fetching profiles for {len(unique_wallets)} wallets")
+            profile_cache = await _batch_fetch_profiles(client, unique_wallets)
+
+            # Step 4: Analyze
             new_alerts_count = 0
             duplicate_count = 0
+            market_alert_counts: Dict[str, int] = {}
+            market_wallet_sets: Dict[str, set] = {}
 
-            for trade_data in large_trades[:50]:  # Analyze top 50
+            for trade_data in trades_to_analyze:
                 try:
-                    # Get wallet profile
                     trader_address = trade_data.get("maker")
                     if not trader_address or trader_address == "unknown":
-                        continue  # Skip synthetic market entries without real wallets
+                        continue
 
-                    wallet_profile = await client.get_wallet_profile(trader_address)
+                    wallet_profile = profile_cache.get(trader_address)
+                    if not wallet_profile:
+                        wallet_profile = await client.get_wallet_profile(trader_address)
+                        profile_cache[trader_address] = wallet_profile
 
-                    # Get market data - try multiple sources
                     market_id = trade_data.get("market") or trade_data.get("conditionId") or trade_data.get("marketId")
-                    market_data = {}
 
-                    # First check if trade already has market info embedded
-                    if trade_data.get("market_question"):
-                        market_data = {
-                            "id": market_id or "unknown",
-                            "slug": trade_data.get("market_slug", ""),
-                            "question": trade_data.get("market_question", "Unknown"),
-                            "yes_price": float(trade_data.get("price", 50)),
-                            "no_price": 100 - float(trade_data.get("price", 50)),
-                            "volume_24h": 0,
-                            "volume_total": 0,
-                            "liquidity": 0,
-                            "is_active": True
-                        }
-                    # Otherwise try to fetch from API
-                    elif market_id:
+                    market_data = _build_market_data(trade_data)
+                    if not trade_data.get("market_question") and market_id:
                         fetched_market = await client.get_market(market_id)
                         if fetched_market:
-                            market_data = {
-                                "id": fetched_market.get("id", market_id),
-                                "slug": fetched_market.get("slug", ""),
-                                "question": fetched_market.get("question", "Unknown"),
-                                "yes_price": float(fetched_market.get("outcomePrices", [50, 50])[0] if fetched_market.get("outcomePrices") else 50),
-                                "no_price": float(fetched_market.get("outcomePrices", [50, 50])[1] if fetched_market.get("outcomePrices") else 50),
-                                "volume_24h": float(fetched_market.get("volume24hr", 0) or 0),
-                                "volume_total": float(fetched_market.get("volume", 0) or 0),
-                                "liquidity": float(fetched_market.get("liquidity", 0) or 0),
-                                "is_active": fetched_market.get("active", True)
-                            }
+                            market_data = _build_market_data(trade_data, fetched_market)
 
-                    # If still no market data, create minimal placeholder
-                    if not market_data:
-                        market_data = {
-                            "id": market_id or "unknown",
-                            "slug": "",
-                            "question": trade_data.get("title", trade_data.get("description", "Unknown Market")),
-                            "yes_price": float(trade_data.get("price", 50)),
-                            "no_price": 100 - float(trade_data.get("price", 50)),
-                            "volume_24h": 0,
-                            "volume_total": 0,
-                            "liquidity": 0,
-                            "is_active": True
-                        }
+                    suspicious, new_alert = await _analyze_and_record(trade_data, wallet_profile, market_data)
 
-                    # Run detection with detailed signals
-                    suspicious, signals = detector.analyze_trade_detailed(
-                        trade_data=trade_data,
-                        wallet_profile=wallet_profile,
-                        market_data=market_data
-                    )
+                    if new_alert:
+                        new_alerts_count += 1
+                    elif suspicious:
+                        duplicate_count += 1
 
-                    # Log ALL trades to activity log (for debugging/tuning)
-                    activity_entry = {
-                        "id": str(uuid.uuid4()),
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "market": market_data.get("question", "Unknown")[:80],
-                        "market_slug": market_data.get("slug", ""),
-                        "trader": trader_address[:12] + "...",
-                        "trader_full": trader_address,
-                        "side": trade_data.get("side", "BUY"),
-                        "notional_usd": trade_data.get("notional_usd", 0),
-                        "price": float(trade_data.get("price", 0)),
-                        "shares": float(trade_data.get("size", 0)),
-                        "signals": signals,
-                        "total_score": sum(s["score"] for s in signals),
-                        "is_alert": suspicious is not None,
-                        "wallet_trades": wallet_profile.get("total_trades", 0),
-                        "wallet_markets": wallet_profile.get("unique_markets", 0),
-                    }
-
-                    # Avoid duplicate entries
-                    existing_traders = [(a["trader_full"], a["market"]) for a in activity_log[-100:]]
-                    if (trader_address, activity_entry["market"]) not in existing_traders:
-                        activity_log.insert(0, activity_entry)
-                        # Keep last 500 entries
-                        while len(activity_log) > 500:
-                            activity_log.pop()
-
-                    if suspicious:
-                        # Create alert
-                        alert = InsiderAlert(
-                            id=str(uuid.uuid4()),
-                            created_at=datetime.utcnow(),
-                            suspicious_trade=suspicious,
-                            market=market_data,
-                            insider_probability=suspicious.suspicion_score / 100,
-                            narrative=_generate_narrative(suspicious)
-                        )
-
-                        # Use composite key for deduplication (fixes None trade ID bug)
-                        trade_key = _get_trade_key(suspicious.trade)
-
-                        if trade_key not in seen_trade_keys:
-                            seen_trade_keys.add(trade_key)
-                            alerts_store.insert(0, alert)
-                            suspicious_trades_store.insert(0, suspicious)
-                            new_alerts_count += 1
-                            logger.info(f"🚨 New alert: {suspicious.severity.value.upper()} - {suspicious.flags[0] if suspicious.flags else 'Suspicious'}")
-
-                            # Send notification
-                            try:
-                                notifier = get_notifier()
-                                await notifier.notify(suspicious)
-                            except Exception as e:
-                                logger.error(f"Notification failed: {e}")
-                        else:
-                            duplicate_count += 1
-                            logger.debug(f"Skipping duplicate trade: {trade_key[:50]}...")
-
-                        # Keep only last 500 alerts
-                        while len(alerts_store) > 500:
-                            alerts_store.pop()
-
-                        # Limit seen_trade_keys to prevent memory growth
-                        if len(seen_trade_keys) > 10000:
-                            # Keep most recent by clearing old ones
-                            seen_trade_keys.clear()
-                            # Repopulate from current alerts
-                            for a in alerts_store:
-                                seen_trade_keys.add(_get_trade_key(a.suspicious_trade.trade))
+                    # Track market activity for deep scan
+                    if market_id:
+                        if suspicious:
+                            market_alert_counts[market_id] = market_alert_counts.get(market_id, 0) + 1
+                        market_wallet_sets.setdefault(market_id, set()).add(trader_address)
 
                 except Exception as e:
                     logger.error(f"Error analyzing trade: {e}")
                     continue
+
+            # Step 5: Deep scan hot markets
+            if settings.deep_scan_enabled:
+                hot_markets = []
+                for mid in set(list(market_alert_counts.keys()) + list(market_wallet_sets.keys())):
+                    alerts = market_alert_counts.get(mid, 0)
+                    wallets = len(market_wallet_sets.get(mid, set()))
+                    if alerts >= 1 or wallets >= 3:
+                        hot_markets.append((mid, alerts + wallets))
+
+                hot_markets.sort(key=lambda x: x[1], reverse=True)
+                hot_markets = hot_markets[:settings.deep_scan_max_markets]
+
+                if hot_markets:
+                    logger.info(f"🔥 Deep scanning {len(hot_markets)} hot markets")
+
+                for mid, _ in hot_markets:
+                    try:
+                        deep_trades = await client.get_market_trades_deep(mid, limit=500)
+                        analyzed_wallets = set(profile_cache.keys())
+                        fresh_trades = [
+                            t for t in deep_trades
+                            if t.get("maker") not in analyzed_wallets
+                        ]
+                        logger.info(f"Deep scan {mid[:16]}...: {len(deep_trades)} trades, {len(fresh_trades)} new wallets")
+
+                        # Batch-check which are fresh
+                        new_wallets = list(set(t["maker"] for t in fresh_trades))[:50]
+                        new_counts: Dict[str, int] = {}
+                        for i in range(0, len(new_wallets), 20):
+                            batch = new_wallets[i:i+20]
+                            results = await asyncio.gather(
+                                *[client.get_wallet_trade_count(addr) for addr in batch],
+                                return_exceptions=True,
+                            )
+                            for addr, count in zip(batch, results):
+                                new_counts[addr] = count if isinstance(count, int) else -1
+
+                        for trade_data in fresh_trades:
+                            wallet = trade_data["maker"]
+                            count = new_counts.get(wallet, -1)
+                            if count < 0 or count >= 10:
+                                continue
+
+                            if wallet not in profile_cache:
+                                profile_cache[wallet] = await client.get_wallet_profile(wallet)
+                            wallet_profile = profile_cache[wallet]
+
+                            market_data = _build_market_data(trade_data)
+                            suspicious, new_alert = await _analyze_and_record(trade_data, wallet_profile, market_data)
+                            if new_alert:
+                                new_alerts_count += 1
+
+                    except Exception as e:
+                        logger.error(f"Deep scan error for {mid}: {e}")
 
             # Detect wallet clusters (coordinated trading)
             clusters = detector.detect_wallet_clusters(large_trades)

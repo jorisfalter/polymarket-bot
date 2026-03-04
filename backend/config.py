@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     min_notional_medium: float = 500     # Must be $500+ for MEDIUM
     min_notional_low: float = 100        # Minimum to generate any alert
     
+    # Scan pipeline settings
+    scan_analysis_cap: int = 200  # Max trades to analyze per scan (was 50)
+    deep_scan_enabled: bool = True  # Deep-fetch hot markets after initial scan
+    deep_scan_max_markets: int = 5  # Max markets to deep scan
+    fresh_wallet_priority_boost: bool = True  # Prioritize fresh wallets in sorting
+
     # Time windows for analysis
     volume_lookback_hours: int = 168  # 7 days for baseline
     alert_window_hours: int = 24  # Recent activity window
@@ -50,7 +56,7 @@ class Settings(BaseSettings):
     webhook_url: Optional[str] = None  # Your n8n/Zapier webhook URL
     
     # Notification settings
-    notification_min_severity: str = "medium"  # low, medium, high, critical
+    notification_min_severity: str = "high"  # low, medium, high, critical
     dashboard_url: str = "http://localhost:8000"  # Public URL for email links
     exclude_sports_alerts: bool = True  # Skip alerts for sports events
     

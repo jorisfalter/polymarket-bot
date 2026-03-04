@@ -64,6 +64,24 @@ KNOWN_CASES = {
         "expected_min_score": 60,
         "expected_signals": ["Position Size", "Extreme Odds"],
     },
+    "iran_strikes_feb2026": {
+        "id": "iran_strikes_feb2026",
+        "name": "Iran Strikes (Feb 2026)",
+        "description": '6 fresh wallets (flagged by Bubblemaps) made ~$1.2M profit betting YES on US strikes at ~10.8c hours before the airstrikes on Feb 28. Top winner "Careless-Bug" netted $494k.',
+        "condition_id": "0x3488f31e6449f9803f99a8b5dd232c7ad883637f1c86e6953305a2ef19c77f20",
+        "slug": "us-strikes-iran-by-february-28-2026-227-967-547-688-589-491-592-418-452-924-384-915-464-672-196-157-993-596-269-535-381-391-471-256-988-997-296-225-762-973-292-827-345-182-558-215-794-879-189-761",
+        "question": "US strikes Iran by February 28, 2026?",
+        "insider_wallet": "0x1caa6a7ad0c6916aef7b67946de2e57ad24846a0",
+        "insider_name": "Careless-Bug",
+        "expected_min_score": 60,
+        "expected_signals": ["Fresh Wallet", "Extreme Odds", "Position Size"],
+        "other_suspects": [
+            {"wallet": "0x38745db27f7360a287f6ca3c9b6a6a9c76149801", "name": "Planktonbets", "profit": 173907},
+            {"wallet": "0xdde15ebd95330ce69136dc0ccd810d22382e02c5", "name": "Dicedicedice", "profit": 119964},
+            {"wallet": "0x56efadc9defe5b7a21af751e0d026f2cf54136db", "name": "Neodbs", "profit": 88954},
+            {"wallet": "0xa4eb52229991c074bc560f825bf2776d77acd010", "name": "nothingeverhappens911", "profit": 66436},
+        ],
+    },
 }
 
 
