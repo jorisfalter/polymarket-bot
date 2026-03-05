@@ -32,6 +32,15 @@ class NotificationService:
         "mvp", "touchdown", "home run", "slam dunk", "hat trick",
     ]
 
+    # Crypto price markets - can't be insider-traded, just market speculation
+    CRYPTO_PRICE_KEYWORDS = [
+        "bitcoin", "btc", "ethereum", "eth", "solana", "sol",
+        "crypto", "token price", "coin price",
+        "above $", "below $", "reach $", "hit $",
+        "price on", "price by", "price of",
+        "market cap", "all-time high", "ath",
+    ]
+
     def __init__(self):
         self.postmark_token = settings.postmark_api_token
         self.postmark_from = settings.postmark_from_email
@@ -40,12 +49,18 @@ class NotificationService:
         self.min_severity = settings.notification_min_severity
         self.dashboard_url = settings.dashboard_url
         self.exclude_sports = settings.exclude_sports_alerts
+        self.exclude_crypto_price = settings.exclude_crypto_price_alerts
 
     def _is_sports_market(self, market_question: str, market_slug: str) -> bool:
         """Check if market is sports-related based on keywords."""
         text = f"{market_question} {market_slug}".lower()
         return any(keyword in text for keyword in self.SPORTS_KEYWORDS)
-        
+
+    def _is_crypto_price_market(self, market_question: str, market_slug: str) -> bool:
+        """Check if market is a crypto price prediction (not insider-tradeable)."""
+        text = f"{market_question} {market_slug}".lower()
+        return any(keyword in text for keyword in self.CRYPTO_PRICE_KEYWORDS)
+
     async def notify(self, suspicious: SuspiciousTrade) -> bool:
         """
         Send notification for a suspicious trade
@@ -56,6 +71,11 @@ class NotificationService:
         # Skip sports markets if configured
         if self.exclude_sports and self._is_sports_market(trade.market_question, trade.market_slug):
             logger.debug(f"Skipping sports alert: {trade.market_question[:50]}...")
+            return False
+
+        # Skip crypto price markets if configured
+        if self.exclude_crypto_price and self._is_crypto_price_market(trade.market_question, trade.market_slug):
+            logger.debug(f"Skipping crypto price alert: {trade.market_question[:50]}...")
             return False
 
         # Check severity threshold

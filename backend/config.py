@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     notification_min_severity: str = "high"  # low, medium, high, critical
     dashboard_url: str = "http://localhost:8000"  # Public URL for email links
     exclude_sports_alerts: bool = True  # Skip alerts for sports events
+    exclude_crypto_price_alerts: bool = True  # Skip alerts for BTC/ETH price markets
     
     # Database
     database_url: str = "sqlite+aiosqlite:///./insider_detector.db"
