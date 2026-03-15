@@ -25,7 +25,16 @@ jobs:
             cd /opt/polymarket-insider
             git fetch origin
             git reset --hard origin/main
+            # Ensure notification threshold is set to high
+            sed -i 's/NOTIFICATION_MIN_SEVERITY=.*/NOTIFICATION_MIN_SEVERITY="high"/' .env
+            grep -q 'NOTIFICATION_MIN_SEVERITY' .env || echo 'NOTIFICATION_MIN_SEVERITY="high"' >> .env
+
             docker compose build --no-cache insider-detector
             docker compose up -d insider-detector
+
+            # Install daily notification audit cron
+            CRON_CMD="0 8 * * * docker exec polymarket-insider python scripts/review_notifications.py >> /var/log/notification-audit.log 2>&1"
+            (crontab -l 2>/dev/null | grep -v 'review_notifications' ; echo "$CRON_CMD") | crontab -
+
             echo "✅ Deployed at $(date)"
 

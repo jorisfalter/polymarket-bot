@@ -2,13 +2,17 @@
 Notification system for Polymarket Insider Detector
 Supports: Postmark (email), Webhook (n8n/Zapier/Make)
 """
+import json
 import httpx
+from pathlib import Path
 from typing import Optional, List
 from loguru import logger
 from datetime import datetime
 
 from .config import settings
 from .models import SuspiciousTrade, AlertSeverity
+
+NOTIFICATION_LOG_PATH = Path(__file__).parent.parent / "data" / "notification_log.jsonl"
 
 
 class NotificationService:
@@ -78,7 +82,7 @@ class NotificationService:
             logger.debug(f"Skipping crypto price alert: {trade.market_question[:50]}...")
             return False
 
-        # Check severity threshold
+        # Check severity threshold — hardcoded minimum of HIGH
         severity_levels = {
             AlertSeverity.LOW: 1,
             AlertSeverity.MEDIUM: 2,
@@ -86,7 +90,10 @@ class NotificationService:
             AlertSeverity.CRITICAL: 4
         }
 
-        min_level = severity_levels.get(AlertSeverity(self.min_severity), 2)
+        min_level = max(
+            severity_levels.get(AlertSeverity.HIGH, 3),
+            severity_levels.get(AlertSeverity(self.min_severity), 3),
+        )
         trade_level = severity_levels.get(suspicious.severity, 1)
 
         if trade_level < min_level:
@@ -100,6 +107,16 @@ class NotificationService:
                 await self._send_postmark(suspicious)
                 sent = True
                 logger.info(f"📧 Email sent for {suspicious.severity.value} alert")
+                self._log_notification(
+                    "insider_alert",
+                    severity=suspicious.severity.value,
+                    market_question=trade.market_question,
+                    market_slug=trade.market_slug,
+                    trader=suspicious.wallet.address,
+                    notional_usd=trade.notional_usd,
+                    score=suspicious.suspicion_score,
+                    flags=suspicious.flags,
+                )
             except Exception as e:
                 logger.error(f"Failed to send email: {e}")
         
@@ -319,6 +336,14 @@ Dashboard: {self.dashboard_url}
                     response.raise_for_status()
                 sent = True
                 logger.info(f"📧 Smart money email sent for {trader[:12]}...")
+                self._log_notification(
+                    "smart_money",
+                    market_question=market,
+                    trader=trader,
+                    notional_usd=usdc_size,
+                    side=side,
+                    price=price,
+                )
             except Exception as e:
                 logger.error(f"Failed to send smart money email: {e}")
 
@@ -348,6 +373,20 @@ Dashboard: {self.dashboard_url}
                 logger.error(f"Failed to send smart money webhook: {e}")
 
         return sent
+
+    def _log_notification(self, alert_type: str, **kwargs):
+        """Append a JSON line to the notification log for audit purposes."""
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "alert_type": alert_type,
+            **kwargs,
+        }
+        try:
+            NOTIFICATION_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(NOTIFICATION_LOG_PATH, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception as e:
+            logger.warning(f"Failed to write notification log: {e}")
 
     def _severity_color(self, severity: AlertSeverity) -> str:
         colors = {
