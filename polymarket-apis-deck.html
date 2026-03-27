@@ -1,0 +1,1786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket APIs - Deep Dive</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0f;
+    --bg-card: #12121a;
+    --bg-code: #1a1a2e;
+    --text: #e4e4ef;
+    --text-dim: #8888a0;
+    --accent: #6c5ce7;
+    --accent2: #00cec9;
+    --accent3: #fd79a8;
+    --accent4: #fdcb6e;
+    --border: #2d2d44;
+    --green: #00b894;
+    --red: #e17055;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  .deck {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    padding: 60px 80px;
+    overflow-y: auto;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .slide.active { display: flex; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Navigation */
+  .nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 40px;
+    background: linear-gradient(transparent, var(--bg) 40%);
+    z-index: 100;
+    pointer-events: none;
+  }
+
+  .nav > * { pointer-events: auto; }
+
+  .nav button {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .nav button:hover { border-color: var(--accent); background: var(--bg-code); }
+  .nav button:disabled { opacity: 0.3; cursor: default; border-color: var(--border); }
+
+  .progress {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .progress .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: all 0.3s;
+    cursor: pointer;
+  }
+
+  .progress .dot.active { background: var(--accent); transform: scale(1.3); }
+  .progress .dot:hover { background: var(--accent2); }
+
+  .slide-num {
+    font-size: 13px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Typography */
+  h1 {
+    font-size: 52px;
+    font-weight: 800;
+    letter-spacing: -1.5px;
+    line-height: 1.1;
+    margin-bottom: 16px;
+  }
+
+  h2 {
+    font-size: 38px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    margin-bottom: 24px;
+    line-height: 1.2;
+  }
+
+  h3 {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--accent2);
+  }
+
+  .subtitle {
+    font-size: 20px;
+    color: var(--text-dim);
+    font-weight: 300;
+    line-height: 1.5;
+    max-width: 700px;
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .gradient-text-2 {
+    background: linear-gradient(135deg, var(--accent3), var(--accent4));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Layout */
+  .center-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    flex: 1;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 16px;
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+    margin-top: 16px;
+  }
+
+  .grid-4 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    transition: border-color 0.2s;
+  }
+
+  .card:hover { border-color: var(--accent); }
+
+  .card.accent { border-left: 3px solid var(--accent); }
+  .card.accent2 { border-left: 3px solid var(--accent2); }
+  .card.accent3 { border-left: 3px solid var(--accent3); }
+  .card.accent4 { border-left: 3px solid var(--accent4); }
+
+  .card-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .card-body {
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  /* Code blocks */
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    overflow-x: auto;
+    margin-top: 12px;
+  }
+
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+
+  .inline-code {
+    background: var(--bg-code);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    border: 1px solid var(--border);
+  }
+
+  /* Syntax colors */
+  .k { color: var(--accent); }       /* keyword */
+  .s { color: var(--green); }        /* string */
+  .c { color: var(--text-dim); }     /* comment */
+  .n { color: var(--accent2); }      /* number/name */
+  .p { color: var(--accent3); }      /* property */
+  .v { color: var(--accent4); }      /* value */
+
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+    font-size: 14px;
+  }
+
+  th {
+    text-align: left;
+    padding: 10px 16px;
+    background: var(--bg-code);
+    color: var(--accent2);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid var(--border);
+  }
+
+  td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    line-height: 1.4;
+  }
+
+  tr:hover td { color: var(--text); background: rgba(108, 92, 231, 0.03); }
+
+  /* Tags */
+  .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .tag-get { background: rgba(0, 206, 201, 0.15); color: var(--accent2); }
+  .tag-post { background: rgba(108, 92, 231, 0.15); color: var(--accent); }
+  .tag-delete { background: rgba(225, 112, 85, 0.15); color: var(--red); }
+  .tag-public { background: rgba(0, 184, 148, 0.15); color: var(--green); }
+  .tag-auth { background: rgba(253, 121, 168, 0.15); color: var(--accent3); }
+  .tag-wss { background: rgba(253, 203, 110, 0.15); color: var(--accent4); }
+
+  /* Lists */
+  ul, ol {
+    margin-top: 8px;
+    padding-left: 20px;
+  }
+
+  li {
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--text-dim);
+  }
+
+  li strong { color: var(--text); }
+
+  /* Diagram / Flow */
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0;
+    flex-wrap: wrap;
+  }
+
+  .flow-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+    min-width: 120px;
+  }
+
+  .flow-arrow {
+    color: var(--accent);
+    font-size: 20px;
+  }
+
+  /* Badge */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-right: 8px;
+    margin-bottom: 8px;
+  }
+
+  .badge .dot-sm {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  /* Section divider */
+  .divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    text-align: center;
+  }
+
+  .big-number {
+    font-size: 80px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+
+  /* Key hints */
+  .key-hint {
+    position: fixed;
+    top: 20px;
+    right: 40px;
+    font-size: 12px;
+    color: var(--text-dim);
+    opacity: 0.5;
+    z-index: 100;
+  }
+
+  kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+
+  .source-tag {
+    display: inline-block;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: rgba(108, 92, 231, 0.1);
+    color: var(--accent);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    vertical-align: middle;
+    margin-left: 4px;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="key-hint"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> to navigate</div>
+
+<div class="deck" id="deck">
+
+  <!-- ==================== SLIDE 1: Title ==================== -->
+  <div class="slide active" data-slide="0">
+    <div class="center-content">
+      <div style="margin-bottom: 24px;">
+        <span class="badge"><span class="dot-sm" style="background:var(--green)"></span> Public APIs</span>
+        <span class="badge"><span class="dot-sm" style="background:var(--accent3)"></span> Authenticated APIs</span>
+        <span class="badge"><span class="dot-sm" style="background:var(--accent4)"></span> WebSockets</span>
+      </div>
+      <h1>Polymarket APIs<br><span class="gradient-text">Deep Dive</span></h1>
+      <p class="subtitle" style="margin-top: 20px;">
+        A complete guide to the Gamma, CLOB, Data, Bridge, and WebSocket APIs &mdash;
+        what data is available, how to authenticate, and how to build on top of them.
+      </p>
+      <div style="margin-top: 48px; display: flex; gap: 24px;">
+        <div>
+          <div style="font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">API Services</div>
+          <div style="font-size: 32px; font-weight: 700; color: var(--accent2);">5+</div>
+        </div>
+        <div style="width: 1px; background: var(--border);"></div>
+        <div>
+          <div style="font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Endpoints</div>
+          <div style="font-size: 32px; font-weight: 700; color: var(--accent);">50+</div>
+        </div>
+        <div style="width: 1px; background: var(--border);"></div>
+        <div>
+          <div style="font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Auth Levels</div>
+          <div style="font-size: 32px; font-weight: 700; color: var(--accent3);">L1 + L2</div>
+        </div>
+        <div style="width: 1px; background: var(--border);"></div>
+        <div>
+          <div style="font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Chain</div>
+          <div style="font-size: 32px; font-weight: 700; color: var(--accent4);">Polygon</div>
+        </div>
+      </div>
+      <p style="margin-top: 32px; font-size: 12px; color: var(--text-dim);">
+        Cross-checked against <a href="https://docs.polymarket.com" style="color: var(--accent2);">docs.polymarket.com</a> &mdash; Feb 2026
+      </p>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 2: API Landscape ==================== -->
+  <div class="slide" data-slide="1">
+    <h2>The API Landscape</h2>
+    <p class="subtitle" style="margin-bottom: 24px;">Polymarket exposes data through multiple distinct services. Here are the primary ones.</p>
+    <div class="grid-3">
+      <div class="card accent">
+        <h3 style="color: var(--accent);">Gamma API</h3>
+        <div class="card-body">
+          <strong style="color:var(--text)">Market metadata & discovery</strong><br><br>
+          <code class="inline-code">gamma-api.polymarket.com</code><br><br>
+          Hosted indexing service for browsing markets. Returns questions, slugs, outcomes, volume, liquidity, tags, events, and sports metadata.
+        </div>
+        <div style="margin-top: 12px;">
+          <span class="tag tag-public">Public</span>
+        </div>
+      </div>
+      <div class="card accent2">
+        <h3 style="color: var(--accent2);">CLOB API</h3>
+        <div class="card-body">
+          <strong style="color:var(--text)">Order book, prices & trading</strong><br><br>
+          <code class="inline-code">clob.polymarket.com</code><br><br>
+          Hybrid-decentralized Central Limit Order Book. Off-chain matching, on-chain settlement. Two-tier auth system (L1: EIP-712, L2: HMAC).
+        </div>
+        <div style="margin-top: 12px;">
+          <span class="tag tag-public">Read: Public</span>
+          <span class="tag tag-auth">Trade: L1+L2</span>
+        </div>
+      </div>
+      <div class="card accent3">
+        <h3 style="color: var(--accent3);">Data API</h3>
+        <div class="card-body">
+          <strong style="color:var(--text)">Users, trades, rankings & more</strong><br><br>
+          <code class="inline-code">data-api.polymarket.com</code><br><br>
+          The most extensive API. Positions, trades, P&L, leaderboard, pricing, orderbook summaries, profiles, search, comments, and accounting snapshots.
+        </div>
+        <div style="margin-top: 12px;">
+          <span class="tag tag-public">Mostly Public</span>
+        </div>
+      </div>
+    </div>
+    <div class="grid-3" style="margin-top: 0;">
+      <div class="card accent4">
+        <h3 style="color: var(--accent4);">Bridge API</h3>
+        <div class="card-body">
+          <strong style="color:var(--text)">Deposits & withdrawals</strong><br><br>
+          Fund your Polymarket wallet. Supports multiple chains (EVM, Solana, Bitcoin). Provides quotes with fee breakdowns.
+        </div>
+        <div style="margin-top: 12px;">
+          <span class="tag tag-auth">Auth Required</span>
+        </div>
+      </div>
+      <div class="card accent">
+        <h3 style="color: var(--accent);">WebSocket</h3>
+        <div class="card-body">
+          <strong style="color:var(--text)">Real-time streaming</strong><br><br>
+          <code class="inline-code">wss://ws-subscriptions-clob.polymarket.com</code><br><br>
+          Live orderbook updates, price changes, trade notifications, and user order status via WebSocket channels.
+        </div>
+        <div style="margin-top: 12px;">
+          <span class="tag tag-wss">WSS</span>
+          <span class="tag tag-public">Market: Public</span>
+          <span class="tag tag-auth">User: Auth</span>
+        </div>
+      </div>
+      <div class="card accent2">
+        <h3 style="color: var(--accent2);">Strapi API</h3>
+        <div class="card-body">
+          <strong style="color:var(--text)">Activity feed (legacy)</strong><br><br>
+          <code class="inline-code">strapi-matic.poly.market</code><br><br>
+          Older activity feed. Useful as a fallback when other APIs are unavailable.
+        </div>
+        <div style="margin-top: 12px;">
+          <span class="tag tag-public">Public</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 3: Gamma API ==================== -->
+  <div class="slide" data-slide="2">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+      <span style="font-size:32px;">&#127760;</span>
+      <h2 style="margin-bottom:0;">Gamma API <span style="font-size:18px; color:var(--text-dim); font-weight:400;">&mdash; Market Discovery</span></h2>
+    </div>
+    <p style="color: var(--text-dim); margin-bottom: 20px;">
+      <code class="inline-code">https://gamma-api.polymarket.com</code>
+      &nbsp;&nbsp;<span class="tag tag-public">No Auth Required</span>
+      &nbsp;&nbsp;<span class="source-tag">Verified via docs</span>
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Endpoint</th>
+          <th>Method</th>
+          <th>Parameters</th>
+          <th>Returns</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>/markets</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td><code>limit</code>, <code>offset</code>, <code>active</code>, <code>closed</code>, <code>order</code>, <code>ascending</code></td>
+          <td>Paginated list of markets with metadata</td>
+        </tr>
+        <tr>
+          <td><code>/markets/{id}</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td>Path: market ID</td>
+          <td>Single market detail</td>
+        </tr>
+        <tr>
+          <td><code>/events</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td><code>limit</code>, <code>active</code></td>
+          <td>Event groups containing related markets</td>
+        </tr>
+        <tr>
+          <td><code>/events/{id}</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td>Path: event ID</td>
+          <td>Single event with its markets</td>
+        </tr>
+        <tr>
+          <td><code>/tags</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td><code>limit</code>, filtering</td>
+          <td>Market categories/tags</td>
+        </tr>
+        <tr>
+          <td><code>/tags/{id}</code>, <code>/tags/slug/{slug}</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td>Path param</td>
+          <td>Tag detail by ID or slug</td>
+        </tr>
+        <tr>
+          <td><code>/teams</code>, <code>/sports</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td>Filtering, pagination</td>
+          <td>Sports metadata, teams</td>
+        </tr>
+        <tr>
+          <td><code>/activity</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td><code>limit</code></td>
+          <td>Recent trading activity feed</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin-top: 24px;">Response Shape</h3>
+    <pre><span class="c">// GET /markets?limit=1&active=true&order=volume24hr</span>
+{
+  <span class="p">"id"</span>:             <span class="s">"market_abc123"</span>,
+  <span class="p">"slug"</span>:           <span class="s">"will-bitcoin-hit-100k-2026"</span>,
+  <span class="p">"question"</span>:       <span class="s">"Will Bitcoin hit $100k in 2026?"</span>,
+  <span class="p">"description"</span>:    <span class="s">"Resolves YES if..."</span>,
+  <span class="p">"conditionId"</span>:    <span class="s">"0x8a3f..."</span>,           <span class="c">// links to CLOB & Data API</span>
+  <span class="p">"clobTokenIds"</span>:   [<span class="s">"token_yes"</span>, <span class="s">"token_no"</span>],  <span class="c">// [0]=YES, [1]=NO</span>
+  <span class="p">"outcomePrices"</span>:  [<span class="n">62.5</span>, <span class="n">37.5</span>],          <span class="c">// YES%, NO%  (0-100 scale!)</span>
+  <span class="p">"volume24hr"</span>:     <span class="n">150000.50</span>,
+  <span class="p">"volume"</span>:         <span class="n">2500000.00</span>,           <span class="c">// all-time</span>
+  <span class="p">"liquidity"</span>:      <span class="n">100000</span>,
+  <span class="p">"active"</span>:         <span class="v">true</span>
+}</pre>
+  </div>
+
+  <!-- ==================== SLIDE 4: CLOB API ==================== -->
+  <div class="slide" data-slide="3">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+      <span style="font-size:32px;">&#128200;</span>
+      <h2 style="margin-bottom:0;">CLOB API <span style="font-size:18px; color:var(--text-dim); font-weight:400;">&mdash; Order Book & Trading</span></h2>
+    </div>
+    <p style="color: var(--text-dim); margin-bottom: 20px;">
+      <code class="inline-code">https://clob.polymarket.com</code>
+      &nbsp;&nbsp;<span class="tag tag-public">Read: Public</span>
+      &nbsp;<span class="tag tag-auth">Trade: L1+L2 Auth</span>
+      &nbsp;&nbsp;<span class="source-tag">Verified via docs</span>
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Endpoint</th>
+          <th>Method</th>
+          <th>Auth</th>
+          <th>Parameters</th>
+          <th>Returns</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>/book</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td><span class="tag tag-public">None</span></td>
+          <td><code>token_id</code></td>
+          <td>Full order book with bids &amp; asks</td>
+        </tr>
+        <tr>
+          <td><code>/price</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td><span class="tag tag-public">None</span></td>
+          <td><code>token_id</code>, <code>side</code></td>
+          <td>Current price for a token + side</td>
+        </tr>
+        <tr>
+          <td><code>/midpoint</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td><span class="tag tag-public">None</span></td>
+          <td><code>token_id</code></td>
+          <td>Midpoint price between bid &amp; ask</td>
+        </tr>
+        <tr>
+          <td><code>/trades</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td><span class="tag tag-public">None</span></td>
+          <td><code>limit</code>, <code>market</code>, <code>maker</code>, <code>asset_id</code></td>
+          <td>Historical trade data</td>
+        </tr>
+        <tr>
+          <td><code>/timeseries</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td><span class="tag tag-public">None</span></td>
+          <td><code>token_id</code>, time params</td>
+          <td>Historical price data</td>
+        </tr>
+        <tr>
+          <td><code>/order</code></td>
+          <td><span class="tag tag-post">POST</span></td>
+          <td><span class="tag tag-auth">L2</span></td>
+          <td>Signed order payload</td>
+          <td>Place a single order</td>
+        </tr>
+        <tr>
+          <td><code>/orders</code></td>
+          <td><span class="tag tag-post">POST</span></td>
+          <td><span class="tag tag-auth">L2</span></td>
+          <td>Array of signed orders</td>
+          <td>Batch place (up to 15 orders)</td>
+        </tr>
+        <tr>
+          <td><code>/orders</code></td>
+          <td><span class="tag tag-delete">DEL</span></td>
+          <td><span class="tag tag-auth">L2</span></td>
+          <td>Order ID(s)</td>
+          <td>Cancel one or more orders</td>
+        </tr>
+        <tr>
+          <td><code>/orders/active</code></td>
+          <td><span class="tag tag-get">GET</span></td>
+          <td><span class="tag tag-auth">L2</span></td>
+          <td>&mdash;</td>
+          <td>Your active orders</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="grid-2" style="margin-top: 20px;">
+      <div>
+        <h3>Order Book Response</h3>
+        <pre><span class="c">// GET /book?token_id=xyz</span>
+{
+  <span class="p">"bids"</span>: [
+    { <span class="p">"price"</span>: <span class="n">0.44</span>, <span class="p">"size"</span>: <span class="n">1000</span> },
+    { <span class="p">"price"</span>: <span class="n">0.43</span>, <span class="p">"size"</span>: <span class="n">2000</span> }
+  ],
+  <span class="p">"asks"</span>: [
+    { <span class="p">"price"</span>: <span class="n">0.46</span>, <span class="p">"size"</span>: <span class="n">500</span> }
+  ]
+}
+<span class="c">// All prices on 0-1 scale</span></pre>
+      </div>
+      <div>
+        <h3>Key Details</h3>
+        <pre><span class="c">// Hybrid-decentralized design:</span>
+<span class="c">//   Matching: off-chain (fast)</span>
+<span class="c">//   Settlement: on-chain (Polygon)</span>
+<span class="c">//</span>
+<span class="c">// GET /price?token_id=abc&side=BUY</span>
+{ <span class="p">"price"</span>: <span class="n">0.625</span> }
+
+<span class="c">// GET /midpoint?token_id=abc</span>
+{ <span class="p">"mid"</span>: <span class="n">0.62</span> }
+
+<span class="c">// Batch orders: up to 15 per call</span>
+<span class="c">// (increased from 5 in 2025)</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 5: CLOB Auth (L1 + L2) ==================== -->
+  <div class="slide" data-slide="4">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+      <span style="font-size:32px;">&#128274;</span>
+      <h2 style="margin-bottom:0;">CLOB Authentication <span style="font-size:18px; color:var(--text-dim); font-weight:400;">&mdash; Two-Tier System</span></h2>
+    </div>
+    <p style="color: var(--text-dim); margin-bottom: 20px;">
+      The CLOB uses two levels of auth. L1 proves wallet ownership; L2 signs API requests for speed.
+      &nbsp;<span class="source-tag">Verified via docs</span>
+    </p>
+
+    <div class="grid-2">
+      <div>
+        <h3 style="color: var(--accent);">Level 1 &mdash; EIP-712 Signature</h3>
+        <div class="card accent" style="margin-top: 0;">
+          <div class="card-body">
+            <p><strong style="color:var(--text)">What:</strong> Signs messages with your private key using Ethereum's EIP-712 typed data standard. Proves wallet ownership non-custodially.</p>
+            <p style="margin-top: 8px;"><strong style="color:var(--text)">Used for:</strong> Generating API credentials, initial authentication.</p>
+          </div>
+        </div>
+        <h3 style="margin-top: 16px;">L1 Headers</h3>
+        <pre><span class="p">POLY_ADDRESS</span>:    <span class="s">&lt;polygon_address&gt;</span>
+<span class="p">POLY_SIGNATURE</span>:  <span class="s">&lt;eip712_signature&gt;</span>
+<span class="p">POLY_TIMESTAMP</span>:  <span class="s">&lt;unix_timestamp&gt;</span>
+<span class="p">POLY_NONCE</span>:      <span class="n">0</span></pre>
+
+        <h3 style="margin-top: 16px;">Generate API Credentials</h3>
+        <pre><span class="c">// Create new creds (L1 auth required)</span>
+<span class="k">POST</span> /auth/api-key
+
+<span class="c">// Derive existing creds</span>
+<span class="k">GET</span>  /auth/derive-api-key
+
+<span class="c">// Response:</span>
+{
+  <span class="p">"apiKey"</span>:     <span class="s">"..."</span>,
+  <span class="p">"secret"</span>:     <span class="s">"..."</span>,  <span class="c">// base64-encoded</span>
+  <span class="p">"passphrase"</span>: <span class="s">"..."</span>
+}</pre>
+      </div>
+      <div>
+        <h3 style="color: var(--accent2);">Level 2 &mdash; HMAC-SHA256</h3>
+        <div class="card accent2" style="margin-top: 0;">
+          <div class="card-body">
+            <p><strong style="color:var(--text)">What:</strong> Signs each API request with HMAC-SHA256 using the credentials from L1. Faster than signing with private key each time.</p>
+            <p style="margin-top: 8px;"><strong style="color:var(--text)">Used for:</strong> All trading operations (orders, cancels). Note: order payloads still require the private key signature too.</p>
+          </div>
+        </div>
+        <h3 style="margin-top: 16px;">L2 Headers</h3>
+        <pre><span class="p">POLY_API_KEY</span>:    <span class="s">&lt;api_key&gt;</span>
+<span class="p">POLY_SIGNATURE</span>:  <span class="s">&lt;hmac_sha256_sig&gt;</span>
+<span class="p">POLY_TIMESTAMP</span>:  <span class="s">&lt;unix_timestamp&gt;</span>
+<span class="p">POLY_PASSPHRASE</span>: <span class="s">&lt;passphrase&gt;</span></pre>
+
+        <h3 style="margin-top: 16px;">HMAC Signature</h3>
+        <pre><span class="k">import</span> hmac, hashlib, time
+
+timestamp = <span class="n">str</span>(<span class="n">int</span>(time.time()))
+message = <span class="n">f</span><span class="s">"{timestamp}{method}{path}{body}"</span>
+
+signature = hmac.<span class="n">new</span>(
+    base64.<span class="n">b64decode</span>(api_secret),
+    message.<span class="n">encode</span>(<span class="s">'utf-8'</span>),
+    hashlib.<span class="n">sha256</span>
+).<span class="n">hexdigest</span>()</pre>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 16px; border-color: var(--accent3);">
+      <div class="card-body" style="display: flex; gap: 32px; align-items: center;">
+        <div><strong style="color: var(--accent3);">Signature Types:</strong> When initializing the client, declare your wallet type &mdash;
+        <code class="inline-code">EOA</code> (standard), <code class="inline-code">POLY_PROXY</code> (Polymarket wallet), or <code class="inline-code">GNOSIS_SAFE</code> (multisig).</div>
+        <div><strong style="color: var(--accent3);">Non-custodial:</strong> Private key never leaves your control. All trading activity remains non-custodial.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 6: Data API - Core ==================== -->
+  <div class="slide" data-slide="5">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+      <span style="font-size:32px;">&#128202;</span>
+      <h2 style="margin-bottom:0;">Data API <span style="font-size:18px; color:var(--text-dim); font-weight:400;">&mdash; The Big One</span></h2>
+    </div>
+    <p style="color: var(--text-dim); margin-bottom: 16px;">
+      <code class="inline-code">https://data-api.polymarket.com</code>
+      &nbsp;&nbsp;<span class="tag tag-public">Mostly Public</span>
+      &nbsp;&nbsp;<span class="source-tag">Verified via docs</span>
+    </p>
+
+    <div class="grid-2">
+      <div>
+        <h3>User & Position Endpoints</h3>
+        <table>
+          <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead>
+          <tbody>
+            <tr><td><code>/user/positions/current</code></td><td>Open positions for a wallet</td></tr>
+            <tr><td><code>/user/positions/closed</code></td><td>Closed/resolved positions</td></tr>
+            <tr><td><code>/user/positions/value</code></td><td>Total portfolio value</td></tr>
+            <tr><td><code>/user/trades</code></td><td>Trade history</td></tr>
+            <tr><td><code>/user/activity</code></td><td>On-chain activity</td></tr>
+            <tr><td><code>/user/markets-traded</code></td><td>Total markets count</td></tr>
+            <tr><td><code>/profiles/{address}</code></td><td>Public profile</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h3>Market & Event Endpoints</h3>
+        <table>
+          <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead>
+          <tbody>
+            <tr><td><code>/markets/{id}</code></td><td>Market by ID</td></tr>
+            <tr><td><code>/markets/slug/{slug}</code></td><td>Market by slug</td></tr>
+            <tr><td><code>/markets/list</code></td><td>Filtered market list</td></tr>
+            <tr><td><code>/markets/top-holders</code></td><td>Top holders per market</td></tr>
+            <tr><td><code>/markets/volume/live</code></td><td>Live volume for an event</td></tr>
+            <tr><td><code>/markets/open-interest</code></td><td>Open interest data</td></tr>
+            <tr><td><code>/events/list</code></td><td>List &amp; filter events</td></tr>
+            <tr><td><code>/search</code></td><td>Search markets, events, profiles</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="grid-2" style="margin-top: 0;">
+      <div>
+        <h3>Pricing & Orderbook</h3>
+        <table>
+          <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead>
+          <tbody>
+            <tr><td><code>/pricing/market-price</code></td><td>Price for token + side</td></tr>
+            <tr><td><code>/pricing/midpoint</code></td><td>Midpoint price</td></tr>
+            <tr><td><code>/pricing/multiple</code></td><td>Batch prices</td></tr>
+            <tr><td><code>/pricing/history</code></td><td>Historical price data</td></tr>
+            <tr><td><code>/orderbook/summary</code></td><td>Order book for a token</td></tr>
+            <tr><td><code>/orderbook/summaries</code></td><td>Batch order books</td></tr>
+            <tr><td><code>/spreads</code></td><td>Bid-ask spreads (batch)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h3>Leaderboard & Other</h3>
+        <table>
+          <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead>
+          <tbody>
+            <tr><td><code>/leaderboard/traders</code></td><td>Trader rankings</td></tr>
+            <tr><td><code>/builders/leaderboard</code></td><td>Builder rankings</td></tr>
+            <tr><td><code>/comments/list</code></td><td>Market comments</td></tr>
+            <tr><td><code>/tags/list</code></td><td>All tags</td></tr>
+            <tr><td><code>/series/list</code></td><td>Market series</td></tr>
+            <tr><td><code>/sports/metadata</code></td><td>Sports resolution sources</td></tr>
+            <tr><td><code>/accounting/snapshot</code></td><td>ZIP: positions + equity CSVs</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 7: Data API Response Shapes ==================== -->
+  <div class="slide" data-slide="6">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+      <span style="font-size:32px;">&#128202;</span>
+      <h2 style="margin-bottom:0;">Data API <span style="font-size:18px; color:var(--text-dim); font-weight:400;">&mdash; Response Shapes</span></h2>
+    </div>
+
+    <div class="grid-2">
+      <div>
+        <h3>Trade Object</h3>
+        <pre>{
+  <span class="p">"user"</span>:        <span class="s">"0xabc..."</span>,
+  <span class="p">"proxyWallet"</span>: <span class="s">"0xdef..."</span>,
+  <span class="p">"conditionId"</span>: <span class="s">"0x8a3f..."</span>,
+  <span class="p">"title"</span>:       <span class="s">"Will X happen?"</span>,
+  <span class="p">"side"</span>:        <span class="s">"BUY"</span>,
+  <span class="p">"outcome"</span>:     <span class="s">"YES"</span>,
+  <span class="p">"size"</span>:        <span class="n">100</span>,       <span class="c">// shares</span>
+  <span class="p">"price"</span>:       <span class="n">0.45</span>,      <span class="c">// per share</span>
+  <span class="p">"usdcSize"</span>:    <span class="n">45.00</span>,     <span class="c">// total USD</span>
+  <span class="p">"timestamp"</span>:   <span class="s">"2026-02-12T..."</span>
+}</pre>
+
+        <h3 style="margin-top: 16px;">Leaderboard Entry</h3>
+        <pre>{
+  <span class="p">"proxyWallet"</span>:   <span class="s">"0xabc..."</span>,
+  <span class="p">"userName"</span>:      <span class="s">"whale_trader"</span>,
+  <span class="p">"displayName"</span>:   <span class="s">"Whale Trader"</span>,
+  <span class="p">"pnl"</span>:           <span class="n">50000.00</span>,
+  <span class="p">"volume"</span>:        <span class="n">500000</span>,
+  <span class="p">"marketsTraded"</span>: <span class="n">50</span>,
+  <span class="p">"winRate"</span>:       <span class="n">0.68</span>,
+  <span class="p">"rank"</span>:          <span class="n">1</span>
+}</pre>
+      </div>
+      <div>
+        <h3>Accounting Snapshot</h3>
+        <div class="card accent4" style="margin-top: 12px;">
+          <div class="card-body">
+            <p><strong style="color:var(--text)"><code>GET /accounting/snapshot</code></strong></p>
+            <p style="margin-top: 8px;">Returns an <code class="inline-code">application/zip</code> containing two CSVs:</p>
+          </div>
+        </div>
+        <pre><span class="c">// positions.csv</span>
+conditionId, asset, size, curPrice, valuationTime
+<span class="s">"0x8a3f..."</span>, <span class="s">"YES"</span>, <span class="n">1000.000000</span>, <span class="n">0.625000</span>, <span class="s">"2026-02-12T..."</span>
+
+<span class="c">// equity.csv</span>
+cashBalance, positionsValue, equity, valuationTime
+<span class="n">5000.000000</span>, <span class="n">3200.000000</span>, <span class="n">8200.000000</span>, <span class="s">"2026-02-12T..."</span></pre>
+
+        <h3 style="margin-top: 16px;">Top Holders</h3>
+        <pre><span class="c">// GET /markets/top-holders?market=xyz</span>
+[
+  {
+    <span class="p">"address"</span>: <span class="s">"0xabc..."</span>,
+    <span class="p">"position"</span>: <span class="n">50000</span>,
+    <span class="p">"side"</span>: <span class="s">"YES"</span>
+  },
+  ...
+]</pre>
+
+        <h3 style="margin-top: 16px;">Search</h3>
+        <pre><span class="c">// GET /search?q=bitcoin</span>
+<span class="c">// Returns markets, events, and profiles</span>
+<span class="c">// matching the query string</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 8: WebSocket & Real-Time ==================== -->
+  <div class="slide" data-slide="7">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+      <span style="font-size:32px;">&#9889;</span>
+      <h2 style="margin-bottom:0;">WebSocket & <span class="gradient-text">Real-Time Data</span></h2>
+    </div>
+    <p style="color: var(--text-dim); margin-bottom: 20px;">
+      Live streaming data for trading bots, dashboards, and real-time monitoring.
+      &nbsp;&nbsp;<span class="source-tag">Verified via docs</span>
+    </p>
+
+    <div class="grid-2">
+      <div>
+        <h3 style="color: var(--accent2);">CLOB WebSocket</h3>
+        <pre><span class="c">// Base URL</span>
+<span class="s">wss://ws-subscriptions-clob.polymarket.com/ws/</span>
+
+<span class="c">// Two channels:</span>
+<span class="p">/ws/market</span>  <span class="c">// Public - no auth</span>
+<span class="p">/ws/user</span>    <span class="c">// Private - requires auth</span></pre>
+
+        <div class="card accent2" style="margin-top: 16px;">
+          <div class="card-title">Market Channel (Public)</div>
+          <div class="card-body">
+            <ul>
+              <li><strong>Book updates</strong> &mdash; L2 order book changes</li>
+              <li><strong>Price changes</strong> &mdash; real-time price moves</li>
+              <li><strong>Last trade price</strong> &mdash; most recent fill</li>
+              <li><strong>Tick size changes</strong> &mdash; market param updates</li>
+            </ul>
+          </div>
+        </div>
+        <div class="card accent3" style="margin-top: 12px;">
+          <div class="card-title">User Channel (Authenticated)</div>
+          <div class="card-body">
+            <ul>
+              <li><strong>Order status</strong> &mdash; fill, cancel, update events</li>
+              <li><strong>Trade notifications</strong> &mdash; your fills in real-time</li>
+              <li>Requires CLOB L2 credentials</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div>
+        <h3 style="color: var(--accent4);">Real-Time Data Socket (RTDS)</h3>
+        <pre><span class="c">// Base URL</span>
+<span class="s">wss://ws-live-data.polymarket.com</span>
+
+<span class="c">// Topics:</span>
+<span class="p">crypto_prices</span>  <span class="c">// Live crypto feeds</span>
+<span class="p">comments</span>       <span class="c">// Real-time comments</span></pre>
+
+        <h3 style="margin-top: 24px; color: var(--accent);">Sports WebSocket</h3>
+        <div class="card accent" style="margin-top: 12px;">
+          <div class="card-body">
+            <p>Real-time sports results and live updates. Separate WebSocket channel for sports-specific markets with structured result update messages.</p>
+          </div>
+        </div>
+
+        <h3 style="margin-top: 24px;">Connection Pattern</h3>
+        <pre><span class="k">import</span> websockets, json
+
+<span class="k">async with</span> websockets.<span class="n">connect</span>(
+    <span class="s">"wss://ws-subscriptions-clob"</span>
+    <span class="s">".polymarket.com/ws/market"</span>
+) <span class="k">as</span> ws:
+    <span class="c"># Subscribe to a market</span>
+    <span class="k">await</span> ws.<span class="n">send</span>(json.<span class="n">dumps</span>({
+        <span class="s">"type"</span>: <span class="s">"subscribe"</span>,
+        <span class="s">"channel"</span>: <span class="s">"market"</span>,
+        <span class="s">"assets_id"</span>: token_id
+    }))
+    <span class="k">async for</span> msg <span class="k">in</span> ws:
+        data = json.<span class="n">loads</span>(msg)
+        <span class="c"># Process real-time updates</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 9: Bridge API & CTF ==================== -->
+  <div class="slide" data-slide="8">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+      <span style="font-size:32px;">&#128176;</span>
+      <h2 style="margin-bottom:0;">Bridge API & <span class="gradient-text-2">Conditional Tokens</span></h2>
+    </div>
+    <p style="color: var(--text-dim); margin-bottom: 20px;">
+      Moving funds in/out and understanding the token mechanics.
+      &nbsp;&nbsp;<span class="source-tag">Verified via docs</span>
+    </p>
+
+    <div class="grid-2">
+      <div>
+        <h3 style="color: var(--accent4);">Bridge API</h3>
+        <table>
+          <thead><tr><th>Endpoint</th><th>Method</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>/deposit</code></td><td><span class="tag tag-post">POST</span></td><td>Generate deposit address</td></tr>
+            <tr><td><code>/withdraw</code></td><td><span class="tag tag-post">POST</span></td><td>Initiate USDC withdrawal</td></tr>
+            <tr><td><code>/quote</code></td><td><span class="tag tag-get">GET</span></td><td>Estimated output + fees</td></tr>
+            <tr><td><code>/supported-assets</code></td><td><span class="tag tag-get">GET</span></td><td>Supported chains &amp; tokens</td></tr>
+            <tr><td><code>/transaction-status</code></td><td><span class="tag tag-get">GET</span></td><td>Track deposit/withdrawal</td></tr>
+          </tbody>
+        </table>
+
+        <div class="card accent4" style="margin-top: 16px;">
+          <div class="card-title">Supported Chains</div>
+          <div class="card-body">
+            Deposits accepted from <strong style="color:var(--text)">EVM chains</strong> (Ethereum, Polygon, Arbitrum, etc.), <strong style="color:var(--text)">Solana</strong>, and <strong style="color:var(--text)">Bitcoin</strong>. Settlement is always USDC on Polygon.
+          </div>
+        </div>
+
+        <div class="card accent3" style="margin-top: 12px;">
+          <div class="card-title">Transaction Status Flow</div>
+          <div class="card-body" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+            DEPOSIT_DETECTED &rarr; PROCESSING &rarr; ORIGIN_TX_CONFIRMED &rarr; SUBMITTED &rarr; COMPLETED
+          </div>
+        </div>
+      </div>
+      <div>
+        <h3 style="color: var(--accent);">Conditional Token Framework (CTF)</h3>
+        <div class="card accent" style="margin-top: 12px;">
+          <div class="card-body">
+            <p>Markets on Polymarket use the <strong style="color:var(--text)">Conditional Token Framework</strong> &mdash; an on-chain protocol for creating and trading conditional outcome tokens.</p>
+          </div>
+        </div>
+
+        <table style="margin-top: 16px;">
+          <thead><tr><th>Operation</th><th>What It Does</th></tr></thead>
+          <tbody>
+            <tr><td><strong style="color: var(--accent2);">Split</strong></td><td>Convert USDC into YES + NO tokens for a market</td></tr>
+            <tr><td><strong style="color: var(--accent3);">Merge</strong></td><td>Combine YES + NO tokens back into USDC</td></tr>
+            <tr><td><strong style="color: var(--accent4);">Redeem</strong></td><td>After resolution, exchange winning tokens for USDC</td></tr>
+          </tbody>
+        </table>
+
+        <pre style="margin-top: 16px;"><span class="c">// How YES/NO tokens work:</span>
+<span class="c">//</span>
+<span class="c">// 1 USDC  --split-->  1 YES + 1 NO</span>
+<span class="c">// 1 YES + 1 NO  --merge-->  1 USDC</span>
+<span class="c">//</span>
+<span class="c">// If market resolves YES:</span>
+<span class="c">//   1 YES  --redeem-->  1 USDC</span>
+<span class="c">//   1 NO   --redeem-->  0 USDC</span>
+<span class="c">//</span>
+<span class="c">// This is why YES + NO prices sum to ~$1</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 10: Field Naming Chaos ==================== -->
+  <div class="slide" data-slide="9">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+      <span style="font-size:32px;">&#9888;&#65039;</span>
+      <h2 style="margin-bottom:0;"><span class="gradient-text-2">The Field Naming Problem</span></h2>
+    </div>
+    <p class="subtitle" style="margin-bottom: 28px;">
+      The biggest gotcha: the same concept has different field names across APIs and even across endpoints within the same API. You must normalize.
+    </p>
+
+    <div class="grid-2">
+      <div>
+        <h3>Wallet Address</h3>
+        <pre><span class="c">// All of these mean "wallet":</span>
+wallet = (
+    trade.get(<span class="s">"maker"</span>)        <span class="c">// CLOB</span>
+    <span class="k">or</span> trade.get(<span class="s">"user"</span>)    <span class="c">// Data API</span>
+    <span class="k">or</span> trade.get(<span class="s">"proxyWallet"</span>) <span class="c">// Leaderboard</span>
+    <span class="k">or</span> trade.get(<span class="s">"taker"</span>)   <span class="c">// CLOB alt</span>
+    <span class="k">or</span> trade.get(<span class="s">"address"</span>) <span class="c">// Profiles</span>
+)</pre>
+
+        <h3 style="margin-top: 24px;">Market Identifier</h3>
+        <pre><span class="c">// Three names for the same thing:</span>
+market = (
+    trade.get(<span class="s">"conditionId"</span>)  <span class="c">// Gamma, CTF</span>
+    <span class="k">or</span> trade.get(<span class="s">"market"</span>)   <span class="c">// CLOB</span>
+    <span class="k">or</span> trade.get(<span class="s">"marketId"</span>) <span class="c">// Data API</span>
+)</pre>
+      </div>
+      <div>
+        <h3>Trade Size</h3>
+        <pre><span class="c">// Size vs Amount vs computed:</span>
+size = <span class="n">float</span>(
+    trade.get(<span class="s">"size"</span>)     <span class="c">// CLOB</span>
+    <span class="k">or</span> trade.get(<span class="s">"amount"</span>) <span class="c">// Data API</span>
+    <span class="k">or</span> <span class="n">0</span>
+)
+usdc = trade.get(<span class="s">"usdcSize"</span>) \
+       <span class="k">or</span> (size * price)</pre>
+
+        <h3 style="margin-top: 24px;">Timestamps</h3>
+        <pre><span class="c">// Three different timestamp fields:</span>
+ts = (
+    trade.get(<span class="s">"timestamp"</span>)  <span class="c">// most common</span>
+    <span class="k">or</span> trade.get(<span class="s">"createdAt"</span>) <span class="c">// Data API</span>
+    <span class="k">or</span> trade.get(<span class="s">"matchTime"</span>) <span class="c">// CLOB</span>
+)</pre>
+      </div>
+    </div>
+
+    <div class="card accent3" style="margin-top: 24px;">
+      <div class="card-title" style="color: var(--accent3);">Price Scale Warning</div>
+      <div class="card-body">
+        CLOB returns prices on a <strong style="color:var(--text)">0&ndash;1 scale</strong>. Gamma <code class="inline-code">outcomePrices</code> uses a <strong style="color:var(--text)">0&ndash;100 scale</strong>.
+        The Data API's <code class="inline-code">/pricing/*</code> endpoints use <strong style="color:var(--text)">0&ndash;1</strong>. The accounting snapshot uses <strong style="color:var(--text)">6 decimal places</strong>.
+        Always normalize: <code class="inline-code">if price &lt;= 1: price *= 100</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 11: Data Flow Architecture ==================== -->
+  <div class="slide" data-slide="10">
+    <h2>Data Flow <span class="gradient-text">Architecture</span></h2>
+    <p class="subtitle" style="margin-bottom: 32px;">How this project orchestrates multiple APIs to detect suspicious trading activity.</p>
+
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <div>
+        <h3>1. Market Discovery</h3>
+        <div class="flow">
+          <div class="flow-box" style="border-color: var(--accent);">Gamma <code>/markets</code></div>
+          <div class="flow-arrow">&rarr;</div>
+          <div class="flow-box">Filter by volume &amp; activity</div>
+          <div class="flow-arrow">&rarr;</div>
+          <div class="flow-box">Extract <code>conditionId</code> + <code>clobTokenIds</code></div>
+        </div>
+      </div>
+
+      <div>
+        <h3>2. Trade Analysis</h3>
+        <div class="flow">
+          <div class="flow-box" style="border-color: var(--accent2);">CLOB <code>/trades</code></div>
+          <div class="flow-arrow">&rarr;</div>
+          <div class="flow-box">Data API <code>/user/trades</code></div>
+          <div class="flow-arrow">&rarr;</div>
+          <div class="flow-box">Normalize fields</div>
+          <div class="flow-arrow">&rarr;</div>
+          <div class="flow-box" style="border-color: var(--accent3);">Detect signals</div>
+        </div>
+      </div>
+
+      <div>
+        <h3>3. Wallet Profiling</h3>
+        <div class="flow">
+          <div class="flow-box" style="border-color: var(--accent3);">Data <code>/user/positions/*</code></div>
+          <div class="flow-arrow">&rarr;</div>
+          <div class="flow-box">Data <code>/leaderboard/traders</code></div>
+          <div class="flow-arrow">&rarr;</div>
+          <div class="flow-box">Data <code>/profiles/{addr}</code></div>
+          <div class="flow-arrow">&rarr;</div>
+          <div class="flow-box" style="border-color: var(--accent4);">Score &amp; rank</div>
+        </div>
+      </div>
+
+      <div>
+        <h3>4. Execution (Copy Trading)</h3>
+        <div class="flow">
+          <div class="flow-box" style="border-color: var(--accent4);">Watch smart wallets</div>
+          <div class="flow-arrow">&rarr;</div>
+          <div class="flow-box">Detect new trades</div>
+          <div class="flow-arrow">&rarr;</div>
+          <div class="flow-box" style="border-color: var(--accent);">CLOB L1+L2 Auth</div>
+          <div class="flow-arrow">&rarr;</div>
+          <div class="flow-box">Place order &amp; track P&L</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 24px;">
+      <div class="card-body">
+        <strong style="color: var(--accent2);">Fallback strategy:</strong>
+        CLOB authenticated trades &rarr; Gamma activity feed &rarr; Strapi activity (last resort).
+        Response dedup uses composite key: <code class="inline-code">{trader}:{market}:{price}:{shares}:{timestamp}</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 12: What Data Is Available ==================== -->
+  <div class="slide" data-slide="11">
+    <h2>What Data Is <span class="gradient-text">Available</span></h2>
+    <p class="subtitle" style="margin-bottom: 20px;">A summary of every category of information across all APIs.</p>
+
+    <div class="grid-4">
+      <div class="card accent">
+        <div class="card-title">Market Metadata</div>
+        <div class="card-body">
+          <ul>
+            <li>Questions &amp; descriptions</li>
+            <li>Outcome prices (YES/NO)</li>
+            <li>24h &amp; all-time volume</li>
+            <li>Liquidity &amp; open interest</li>
+            <li>Active/closed status</li>
+            <li>Slugs &amp; condition IDs</li>
+            <li>Tags &amp; categories</li>
+            <li>Sports metadata</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card accent2">
+        <div class="card-title">Live Market Data</div>
+        <div class="card-body">
+          <ul>
+            <li>Full bid/ask arrays</li>
+            <li>Price by side (BUY/SELL)</li>
+            <li>Midpoint prices</li>
+            <li>Bid-ask spreads</li>
+            <li>Historical timeseries</li>
+            <li>Batch price lookups</li>
+            <li>WSS real-time streams</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card accent3">
+        <div class="card-title">Trade & Wallet Data</div>
+        <div class="card-body">
+          <ul>
+            <li>Full trade history</li>
+            <li>Open &amp; closed positions</li>
+            <li>Portfolio value</li>
+            <li>P&L &amp; win rate</li>
+            <li>Top holders per market</li>
+            <li>On-chain activity</li>
+            <li>Public profiles</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card accent4">
+        <div class="card-title">Platform Data</div>
+        <div class="card-body">
+          <ul>
+            <li>Trader leaderboard</li>
+            <li>Builder leaderboard</li>
+            <li>Market comments</li>
+            <li>Event groupings</li>
+            <li>Full-text search</li>
+            <li>Accounting snapshots</li>
+            <li>Deposit/withdrawal status</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 20px; border-color: var(--green);">
+      <div class="card-title" style="color: var(--green);">What's Free vs. Authenticated</div>
+      <div class="card-body">
+        <div class="grid-2" style="margin-top: 4px;">
+          <div>
+            <strong style="color:var(--text)">No Auth Required:</strong> All Gamma endpoints, CLOB read endpoints (book, prices, midpoint, trades, timeseries), almost all Data API endpoints (positions, trades, leaderboard, pricing, orderbook, profiles, search, comments, accounting).
+          </div>
+          <div>
+            <strong style="color:var(--text)">Auth Required:</strong> CLOB order management (place, cancel, active orders), CLOB user WebSocket channel, Bridge deposit/withdrawal operations.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 13: Practical Patterns ==================== -->
+  <div class="slide" data-slide="12">
+    <h2>Practical <span class="gradient-text-2">Code Patterns</span></h2>
+    <p class="subtitle" style="margin-bottom: 20px;">Real patterns from this project for working with the APIs.</p>
+
+    <div class="grid-2">
+      <div>
+        <h3>Async Client Pattern</h3>
+        <pre><span class="k">import</span> httpx
+
+<span class="k">class</span> <span class="n">PolymarketClient</span>:
+    <span class="k">async def</span> <span class="n">__aenter__</span>(self):
+        self.client = httpx.<span class="n">AsyncClient</span>(
+            timeout=<span class="n">30.0</span>
+        )
+        <span class="k">return</span> self
+
+    <span class="k">async def</span> <span class="n">get_markets</span>(self, limit=<span class="n">100</span>):
+        r = <span class="k">await</span> self.client.<span class="n">get</span>(
+            <span class="s">"https://gamma-api.polymarket.com"</span>
+            <span class="s">"/markets"</span>,
+            params={
+                <span class="s">"limit"</span>: limit,
+                <span class="s">"active"</span>: <span class="v">True</span>,
+                <span class="s">"order"</span>: <span class="s">"volume24hr"</span>,
+                <span class="s">"ascending"</span>: <span class="v">False</span>
+            }
+        )
+        <span class="k">return</span> r.<span class="n">json</span>()
+
+<span class="c"># Usage</span>
+<span class="k">async with</span> <span class="n">PolymarketClient</span>() <span class="k">as</span> client:
+    markets = <span class="k">await</span> client.<span class="n">get_markets</span>()</pre>
+      </div>
+      <div>
+        <h3>Trade Execution (py-clob-client)</h3>
+        <pre><span class="k">from</span> py_clob_client.<span class="n">client</span> <span class="k">import</span> ClobClient
+
+client = <span class="n">ClobClient</span>(
+    host=<span class="s">"https://clob.polymarket.com"</span>,
+    key=<span class="s">POLY_PRIVATE_KEY</span>,    <span class="c">// L1</span>
+    chain_id=<span class="n">137</span>,            <span class="c">// Polygon</span>
+    signature_type=<span class="n">2</span>,        <span class="c">// POLY_PROXY</span>
+    funder=<span class="s">POLY_WALLET_ADDRESS</span>
+)
+
+<span class="c"># Generate L2 creds (once)</span>
+creds = client.<span class="n">create_or_derive_api_creds</span>()
+client.<span class="n">set_api_creds</span>(creds)
+
+<span class="c"># Place a market buy order</span>
+order = client.<span class="n">create_and_post_order</span>({
+    <span class="s">"tokenID"</span>: token_id,
+    <span class="s">"side"</span>: <span class="s">"BUY"</span>,
+    <span class="s">"price"</span>: <span class="n">0.55</span>,
+    <span class="s">"size"</span>: <span class="n">100</span>
+})</pre>
+
+        <h3 style="margin-top: 16px;">Batch Price Lookup</h3>
+        <pre><span class="c">// Data API has batch pricing now:</span>
+<span class="k">async def</span> <span class="n">get_prices</span>(token_ids, sides):
+    r = <span class="k">await</span> client.<span class="n">get</span>(
+        <span class="s">"https://data-api.polymarket.com"</span>
+        <span class="s">"/pricing/multiple"</span>,
+        params={<span class="s">"tokens"</span>: token_ids}
+    )
+    <span class="k">return</span> r.<span class="n">json</span>()</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 14: Notifications ==================== -->
+  <div class="slide" data-slide="13">
+    <h2>Alerting & <span class="gradient-text">Notifications</span></h2>
+    <p class="subtitle" style="margin-bottom: 28px;">Pushing detected signals to external services.</p>
+
+    <div class="grid-2">
+      <div>
+        <h3>Email via Postmark</h3>
+        <pre><span class="k">import</span> httpx
+
+<span class="k">async def</span> <span class="n">send_alert</span>(subject, body):
+    <span class="k">await</span> httpx.<span class="n">AsyncClient</span>().<span class="n">post</span>(
+        <span class="s">"https://api.postmarkapp.com/email"</span>,
+        headers={
+            <span class="s">"X-Postmark-Server-Token"</span>:
+                POSTMARK_API_TOKEN,
+            <span class="s">"Content-Type"</span>:
+                <span class="s">"application/json"</span>
+        },
+        json={
+            <span class="s">"From"</span>:     POSTMARK_FROM_EMAIL,
+            <span class="s">"To"</span>:       ALERT_EMAIL,
+            <span class="s">"Subject"</span>:  subject,
+            <span class="s">"HtmlBody"</span>: body
+        }
+    )</pre>
+
+        <div class="card accent" style="margin-top: 20px;">
+          <div class="card-title">Required Environment</div>
+          <div class="card-body">
+<pre style="margin:0; border:0; padding:0; background:transparent;"><span class="p">POSTMARK_API_TOKEN</span>=<span class="s">your-token</span>
+<span class="p">POSTMARK_FROM_EMAIL</span>=<span class="s">alerts@you.com</span>
+<span class="p">ALERT_EMAIL</span>=<span class="s">you@email.com</span></pre>
+          </div>
+        </div>
+      </div>
+      <div>
+        <h3>Webhook (n8n / Zapier / Make)</h3>
+        <pre><span class="k">async def</span> <span class="n">send_webhook</span>(trade_data):
+    <span class="k">await</span> httpx.<span class="n">AsyncClient</span>().<span class="n">post</span>(
+        WEBHOOK_URL,
+        json={
+            <span class="s">"event"</span>:    <span class="s">"suspicious_trade"</span>,
+            <span class="s">"market"</span>:   trade_data[<span class="s">"question"</span>],
+            <span class="s">"wallet"</span>:   trade_data[<span class="s">"wallet"</span>],
+            <span class="s">"amount"</span>:   trade_data[<span class="s">"usdcSize"</span>],
+            <span class="s">"severity"</span>: trade_data[<span class="s">"score"</span>],
+            <span class="s">"signals"</span>:  trade_data[<span class="s">"signals"</span>]
+        }
+    )</pre>
+
+        <div class="card accent2" style="margin-top: 20px;">
+          <div class="card-title">Webhook Payload</div>
+          <div class="card-body">
+            The webhook receives a JSON payload with the full trade context, detected signals, and severity score. Connect to any automation platform.
+          </div>
+        </div>
+        <div class="card accent3" style="margin-top: 12px;">
+          <div class="card-title">Required Environment</div>
+          <div class="card-body">
+<pre style="margin:0; border:0; padding:0; background:transparent;"><span class="p">WEBHOOK_URL</span>=<span class="s">https://n8n.example.com/webhook/...</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 15: Gotchas & Tips ==================== -->
+  <div class="slide" data-slide="14">
+    <h2>Gotchas & <span class="gradient-text-2">Tips</span></h2>
+    <p class="subtitle" style="margin-bottom: 24px;">Hard-won lessons from building on these APIs, cross-checked against community experiences.</p>
+
+    <div class="grid-2" style="padding-bottom: 60px;">
+      <div class="card accent3" style="margin-bottom: 16px;">
+        <div class="card-title" style="color: var(--accent3);">Price Scale Mismatch</div>
+        <div class="card-body">
+          CLOB &amp; Data API pricing return <strong>0&ndash;1</strong>, Gamma <code>outcomePrices</code> returns <strong>0&ndash;100</strong>, accounting uses <strong>6 decimal places</strong>. Always check and normalize.
+        </div>
+      </div>
+
+      <div class="card accent" style="margin-bottom: 16px;">
+        <div class="card-title" style="color: var(--accent);">Inconsistent Field Names</div>
+        <div class="card-body">
+          Never assume a single field name. Always use fallback chains with <code class="inline-code">.get()</code> and <code class="inline-code">or</code> for wallet addresses, market IDs, sizes, and timestamps.
+        </div>
+      </div>
+
+      <div class="card accent2" style="margin-bottom: 16px;">
+        <div class="card-title" style="color: var(--accent2);">L1 vs L2 Auth Confusion</div>
+        <div class="card-body">
+          L1 (EIP-712) is for key management. L2 (HMAC) is for API requests. But even with L2, <strong>order payloads still need the private key</strong> for signing. You need both.
+        </div>
+      </div>
+
+      <div class="card accent4" style="margin-bottom: 16px;">
+        <div class="card-title" style="color: var(--accent4);">Missing usdcSize</div>
+        <div class="card-body">
+          Not all trade objects include <code class="inline-code">usdcSize</code>. Compute it yourself:
+          <code class="inline-code">usdc = trade.get("usdcSize") or (size * price)</code>
+        </div>
+      </div>
+
+      <div class="card accent" style="margin-bottom: 16px;">
+        <div class="card-title" style="color: var(--accent);">Batch Order Limits</div>
+        <div class="card-body">
+          Batch order size was increased from <strong>5 to 15</strong> orders per call in 2025. Use <code class="inline-code">POST /orders</code> for batch placement.
+        </div>
+      </div>
+
+      <div class="card accent3" style="margin-bottom: 16px;">
+        <div class="card-title" style="color: var(--accent3);">Polygon Chain</div>
+        <div class="card-body">
+          Polymarket runs on <strong>Polygon (chain ID 137)</strong>. The py-clob-client needs this explicitly. Three signature types: <code class="inline-code">EOA</code>, <code class="inline-code">POLY_PROXY</code>, <code class="inline-code">GNOSIS_SAFE</code>.
+        </div>
+      </div>
+
+      <div class="card accent2" style="margin-bottom: 16px;">
+        <div class="card-title" style="color: var(--accent2);">Geographic Restrictions</div>
+        <div class="card-body">
+          The CLOB enforces <strong>geoblocking</strong>. Check geographic restrictions before placing orders. Some regions are blocked from trading.
+        </div>
+      </div>
+
+      <div class="card accent4" style="margin-bottom: 16px;">
+        <div class="card-title" style="color: var(--accent4);">Data API vs CLOB Overlap</div>
+        <div class="card-body">
+          The Data API now has its own <code class="inline-code">/pricing/*</code> and <code class="inline-code">/orderbook/*</code> endpoints. These can be easier to use than CLOB equivalents for read-only operations.
+        </div>
+      </div>
+
+      <div class="card accent" style="margin-bottom: 16px;">
+        <div class="card-title" style="color: var(--accent);">Response Deduplication</div>
+        <div class="card-body">
+          When merging data from multiple APIs, dedup on composite keys:
+          <code class="inline-code">{trader}:{market}:{price}:{shares}:{ts}</code>
+        </div>
+      </div>
+
+      <div class="card accent3" style="margin-bottom: 16px;">
+        <div class="card-title" style="color: var(--accent3);">Strapi Is Legacy</div>
+        <div class="card-body">
+          The Strapi endpoint (<code class="inline-code">strapi-matic.poly.market</code>) is legacy. Use Data API <code class="inline-code">/user/activity</code> instead. Only fall back to Strapi when everything else fails.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 16: Quick Reference ==================== -->
+  <div class="slide" data-slide="15">
+    <h2><span class="gradient-text">Quick Reference</span></h2>
+    <p class="subtitle" style="margin-bottom: 20px;">Everything on one page.</p>
+
+    <div style="overflow-y: auto; max-height: calc(100vh - 200px); padding-bottom: 60px;">
+      <table>
+        <thead>
+          <tr>
+            <th>API</th>
+            <th>Base URL</th>
+            <th>Auth</th>
+            <th>Key Endpoints</th>
+            <th>Use Case</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong style="color: var(--accent);">Gamma</strong></td>
+            <td><code>gamma-api.polymarket.com</code></td>
+            <td><span class="tag tag-public">None</span></td>
+            <td><code>/markets</code>, <code>/events</code>, <code>/tags</code>, <code>/sports</code></td>
+            <td>Market discovery, metadata, categories</td>
+          </tr>
+          <tr>
+            <td><strong style="color: var(--accent2);">CLOB</strong></td>
+            <td><code>clob.polymarket.com</code></td>
+            <td><span class="tag tag-auth">L1+L2</span></td>
+            <td><code>/book</code>, <code>/price</code>, <code>/midpoint</code>, <code>/order</code>, <code>/trades</code></td>
+            <td>Live prices, order book, trading</td>
+          </tr>
+          <tr>
+            <td><strong style="color: var(--accent3);">Data</strong></td>
+            <td><code>data-api.polymarket.com</code></td>
+            <td><span class="tag tag-public">None*</span></td>
+            <td><code>/user/*</code>, <code>/markets/*</code>, <code>/pricing/*</code>, <code>/leaderboard/*</code></td>
+            <td>Profiles, trades, rankings, pricing, search</td>
+          </tr>
+          <tr>
+            <td><strong style="color: var(--accent4);">Bridge</strong></td>
+            <td>&mdash;</td>
+            <td><span class="tag tag-auth">Auth</span></td>
+            <td><code>/deposit</code>, <code>/withdraw</code>, <code>/quote</code></td>
+            <td>Fund management across chains</td>
+          </tr>
+          <tr>
+            <td><strong style="color: var(--accent);">WebSocket</strong></td>
+            <td><code>ws-subscriptions-clob.polymarket.com</code></td>
+            <td><span class="tag tag-wss">Mixed</span></td>
+            <td><code>/ws/market</code>, <code>/ws/user</code></td>
+            <td>Real-time orderbook, prices, order updates</td>
+          </tr>
+          <tr>
+            <td><strong style="color: var(--text-dim);">Strapi</strong></td>
+            <td><code>strapi-matic.poly.market</code></td>
+            <td><span class="tag tag-public">None</span></td>
+            <td><code>/activities</code></td>
+            <td>Legacy activity feed (fallback only)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="grid-3" style="margin-top: 28px;">
+        <div class="card accent">
+          <div class="card-title">Linking Markets to Prices</div>
+          <div class="card-body">
+            <div class="flow" style="flex-direction: column; align-items: flex-start;">
+              <div>1. <code class="inline-code">Gamma /markets</code> &rarr; get <code>clobTokenIds</code></div>
+              <div>2. <code class="inline-code">CLOB /price</code> with token ID + side</div>
+              <div>3. <code class="inline-code">CLOB /book</code> for depth</div>
+              <div>&nbsp;&nbsp;&nbsp;<em style="color:var(--text-dim)">or</em> <code class="inline-code">Data /pricing/multiple</code></div>
+            </div>
+          </div>
+        </div>
+        <div class="card accent2">
+          <div class="card-title">Profiling a Wallet</div>
+          <div class="card-body">
+            <div class="flow" style="flex-direction: column; align-items: flex-start;">
+              <div>1. <code class="inline-code">Data /user/trades</code></div>
+              <div>2. <code class="inline-code">Data /user/positions/current</code></div>
+              <div>3. <code class="inline-code">Data /user/positions/value</code></div>
+              <div>4. <code class="inline-code">Data /profiles/{address}</code></div>
+            </div>
+          </div>
+        </div>
+        <div class="card accent3">
+          <div class="card-title">Executing a Trade</div>
+          <div class="card-body">
+            <div class="flow" style="flex-direction: column; align-items: flex-start;">
+              <div>1. Get token ID from Gamma</div>
+              <div>2. Check price via CLOB or Data API</div>
+              <div>3. Init <code class="inline-code">py-clob-client</code> with L1 key</div>
+              <div>4. Generate L2 creds &rarr; POST /order</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 28px; border-color: var(--accent);">
+        <div class="card-title" style="color: var(--accent);">Environment Variables Checklist</div>
+        <div class="card-body">
+          <div class="grid-3" style="margin-top: 4px;">
+            <div>
+              <strong style="color: var(--text);">Trading (CLOB L1+L2)</strong>
+              <ul>
+                <li><code>POLY_PRIVATE_KEY</code></li>
+                <li><code>POLY_WALLET_ADDRESS</code></li>
+                <li><code>POLY_API_KEY</code></li>
+                <li><code>POLY_API_SECRET</code></li>
+                <li><code>POLY_PASSPHRASE</code></li>
+              </ul>
+            </div>
+            <div>
+              <strong style="color: var(--text);">Email Alerts</strong>
+              <ul>
+                <li><code>POSTMARK_API_TOKEN</code></li>
+                <li><code>POSTMARK_FROM_EMAIL</code></li>
+                <li><code>ALERT_EMAIL</code></li>
+              </ul>
+            </div>
+            <div>
+              <strong style="color: var(--text);">Webhooks</strong>
+              <ul>
+                <li><code>WEBHOOK_URL</code></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SLIDE 17: Sources & End ==================== -->
+  <div class="slide" data-slide="16">
+    <div class="divider">
+      <div>
+        <div class="big-number gradient-text">fin.</div>
+        <h2 style="font-weight: 300; color: var(--text-dim);">Polymarket APIs Deep Dive</h2>
+        <div style="margin-top: 32px;">
+          <span class="badge"><span class="dot-sm" style="background:var(--accent)"></span> Gamma</span>
+          <span class="badge"><span class="dot-sm" style="background:var(--accent2)"></span> CLOB</span>
+          <span class="badge"><span class="dot-sm" style="background:var(--accent3)"></span> Data</span>
+          <span class="badge"><span class="dot-sm" style="background:var(--accent4)"></span> Bridge</span>
+          <span class="badge"><span class="dot-sm" style="background:var(--green)"></span> WebSocket</span>
+        </div>
+        <p style="margin-top: 24px; color: var(--text-dim); font-size: 15px; max-width: 500px; margin-left: auto; margin-right: auto; line-height: 1.6;">
+          Most endpoints need zero authentication.<br>
+          Trading requires L1 (EIP-712) + L2 (HMAC-SHA256).<br>
+          Always normalize field names and price scales.<br>
+          Data API is your best friend for read-only ops.
+        </p>
+        <div style="margin-top: 32px; padding: 20px; border-radius: 12px; background: var(--bg-card); border: 1px solid var(--border); text-align: left; max-width: 500px; margin-left: auto; margin-right: auto;">
+          <div style="font-size: 13px; font-weight: 600; color: var(--accent2); margin-bottom: 12px;">Sources</div>
+          <div style="font-size: 13px; color: var(--text-dim); line-height: 1.8;">
+            <a href="https://docs.polymarket.com/" style="color: var(--accent2);">docs.polymarket.com</a> &mdash; Official documentation<br>
+            <a href="https://docs.polymarket.com/developers/CLOB/authentication" style="color: var(--accent2);">CLOB Authentication Docs</a> &mdash; L1/L2 details<br>
+            <a href="https://docs.polymarket.com/quickstart/reference/endpoints" style="color: var(--accent2);">Endpoint Reference</a> &mdash; All base URLs<br>
+            <a href="https://github.com/Polymarket/py-clob-client" style="color: var(--accent2);">py-clob-client</a> &mdash; Official Python SDK<br>
+            <a href="https://docs.polymarket.com/developers/CLOB/websocket/wss-overview" style="color: var(--accent2);">WebSocket Overview</a> &mdash; Real-time data<br>
+            Cross-checked: Feb 2026
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Navigation -->
+<div class="nav">
+  <button id="prevBtn" onclick="navigate(-1)" disabled>&larr; Prev</button>
+  <div style="display: flex; align-items: center; gap: 16px;">
+    <div class="progress" id="progress"></div>
+    <span class="slide-num" id="slideNum">1 / 17</span>
+  </div>
+  <button id="nextBtn" onclick="navigate(1)">Next &rarr;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+  let current = 0;
+
+  // Build progress dots
+  const progressEl = document.getElementById('progress');
+  for (let i = 0; i < total; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'dot' + (i === 0 ? ' active' : '');
+    dot.onclick = () => goTo(i);
+    progressEl.appendChild(dot);
+  }
+
+  function goTo(n) {
+    if (n < 0 || n >= total) return;
+    slides[current].classList.remove('active');
+    current = n;
+    slides[current].classList.add('active');
+    updateUI();
+  }
+
+  function navigate(dir) {
+    goTo(current + dir);
+  }
+
+  function updateUI() {
+    document.getElementById('prevBtn').disabled = current === 0;
+    document.getElementById('nextBtn').disabled = current === total - 1;
+    document.getElementById('slideNum').textContent = `${current + 1} / ${total}`;
+    document.querySelectorAll('.progress .dot').forEach((d, i) => {
+      d.classList.toggle('active', i === current);
+    });
+  }
+
+  // Keyboard navigation
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); navigate(1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); navigate(-1); }
+    if (e.key === 'Home') { e.preventDefault(); goTo(0); }
+    if (e.key === 'End') { e.preventDefault(); goTo(total - 1); }
+  });
+
+  // Touch swipe support
+  let touchStartX = 0;
+  document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+  document.addEventListener('touchend', (e) => {
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 60) navigate(diff > 0 ? 1 : -1);
+  });
+</script>
+
+</body>
+</html>
