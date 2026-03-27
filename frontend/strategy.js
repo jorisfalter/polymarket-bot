@@ -60,10 +60,17 @@ function renderStatus(data) {
     // Strategy statuses
     const strategies = data.strategies || {};
     setStrategyStatus('insider', strategies.insider_signal);
+    setStrategyStatus('smartmoney', strategies.smart_money);
     setStrategyStatus('arb', strategies.resolution_arb);
+
+    // Mode badge
+    document.getElementById('mode-badge').textContent = data.mode || 'PAPER';
 
     // Insider queue
     document.getElementById('insider-queue').textContent = data.insider_queue_size || 0;
+
+    // Smart money watching count
+    document.getElementById('smartmoney-watching').textContent = data.current_state?.watched_wallets || 0;
 
     // Last arb scan
     if (data.last_arb_scan) {
@@ -93,8 +100,8 @@ function renderJournal(entries) {
 
     tbody.innerHTML = entries.map(e => {
         const time = new Date(e.timestamp + 'Z').toLocaleString();
-        const stratClass = e.strategy === 'INSIDER-SIGNAL' ? 'insider' : 'arb';
-        const stratLabel = e.strategy === 'INSIDER-SIGNAL' ? 'INSIDER' : 'ARB';
+        const stratMap = {'INSIDER-SIGNAL': ['insider', 'INSIDER'], 'SMART-MONEY': ['smartmoney', 'SMART$'], 'RESOLUTION-ARB': ['arb', 'ARB']};
+        const [stratClass, stratLabel] = stratMap[e.strategy] || ['arb', e.strategy];
         const actionClass = e.action === 'ENTER' ? 'enter' : 'exit';
         const market = (e.market_question || '').substring(0, 50);
         const price = e.price ? `${(e.price * 100).toFixed(1)}c` : '--';

@@ -1,25 +1,26 @@
 """
-Strategy Engine — Orchestrates live trading strategies.
+Strategy Engine — Orchestrates paper trading strategies.
 
-Two strategies:
+Three strategies:
 1. Insider Signal Following — piggybacks on the detector pipeline
-2. Resolution Arbitrage — buys near-certain outcomes before resolution
+2. Smart Money Copy Trading — follows top leaderboard traders
+3. Resolution Arbitrage — buys near-certain outcomes before resolution
 
-All trades go through RiskManager for hard safety limits,
-and are logged to TradeJournal for full audit trail.
+All trades are PAPER ONLY — logged to trade journal and paper_trader.
+No real money is spent.
 """
-import asyncio
+import json
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List, Dict
 from loguru import logger
 
 from .config import settings
 from .models import SuspiciousTrade, AlertSeverity
 from .polymarket_client import PolymarketClient
 from .auto_seller import auto_seller
-from .risk_manager import risk_manager
 from .trade_journal import journal
-from .notifications import get_notifier, NotificationService
+from .paper_trader import paper_trader
+from .leaderboard import tracker
 
 
 # Sports/crypto keywords — skip these markets
@@ -40,11 +41,13 @@ def _is_excluded_market(question: str, slug: str) -> bool:
 
 
 class StrategyEngine:
-    """Orchestrates trading strategies with risk management."""
+    """Orchestrates paper trading strategies."""
 
     def __init__(self):
         self._last_arb_scan: Optional[datetime] = None
+        self._last_watchlist_curate: Optional[datetime] = None
         self._insider_queue: list[SuspiciousTrade] = []
+        self._smart_money_last_seen: Dict[str, str] = {}  # address -> last trade timestamp
 
     async def on_insider_alert(self, suspicious: SuspiciousTrade):
         """Called by main.py when a HIGH/CRITICAL alert is detected."""
@@ -61,12 +64,25 @@ class StrategyEngine:
         if settings.strategy_insider_enabled:
             await self._run_insider_signals()
 
+        # Smart money copy trading (check every cycle)
+        if settings.strategy_smartmoney_enabled:
+            await self._run_smart_money()
+
+        # Auto-curate watchlist every 6 hours
+        if settings.strategy_smartmoney_enabled:
+            now = datetime.utcnow()
+            if self._last_watchlist_curate is None or (now - self._last_watchlist_curate) > timedelta(hours=6):
+                await self._curate_smart_money_watchlist()
+                self._last_watchlist_curate = now
+
         # Resolution arbitrage (every 15 minutes)
         if settings.strategy_arbitrage_enabled:
             now = datetime.utcnow()
             if self._last_arb_scan is None or (now - self._last_arb_scan) > timedelta(minutes=15):
                 await self._run_resolution_arbitrage()
                 self._last_arb_scan = now
+
+    # ==================== STRATEGY 1: INSIDER SIGNAL ====================
 
     async def _run_insider_signals(self):
         """Process queued insider alerts."""
@@ -78,110 +94,194 @@ class StrategyEngine:
                 logger.error(f"Insider signal error: {e}")
 
     async def _execute_insider_trade(self, suspicious: SuspiciousTrade):
-        """Evaluate and execute a trade based on an insider signal."""
+        """Evaluate and paper-trade based on an insider signal."""
         trade = suspicious.trade
         score = suspicious.suspicion_score
 
-        # Only HIGH+ severity
         if score < settings.insider_min_score:
-            logger.debug(f"Insider signal skipped: score {score} < {settings.insider_min_score}")
             return
 
-        # Skip excluded markets
         if _is_excluded_market(trade.market_question, trade.market_slug):
-            logger.debug(f"Insider signal skipped: excluded market {trade.market_question[:40]}")
             return
 
-        # We need a token_id to trade. Get market data.
+        # Check if we already have a position in this market
+        if journal.has_open_position(trade.market_id):
+            return
+
         async with PolymarketClient() as client:
             market = await client.get_market(trade.market_id)
             if not market:
-                logger.warning(f"Could not fetch market {trade.market_id}")
                 return
 
-            # Get token IDs from market
-            tokens = market.get("tokens", []) or market.get("clobTokenIds", [])
-            if not tokens:
-                logger.warning(f"No tokens found for market {trade.market_id}")
-                return
+            # Get current price
+            current_price = self._get_market_price(market, trade.outcome)
+            if current_price is None:
+                current_price = trade.price / 100  # fallback to trade price in 0-1 scale
 
-            # Determine which token to buy based on the suspicious trade's outcome
-            # The insider bought a specific outcome — we follow
-            token_id = None
-            if isinstance(tokens, list) and len(tokens) >= 2:
-                if isinstance(tokens[0], dict):
-                    # tokens is list of dicts with token_id and outcome
-                    for t in tokens:
-                        outcome = t.get("outcome", "").lower()
-                        if trade.outcome and trade.outcome.lower() == outcome:
-                            token_id = t.get("token_id")
-                            break
-                    if not token_id:
-                        token_id = tokens[0].get("token_id")  # default to first
-                else:
-                    # tokens is list of token_id strings [yes_token, no_token]
-                    token_id = tokens[0] if trade.outcome in ("Yes", "YES", "yes") else tokens[1]
-            elif isinstance(tokens, list) and len(tokens) == 1:
-                token_id = tokens[0] if isinstance(tokens[0], str) else tokens[0].get("token_id")
-
-            if not token_id:
-                logger.warning(f"Could not determine token_id for {trade.market_question[:40]}")
-                return
-
-            # Check current price — skip if moved too much
-            current_prices = market.get("outcomePrices", "")
-            if current_prices and isinstance(current_prices, str):
-                try:
-                    import json
-                    prices = json.loads(current_prices)
-                    current_price_cents = float(prices[0]) * 100 if prices else None
-                except (json.JSONDecodeError, IndexError):
-                    current_price_cents = None
-            else:
-                current_price_cents = None
-
-            if current_price_cents and trade.price > 0:
-                drift_pct = abs(current_price_cents - trade.price) / trade.price * 100
+            # Check price drift
+            if trade.price > 0:
+                detected_price = trade.price / 100  # cents to 0-1
+                drift_pct = abs(current_price - detected_price) / detected_price * 100
                 if drift_pct > settings.insider_max_price_drift_pct:
-                    logger.info(f"Insider signal skipped: price drifted {drift_pct:.1f}% on {trade.market_question[:40]}")
+                    logger.info(f"Insider skipped: price drifted {drift_pct:.1f}% on {trade.market_question[:40]}")
                     return
 
-            # Fixed position size of $25
             amount_usd = min(25.0, settings.strategy_max_per_trade)
 
-            # Risk check
-            approved, reason = await risk_manager.approve_trade(
-                "INSIDER-SIGNAL", amount_usd, trade.market_slug, token_id
+            # Paper trade via paper_trader
+            paper_trade = await paper_trader.record_copy_trade(
+                copied_from=suspicious.wallet.address,
+                copied_from_name="INSIDER-SIGNAL",
+                market_id=trade.market_id,
+                market_title=trade.market_question,
+                market_slug=trade.market_slug,
+                outcome=trade.outcome or "Yes",
+                side=trade.side or "BUY",
+                their_entry_price=trade.price / 100 if trade.price > 1 else trade.price,
+                our_entry_price=current_price if current_price > 0 else 0.5,
             )
-            if not approved:
-                logger.info(f"Insider trade rejected: {reason}")
+
+            # Also log to trade journal for the strategy dashboard
+            journal.log_entry(
+                strategy="INSIDER-SIGNAL",
+                action="ENTER",
+                market_question=trade.market_question,
+                market_slug=trade.market_slug,
+                token_id=trade.market_id,
+                side=trade.side or "BUY",
+                price=current_price,
+                shares=paper_trade.shares,
+                amount_usd=amount_usd,
+                reason=f"Score {score} | {', '.join(suspicious.flags[:2])}",
+            )
+            logger.info(f"📝 INSIDER PAPER: {trade.market_question[:50]} @ {current_price:.4f}")
+
+    # ==================== STRATEGY 2: SMART MONEY COPY ====================
+
+    async def _curate_smart_money_watchlist(self):
+        """Auto-curate the watchlist from leaderboard top performers."""
+        logger.info("Curating smart money watchlist...")
+        try:
+            leaders = await tracker.fetch_leaderboard(order_by="pnl", limit=50)
+            if not leaders:
                 return
 
-            # Execute the buy
-            result = await auto_seller.execute_buy(
-                token_id=token_id,
-                amount_usd=amount_usd,
-                max_price=None,  # Market order
-            )
+            candidates = []
+            for t in leaders:
+                win_rate = float(t.get("win_rate", 0) or 0)
+                pnl = float(t.get("pnl", 0) or 0)
+                markets = int(t.get("markets_traded", 0) or 0)
+                address = t.get("address", "")
 
-            if result.success:
-                # Log to journal
-                journal.log_entry(
-                    strategy="INSIDER-SIGNAL",
-                    action="ENTER",
-                    market_question=trade.market_question,
-                    market_slug=trade.market_slug,
-                    token_id=token_id,
-                    side="BUY",
-                    price=result.price,
-                    shares=result.shares,
-                    amount_usd=amount_usd,
-                    reason=f"Score {score} | Flags: {', '.join(suspicious.flags[:3])}",
-                    order_id=result.order_id,
-                )
-                logger.info(f"🎯 INSIDER TRADE: ${amount_usd:.2f} on {trade.market_question[:50]}")
-            else:
-                logger.warning(f"Insider buy failed: {result.error}")
+                if win_rate >= settings.smartmoney_min_win_rate and pnl > 0 and markets >= settings.smartmoney_min_markets:
+                    candidates.append(address)
+
+                if len(candidates) >= settings.smartmoney_max_wallets:
+                    break
+
+            # Add new candidates to watchlist
+            added = 0
+            for addr in candidates:
+                if addr not in tracker.watched_wallets:
+                    tracker.watch(addr)
+                    added += 1
+
+            if added:
+                logger.info(f"Added {added} smart money wallets to watchlist (total: {len(tracker.watched_wallets)})")
+
+        except Exception as e:
+            logger.error(f"Watchlist curation error: {e}")
+
+    async def _run_smart_money(self):
+        """Check watched traders for new trades and paper-copy them."""
+        if not tracker.watched_wallets:
+            return
+
+        async with PolymarketClient() as client:
+            for address in list(tracker.watched_wallets):
+                try:
+                    trades = await client.get_user_trades(address, limit=10)
+                    if not trades:
+                        continue
+
+                    last_seen = self._smart_money_last_seen.get(address)
+                    latest_ts = None
+
+                    for t in trades:
+                        ts = t.get("timestamp") or t.get("createdAt") or ""
+                        if not ts:
+                            continue
+                        if last_seen and ts <= last_seen:
+                            break
+                        if not latest_ts or ts > latest_ts:
+                            latest_ts = ts
+
+                        # New trade from watched trader
+                        market_title = t.get("title") or t.get("question") or t.get("market") or "Unknown"
+                        market_slug = t.get("market_slug") or t.get("slug") or ""
+                        market_id = t.get("conditionId") or t.get("market_id") or t.get("condition_id") or ""
+                        side = t.get("side") or "BUY"
+                        price = float(t.get("price") or 0)
+                        usdc_size = float(t.get("usdcSize") or t.get("size") or 0)
+                        outcome = t.get("outcome") or "Yes"
+
+                        # Skip excluded markets
+                        if _is_excluded_market(market_title, market_slug):
+                            continue
+
+                        # Skip tiny trades
+                        if usdc_size < 10:
+                            continue
+
+                        # Check slippage — get current price
+                        if market_id:
+                            market_data = await client.get_market(market_id)
+                            current_price = self._get_market_price(market_data, outcome) if market_data else price
+                        else:
+                            current_price = price
+
+                        if current_price and price > 0:
+                            slippage = abs(current_price - price) / price * 100
+                            if slippage > 5.0:
+                                logger.debug(f"Smart money skip: {slippage:.1f}% slippage on {market_title[:30]}")
+                                continue
+
+                        entry_price = current_price if current_price and current_price > 0 else price
+
+                        # Paper trade
+                        await paper_trader.record_copy_trade(
+                            copied_from=address,
+                            copied_from_name="SMART-MONEY",
+                            market_id=market_id,
+                            market_title=market_title,
+                            market_slug=market_slug,
+                            outcome=outcome,
+                            side=side,
+                            their_entry_price=price,
+                            our_entry_price=entry_price if entry_price > 0 else 0.5,
+                        )
+
+                        journal.log_entry(
+                            strategy="SMART-MONEY",
+                            action="ENTER",
+                            market_question=market_title,
+                            market_slug=market_slug,
+                            token_id=market_id,
+                            side=side,
+                            price=entry_price,
+                            shares=25.0 / entry_price if entry_price > 0 else 0,
+                            amount_usd=25.0,
+                            reason=f"Copied {address[:10]}... | ${usdc_size:.0f} trade",
+                        )
+                        logger.info(f"📝 SMART MONEY PAPER: {market_title[:40]} copied from {address[:10]}...")
+
+                    if latest_ts:
+                        self._smart_money_last_seen[address] = latest_ts
+
+                except Exception as e:
+                    logger.debug(f"Smart money check error for {address[:12]}: {e}")
+
+    # ==================== STRATEGY 3: RESOLUTION ARBITRAGE ====================
 
     async def _run_resolution_arbitrage(self):
         """Scan for near-resolution markets with near-certain outcomes."""
@@ -193,32 +293,23 @@ class StrategyEngine:
                 return
 
             now = datetime.utcnow()
-            candidates = 0
-
             for market in markets:
                 try:
                     await self._evaluate_arb_candidate(client, market, now)
-                    candidates += 1
                 except Exception as e:
                     logger.debug(f"Arb eval error: {e}")
-                    continue
-
-            logger.debug(f"Arb scan complete: evaluated {candidates} markets")
 
     async def _evaluate_arb_candidate(self, client: PolymarketClient, market: dict, now: datetime):
         """Evaluate a single market for resolution arbitrage."""
         question = market.get("question", "")
         slug = market.get("slug", "") or market.get("market_slug", "")
 
-        # Skip excluded markets
         if _is_excluded_market(question, slug):
             return
-
-        # Must be active
         if not market.get("active", False):
             return
 
-        # Check end date — must be within window
+        # Check end date
         end_date_str = market.get("endDate") or market.get("end_date_iso")
         if not end_date_str:
             return
@@ -236,7 +327,6 @@ class StrategyEngine:
         if not prices_str:
             return
         try:
-            import json
             prices = json.loads(prices_str) if isinstance(prices_str, str) else prices_str
             if not prices or len(prices) < 2:
                 return
@@ -244,89 +334,73 @@ class StrategyEngine:
         except (json.JSONDecodeError, ValueError):
             return
 
-        # Find the dominant outcome
         max_price = max(prices)
         max_idx = prices.index(max_price)
 
-        # Must be in the sweet spot: 95-99c
         if max_price < settings.arb_min_probability or max_price > settings.arb_max_probability:
             return
 
-        # Calculate expected return
         expected_return_pct = ((1.0 - max_price) / max_price) * 100
-        if expected_return_pct < 1.0:  # At least 1% return
+        if expected_return_pct < 1.0:
             return
 
-        # Check liquidity
         liquidity = float(market.get("liquidity", 0) or 0)
         if liquidity < settings.arb_min_liquidity:
             return
 
-        # Get token ID for the dominant outcome
-        tokens = market.get("tokens", []) or market.get("clobTokenIds", [])
-        if not tokens or len(tokens) < 2:
+        market_id = market.get("conditionId") or market.get("id") or ""
+        if journal.has_open_position(market_id):
             return
 
-        if isinstance(tokens[0], dict):
-            token_id = tokens[max_idx].get("token_id") if max_idx < len(tokens) else None
-        else:
-            token_id = tokens[max_idx] if max_idx < len(tokens) else None
-
-        if not token_id:
-            return
-
-        # Verify order book depth
-        book = await client.get_order_book(token_id)
-        if not book:
-            return
-        asks = book.get("asks", []) if isinstance(book, dict) else getattr(book, "asks", [])
-        if not asks:
-            return
-
-        # Check actual ask price
-        if isinstance(asks[0], dict):
-            best_ask = float(asks[0].get("price", 1.0))
-        else:
-            best_ask = float(getattr(asks[0], "price", 1.0))
-
-        if best_ask > settings.arb_max_probability:
-            return  # Too expensive
-
-        # Position size: $25 fixed
+        outcome = "Yes" if max_idx == 0 else "No"
         amount_usd = min(25.0, settings.strategy_max_per_trade)
 
-        # Risk check
-        approved, reason = await risk_manager.approve_trade(
-            "RESOLUTION-ARB", amount_usd, slug, token_id
+        # Paper trade
+        await paper_trader.record_copy_trade(
+            copied_from="SYSTEM",
+            copied_from_name="RESOLUTION-ARB",
+            market_id=market_id,
+            market_title=question,
+            market_slug=slug,
+            outcome=outcome,
+            side="BUY",
+            their_entry_price=max_price,
+            our_entry_price=max_price,
         )
-        if not approved:
-            logger.debug(f"Arb rejected: {reason}")
-            return
 
-        # Execute
-        result = await auto_seller.execute_buy(
-            token_id=token_id,
+        journal.log_entry(
+            strategy="RESOLUTION-ARB",
+            action="ENTER",
+            market_question=question,
+            market_slug=slug,
+            token_id=market_id,
+            side="BUY",
+            price=max_price,
+            shares=amount_usd / max_price if max_price > 0 else 0,
             amount_usd=amount_usd,
-            max_price=settings.arb_max_probability,
+            reason=f"Outcome @ {max_price*100:.1f}c | {expected_return_pct:.1f}% return | Ends in {hours_to_end:.0f}h",
         )
+        logger.info(f"📝 ARB PAPER: {question[:50]} @ {max_price:.4f}")
 
-        if result.success:
-            journal.log_entry(
-                strategy="RESOLUTION-ARB",
-                action="ENTER",
-                market_question=question,
-                market_slug=slug,
-                token_id=token_id,
-                side="BUY",
-                price=result.price,
-                shares=result.shares,
-                amount_usd=amount_usd,
-                reason=f"Outcome @ {max_price*100:.1f}c | {expected_return_pct:.1f}% return | Ends in {hours_to_end:.0f}h",
-                order_id=result.order_id,
-            )
-            logger.info(f"📈 ARB TRADE: ${amount_usd:.2f} on {question[:50]} @ {result.price:.4f}")
-        else:
-            logger.debug(f"Arb buy failed: {result.error}")
+    # ==================== HELPERS ====================
+
+    def _get_market_price(self, market: dict, outcome: str = "Yes") -> Optional[float]:
+        """Extract current price for an outcome from market data."""
+        if not market:
+            return None
+        prices_str = market.get("outcomePrices", "")
+        if not prices_str:
+            return None
+        try:
+            prices = json.loads(prices_str) if isinstance(prices_str, str) else prices_str
+            if not prices:
+                return None
+            idx = 0 if outcome in ("Yes", "YES", "yes") else 1
+            if idx < len(prices):
+                return float(prices[idx])
+            return float(prices[0])
+        except (json.JSONDecodeError, ValueError, IndexError):
+            return None
 
     def get_status(self) -> dict:
         """Return current strategy engine status."""
@@ -336,25 +410,29 @@ class StrategyEngine:
 
         return {
             "enabled": settings.strategy_enabled,
+            "mode": "PAPER",
             "strategies": {
                 "insider_signal": settings.strategy_insider_enabled,
+                "smart_money": settings.strategy_smartmoney_enabled,
                 "resolution_arb": settings.strategy_arbitrage_enabled,
             },
             "risk_limits": {
-                "max_total_exposure": min(risk_manager.HARD_MAX_EXPOSURE, settings.strategy_max_total_exposure),
-                "max_per_trade": min(risk_manager.HARD_MAX_PER_TRADE, settings.strategy_max_per_trade),
-                "balance_floor": max(risk_manager.HARD_BALANCE_FLOOR, settings.strategy_balance_floor),
-                "max_positions": min(risk_manager.HARD_MAX_POSITIONS, settings.strategy_max_open_positions),
+                "max_total_exposure": settings.strategy_max_total_exposure,
+                "max_per_trade": settings.strategy_max_per_trade,
+                "balance_floor": settings.strategy_balance_floor,
+                "max_positions": settings.strategy_max_open_positions,
             },
             "current_state": {
                 "usdc_balance": balance,
                 "open_positions": len(open_positions),
                 "total_exposure": journal.get_total_exposure(),
                 "positions": open_positions,
+                "watched_wallets": len(tracker.watched_wallets),
             },
             "performance": performance,
             "insider_queue_size": len(self._insider_queue),
             "last_arb_scan": self._last_arb_scan.isoformat() if self._last_arb_scan else None,
+            "last_watchlist_curate": self._last_watchlist_curate.isoformat() if self._last_watchlist_curate else None,
         }
 
 

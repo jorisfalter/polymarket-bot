@@ -61,9 +61,10 @@ class Settings(BaseSettings):
     exclude_sports_alerts: bool = True  # Skip alerts for sports events
     exclude_crypto_price_alerts: bool = True  # Skip alerts for BTC/ETH price markets
     
-    # Strategy Engine (LIVE trading)
+    # Strategy Engine (PAPER trading)
     strategy_enabled: bool = True
     strategy_insider_enabled: bool = True
+    strategy_smartmoney_enabled: bool = True
     strategy_arbitrage_enabled: bool = True
 
     # Hard limits — DO NOT raise without explicit user approval
@@ -75,6 +76,11 @@ class Settings(BaseSettings):
     # Insider signal strategy
     insider_max_price_drift_pct: float = 10.0    # Skip if price moved more than this %
     insider_min_score: int = 60                   # Minimum suspicion score (HIGH+)
+
+    # Smart money copy trading
+    smartmoney_min_win_rate: float = 0.6         # Minimum win rate for auto-curation
+    smartmoney_min_markets: int = 20              # Must have traded 20+ markets
+    smartmoney_max_wallets: int = 10              # Max wallets to auto-watch
 
     # Resolution arbitrage strategy
     arb_min_probability: float = 0.95            # Minimum outcome probability

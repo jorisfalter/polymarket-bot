@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/styles.css?v=12">
     <style>
-        .strategy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+        .strategy-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
         .strategy-card { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 12px; padding: 20px; }
         .strategy-card h3 { margin: 0 0 8px; font-size: 16px; color: var(--text-primary); }
         .strategy-card .status { font-size: 12px; font-weight: 600; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; }
@@ -49,6 +49,8 @@
         .perf-stat { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; padding: 12px 16px; text-align: center; }
         .perf-stat .value { font-size: 20px; font-family: 'JetBrains Mono', monospace; color: var(--text-primary); }
         .perf-stat .label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; margin-top: 4px; }
+        .mode-badge { display: inline-block; background: rgba(255,170,0,0.15); color: #ffaa00; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 4px; text-transform: uppercase; margin-left: 8px; }
+        .tag.smartmoney { background: rgba(255,170,0,0.15); color: #ffaa00; }
         @media (max-width: 768px) {
             .strategy-grid { grid-template-columns: 1fr; }
             .perf-grid { grid-template-columns: repeat(2, 1fr); }
@@ -63,7 +65,7 @@
                     <span class="logo-icon">🤖</span>
                     <span class="logo-text">AUTO<span class="logo-highlight">TRADER</span></span>
                 </div>
-                <span class="tagline">Live Strategy Engine</span>
+                <span class="tagline">Paper Trading Strategy Engine</span>
             </div>
             <div class="header-right">
                 <nav class="main-nav">
@@ -87,7 +89,7 @@
             <!-- Balance & Performance -->
             <div style="display: flex; align-items: center; gap: 24px; margin-bottom: 20px;">
                 <div>
-                    <div class="balance-label">USDC Balance</div>
+                    <div class="balance-label">USDC Balance <span class="mode-badge" id="mode-badge">PAPER</span></div>
                     <p class="balance-display" id="balance">--</p>
                 </div>
                 <div style="flex:1"></div>
@@ -128,6 +130,16 @@
                     <div class="stat"><span class="stat-label">Position Size</span><span class="stat-value">$25</span></div>
                     <div class="stat"><span class="stat-label">Max Drift</span><span class="stat-value">10%</span></div>
                     <div class="stat"><span class="stat-label">Queue</span><span class="stat-value" id="insider-queue">0</span></div>
+                </div>
+                <div class="strategy-card" id="smartmoney-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3>Smart Money Copy</h3>
+                        <span class="status inactive" id="smartmoney-status">OFF</span>
+                    </div>
+                    <div class="stat"><span class="stat-label">Source</span><span class="stat-value">Top leaderboard</span></div>
+                    <div class="stat"><span class="stat-label">Min Win Rate</span><span class="stat-value">60%</span></div>
+                    <div class="stat"><span class="stat-label">Max Slippage</span><span class="stat-value">5%</span></div>
+                    <div class="stat"><span class="stat-label">Watching</span><span class="stat-value" id="smartmoney-watching">0</span></div>
                 </div>
                 <div class="strategy-card" id="arb-card">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
