@@ -40,6 +40,23 @@ class SellResult:
             self.timestamp = datetime.utcnow().isoformat()
 
 
+@dataclass
+class BuyResult:
+    """Result of a buy order attempt."""
+    success: bool
+    token_id: str
+    amount_usd: float
+    price: float
+    shares: float = 0
+    order_id: Optional[str] = None
+    error: Optional[str] = None
+    timestamp: str = ""
+
+    def __post_init__(self):
+        if not self.timestamp:
+            self.timestamp = datetime.utcnow().isoformat()
+
+
 class AutoSeller:
     """
     Handles automatic selling of positions on Polymarket.
@@ -77,11 +94,15 @@ class AutoSeller:
             )
 
             # Initialize client
+            # signature_type=1 for Polymarket proxy wallets (Magic.link)
+            # signature_type=0 for direct EOA wallets
             self.client = ClobClient(
                 host="https://clob.polymarket.com",
                 chain_id=self.CHAIN_ID,
                 key=settings.poly_private_key,
                 creds=creds,
+                signature_type=1,
+                funder=settings.poly_wallet_address,
             )
 
             # Derive API credentials if needed (links wallet to API key)
@@ -250,6 +271,133 @@ class AutoSeller:
             logger.error(f"Error getting position: {e}")
             return None
 
+    async def execute_buy(
+        self,
+        token_id: str,
+        amount_usd: float,
+        max_price: Optional[float] = None,
+    ) -> "BuyResult":
+        """
+        Execute a buy order.
+
+        Args:
+            token_id: Polymarket CLOB token ID
+            amount_usd: USD amount to spend
+            max_price: Maximum acceptable price (0-1 scale), or None for market order
+
+        Returns:
+            BuyResult with order details or error
+        """
+        if not self.is_ready():
+            return BuyResult(
+                success=False,
+                token_id=token_id,
+                amount_usd=amount_usd,
+                price=0,
+                error="Auto-seller not initialized. Check credentials.",
+            )
+
+        try:
+            logger.info(f"Executing buy: ${amount_usd:.2f} of {token_id[:20]}...")
+
+            # Get current order book
+            book = self.client.get_order_book(token_id)
+            if not book or not book.asks:
+                return BuyResult(
+                    success=False,
+                    token_id=token_id,
+                    amount_usd=amount_usd,
+                    price=0,
+                    error="No asks available in order book",
+                )
+
+            # Best ask is what we'll pay
+            best_ask = float(book.asks[0].price)
+
+            # Check max price
+            if max_price is not None and best_ask > max_price:
+                return BuyResult(
+                    success=False,
+                    token_id=token_id,
+                    amount_usd=amount_usd,
+                    price=best_ask,
+                    error=f"Price {best_ask:.4f} above max {max_price:.4f}",
+                )
+
+            # Calculate shares from USD amount
+            shares = amount_usd / best_ask if best_ask > 0 else 0
+            if shares <= 0:
+                return BuyResult(
+                    success=False,
+                    token_id=token_id,
+                    amount_usd=amount_usd,
+                    price=best_ask,
+                    error="Calculated zero shares",
+                )
+
+            # Create and execute buy order
+            order_args = OrderArgs(
+                token_id=token_id,
+                price=best_ask,
+                size=shares,
+                side=BUY,
+            )
+
+            signed_order = self.client.create_order(order_args)
+            response = self.client.post_order(signed_order, OrderType.GTC)
+
+            if response and response.get("success"):
+                order_id = response.get("orderID") or response.get("order_id")
+                logger.info(f"✅ Buy order placed: {order_id} | ${amount_usd:.2f} @ {best_ask:.4f}")
+                return BuyResult(
+                    success=True,
+                    token_id=token_id,
+                    amount_usd=amount_usd,
+                    price=best_ask,
+                    shares=shares,
+                    order_id=order_id,
+                )
+            else:
+                error_msg = response.get("errorMsg") or response.get("error") or "Unknown error"
+                return BuyResult(
+                    success=False,
+                    token_id=token_id,
+                    amount_usd=amount_usd,
+                    price=best_ask,
+                    error=f"Order rejected: {error_msg}",
+                )
+
+        except Exception as e:
+            logger.error(f"Buy execution error: {e}")
+            return BuyResult(
+                success=False,
+                token_id=token_id,
+                amount_usd=amount_usd,
+                price=0,
+                error=str(e),
+            )
+
+    def get_usdc_balance(self) -> Optional[float]:
+        """Get current USDC balance from the CLOB API."""
+        if not self.is_ready():
+            return None
+        try:
+            from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+            # signature_type=1 = Polymarket proxy wallet (where funds live)
+            # signature_type=0 = EOA (always shows 0 for proxy wallets)
+            params = BalanceAllowanceParams(
+                asset_type=AssetType.COLLATERAL,
+                signature_type=1,
+            )
+            result = self.client.get_balance_allowance(params)
+            if isinstance(result, dict):
+                raw = result.get("balance", 0)
+                return float(raw) / 1e6  # USDC has 6 decimals
+            return None
+        except Exception as e:
+            logger.error(f"Error getting USDC balance: {e}")
+            return None
+
     def get_balances(self) -> Dict[str, Any]:
         """Get wallet balances."""
         if not self.is_ready():
@@ -259,6 +407,7 @@ class AutoSeller:
             # Get USDC balance and positions
             return {
                 "positions": self.client.get_positions() or [],
+                "usdc_balance": self.get_usdc_balance(),
             }
         except Exception as e:
             logger.error(f"Error getting balances: {e}")

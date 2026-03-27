@@ -33,6 +33,8 @@ from .copy_trader import copy_trader, CopyTradeConfig, CopyMode
 from .paper_trader import paper_trader
 from .trade_tracker import trade_tracker
 from .auto_seller import auto_seller
+from .strategy_engine import strategy_engine
+from .trade_journal import journal as trade_journal
 
 
 def _get_trade_key(trade) -> str:
@@ -231,6 +233,10 @@ async def _analyze_and_record(
                 await notifier.notify(suspicious)
             except Exception as e:
                 logger.error(f"Notification failed: {e}")
+
+            # Feed HIGH/CRITICAL alerts to strategy engine
+            if suspicious.severity in (AlertSeverity.HIGH, AlertSeverity.CRITICAL):
+                asyncio.create_task(strategy_engine.on_insider_alert(suspicious))
 
         while len(alerts_store) > 500:
             alerts_store.pop()
@@ -458,6 +464,12 @@ async def lifespan(app: FastAPI):
         'interval',
         seconds=10,  # Check trade targets every 10 seconds
         id='trade_monitor_job'
+    )
+    scheduler.add_job(
+        strategy_engine.run_cycle,
+        'interval',
+        minutes=2,  # Run strategy engine every 2 minutes
+        id='strategy_cycle_job'
     )
     scheduler.start()
 
@@ -1196,6 +1208,34 @@ async def lookup_market_by_slug(slug: str):
 
 
 # Serve frontend
+# ==================== STRATEGY ENGINE ====================
+
+@app.get("/api/strategy/status")
+async def get_strategy_status():
+    """Get strategy engine status, risk limits, and current positions."""
+    return strategy_engine.get_status()
+
+
+@app.get("/api/strategy/journal")
+async def get_strategy_journal(limit: int = Query(100, le=500)):
+    """Get full trade journal history."""
+    return trade_journal.get_history(limit)
+
+
+@app.get("/api/strategy/performance")
+async def get_strategy_performance():
+    """Get P&L summary by strategy."""
+    return trade_journal.get_performance()
+
+
+@app.get("/strategy")
+async def serve_strategy():
+    return FileResponse(
+        "frontend/strategy.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
 @app.get("/")
 async def serve_frontend():
     return FileResponse(

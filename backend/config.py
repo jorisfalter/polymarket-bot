@@ -61,6 +61,27 @@ class Settings(BaseSettings):
     exclude_sports_alerts: bool = True  # Skip alerts for sports events
     exclude_crypto_price_alerts: bool = True  # Skip alerts for BTC/ETH price markets
     
+    # Strategy Engine (LIVE trading)
+    strategy_enabled: bool = True
+    strategy_insider_enabled: bool = True
+    strategy_arbitrage_enabled: bool = True
+
+    # Hard limits — DO NOT raise without explicit user approval
+    strategy_max_total_exposure: float = 100.0   # Max USD across ALL open positions
+    strategy_max_per_trade: float = 25.0         # Max USD per single trade
+    strategy_balance_floor: float = 840.0        # Refuse trades if balance would drop below
+    strategy_max_open_positions: int = 5          # Max concurrent positions
+
+    # Insider signal strategy
+    insider_max_price_drift_pct: float = 10.0    # Skip if price moved more than this %
+    insider_min_score: int = 60                   # Minimum suspicion score (HIGH+)
+
+    # Resolution arbitrage strategy
+    arb_min_probability: float = 0.95            # Minimum outcome probability
+    arb_max_probability: float = 0.99            # Above this, spread too thin
+    arb_max_hours_to_end: float = 48.0           # Market must end within this window
+    arb_min_liquidity: float = 5000.0            # Minimum market liquidity USD
+
     # Database
     database_url: str = "sqlite+aiosqlite:///./insider_detector.db"
     

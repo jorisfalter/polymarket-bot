@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Trading | Polymarket</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=12">
+    <style>
+        .strategy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+        .strategy-card { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 12px; padding: 20px; }
+        .strategy-card h3 { margin: 0 0 8px; font-size: 16px; color: var(--text-primary); }
+        .strategy-card .status { font-size: 12px; font-weight: 600; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; }
+        .status.active { background: rgba(0,255,136,0.15); color: #00ff88; }
+        .status.inactive { background: rgba(136,136,136,0.15); color: #888; }
+        .strategy-card .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-primary); font-size: 13px; }
+        .strategy-card .stat:last-child { border-bottom: none; }
+        .strategy-card .stat-label { color: var(--text-secondary); }
+        .strategy-card .stat-value { color: var(--text-primary); font-family: 'JetBrains Mono', monospace; }
+
+        .risk-bar-container { margin-bottom: 24px; }
+        .risk-bar { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 12px; padding: 16px 20px; }
+        .risk-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+        .risk-row:last-child { margin-bottom: 0; }
+        .risk-label { min-width: 120px; font-size: 13px; color: var(--text-secondary); }
+        .risk-track { flex: 1; height: 8px; background: var(--bg-tertiary, #1a1a2e); border-radius: 4px; overflow: hidden; }
+        .risk-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+        .risk-fill.green { background: #00ff88; }
+        .risk-fill.yellow { background: #ffaa00; }
+        .risk-fill.red { background: #ff3366; }
+        .risk-value { min-width: 80px; text-align: right; font-size: 13px; font-family: 'JetBrains Mono', monospace; color: var(--text-primary); }
+
+        .journal-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .journal-table th { text-align: left; padding: 10px 12px; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; border-bottom: 1px solid var(--border-primary); }
+        .journal-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-primary); color: var(--text-primary); }
+        .journal-table tr:hover { background: rgba(255,255,255,0.02); }
+        .tag { font-size: 11px; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+        .tag.insider { background: rgba(0,255,136,0.15); color: #00ff88; }
+        .tag.arb { background: rgba(0,212,255,0.15); color: #00d4ff; }
+        .tag.enter { color: #00ff88; }
+        .tag.exit { color: #ff3366; }
+        .pnl-positive { color: #00ff88; }
+        .pnl-negative { color: #ff3366; }
+        .balance-display { font-size: 28px; font-family: 'JetBrains Mono', monospace; color: #00d4ff; margin: 0; }
+        .balance-label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; }
+        .perf-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+        .perf-stat { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; padding: 12px 16px; text-align: center; }
+        .perf-stat .value { font-size: 20px; font-family: 'JetBrains Mono', monospace; color: var(--text-primary); }
+        .perf-stat .label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; margin-top: 4px; }
+        @media (max-width: 768px) {
+            .strategy-grid { grid-template-columns: 1fr; }
+            .perf-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">🤖</span>
+                    <span class="logo-text">AUTO<span class="logo-highlight">TRADER</span></span>
+                </div>
+                <span class="tagline">Live Strategy Engine</span>
+            </div>
+            <div class="header-right">
+                <nav class="main-nav">
+                    <a href="/" class="nav-link">
+                        <span class="nav-icon">🔍</span>
+                        <span class="nav-text">Insider Detection</span>
+                    </a>
+                    <a href="/copy" class="nav-link">
+                        <span class="nav-icon">📄</span>
+                        <span class="nav-text">Copy Trading</span>
+                    </a>
+                    <a href="/strategy" class="nav-link active">
+                        <span class="nav-icon">🤖</span>
+                        <span class="nav-text">Auto Trading</span>
+                    </a>
+                </nav>
+            </div>
+        </header>
+
+        <div class="main-content single-panel">
+            <!-- Balance & Performance -->
+            <div style="display: flex; align-items: center; gap: 24px; margin-bottom: 20px;">
+                <div>
+                    <div class="balance-label">USDC Balance</div>
+                    <p class="balance-display" id="balance">--</p>
+                </div>
+                <div style="flex:1"></div>
+                <div id="last-arb-scan" style="font-size: 12px; color: var(--text-secondary);"></div>
+            </div>
+
+            <div class="perf-grid" id="perf-grid">
+                <div class="perf-stat"><div class="value" id="perf-pnl">--</div><div class="label">Total P&L</div></div>
+                <div class="perf-stat"><div class="value" id="perf-trades">--</div><div class="label">Trades</div></div>
+                <div class="perf-stat"><div class="value" id="perf-winrate">--</div><div class="label">Win Rate</div></div>
+                <div class="perf-stat"><div class="value" id="perf-exposure">--</div><div class="label">Exposure</div></div>
+            </div>
+
+            <!-- Risk Bars -->
+            <div class="risk-bar-container">
+                <div class="risk-bar">
+                    <div class="risk-row">
+                        <span class="risk-label">Exposure</span>
+                        <div class="risk-track"><div class="risk-fill green" id="exposure-fill" style="width:0%"></div></div>
+                        <span class="risk-value" id="exposure-text">$0 / $100</span>
+                    </div>
+                    <div class="risk-row">
+                        <span class="risk-label">Positions</span>
+                        <div class="risk-track"><div class="risk-fill green" id="positions-fill" style="width:0%"></div></div>
+                        <span class="risk-value" id="positions-text">0 / 5</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Strategy Cards -->
+            <div class="strategy-grid">
+                <div class="strategy-card" id="insider-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3>Insider Signal Following</h3>
+                        <span class="status inactive" id="insider-status">OFF</span>
+                    </div>
+                    <div class="stat"><span class="stat-label">Trigger</span><span class="stat-value">HIGH/CRITICAL alerts</span></div>
+                    <div class="stat"><span class="stat-label">Position Size</span><span class="stat-value">$25</span></div>
+                    <div class="stat"><span class="stat-label">Max Drift</span><span class="stat-value">10%</span></div>
+                    <div class="stat"><span class="stat-label">Queue</span><span class="stat-value" id="insider-queue">0</span></div>
+                </div>
+                <div class="strategy-card" id="arb-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3>Resolution Arbitrage</h3>
+                        <span class="status inactive" id="arb-status">OFF</span>
+                    </div>
+                    <div class="stat"><span class="stat-label">Target</span><span class="stat-value">95-99c outcomes</span></div>
+                    <div class="stat"><span class="stat-label">Position Size</span><span class="stat-value">$25</span></div>
+                    <div class="stat"><span class="stat-label">Window</span><span class="stat-value">48h to resolution</span></div>
+                    <div class="stat"><span class="stat-label">Last Scan</span><span class="stat-value" id="arb-last-scan">--</span></div>
+                </div>
+            </div>
+
+            <!-- Trade Journal -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Trade Journal</h2>
+                    <span class="panel-subtitle">Complete audit trail of all strategy trades</span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="journal-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Strategy</th>
+                                <th>Action</th>
+                                <th>Market</th>
+                                <th>Price</th>
+                                <th>Amount</th>
+                                <th>P&L</th>
+                                <th>Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody id="journal-body">
+                            <tr><td colspan="8" style="text-align:center; color: var(--text-secondary); padding: 40px;">No trades yet. The strategy engine is running...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/strategy.js?v=1"></script>
+</body>
+</html>
