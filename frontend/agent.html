@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent | Polymarket</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=13">
+    <style>
+        .thinking-panel { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 12px; padding: 20px; margin-bottom: 20px; max-height: 500px; overflow-y: auto; }
+        .thinking-entry { border-bottom: 1px solid var(--border-primary); padding: 16px 0; }
+        .thinking-entry:last-child { border-bottom: none; }
+        .thinking-time { font-size: 11px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; }
+        .thinking-text { font-size: 14px; color: var(--text-primary); line-height: 1.6; margin: 8px 0; white-space: pre-wrap; }
+        .thinking-trades { margin-top: 8px; }
+        .thinking-trade { background: rgba(0,255,136,0.08); border: 1px solid rgba(0,255,136,0.2); border-radius: 6px; padding: 8px 12px; margin-top: 6px; font-size: 13px; }
+        .thinking-trade .action { color: #00ff88; font-weight: 600; }
+        .thinking-trade .thesis { color: var(--text-secondary); font-style: italic; }
+        .thinking-meta { display: flex; gap: 16px; margin-top: 8px; font-size: 12px; }
+        .thinking-meta .watchlist { color: #00d4ff; }
+        .thinking-meta .risk { color: #ffaa00; }
+        .no-thinking { text-align: center; color: var(--text-secondary); padding: 40px; font-size: 14px; }
+
+        .agent-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+        .agent-stat { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; padding: 12px 16px; text-align: center; }
+        .agent-stat .value { font-size: 20px; font-family: 'JetBrains Mono', monospace; color: var(--text-primary); }
+        .agent-stat .label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; margin-top: 4px; }
+        .model-badge { font-size: 11px; background: rgba(0,212,255,0.15); color: #00d4ff; padding: 3px 10px; border-radius: 4px; font-weight: 600; }
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+        .status-dot.active { background: #00ff88; }
+        .status-dot.inactive { background: #666; }
+        .pnl-positive { color: #00ff88; }
+        .pnl-negative { color: #ff3366; }
+        .positions-grid { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 12px; }
+        .position-card { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+        .position-card .market { color: var(--text-primary); flex: 1; }
+        .position-card .amount { font-family: 'JetBrains Mono', monospace; color: #00d4ff; min-width: 60px; text-align: right; }
+        @media (max-width: 768px) { .agent-stats { grid-template-columns: repeat(2, 1fr); } }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">🧠</span>
+                    <span class="logo-text">AI<span class="logo-highlight">AGENT</span></span>
+                </div>
+                <span class="tagline">Claude-Powered Trading</span>
+            </div>
+            <div class="header-right">
+                <nav class="main-nav">
+                    <a href="/" class="nav-link">
+                        <span class="nav-icon">🔍</span>
+                        <span class="nav-text">Detection</span>
+                    </a>
+                    <a href="/agent" class="nav-link active">
+                        <span class="nav-icon">🧠</span>
+                        <span class="nav-text">AI Agent</span>
+                    </a>
+                    <a href="/strategy" class="nav-link">
+                        <span class="nav-icon">🤖</span>
+                        <span class="nav-text">Strategies</span>
+                    </a>
+                </nav>
+            </div>
+        </header>
+
+        <div class="main-content single-panel">
+            <!-- Stats Bar -->
+            <div class="agent-stats">
+                <div class="agent-stat">
+                    <div class="value" id="balance">--</div>
+                    <div class="label">Balance</div>
+                </div>
+                <div class="agent-stat">
+                    <div class="value" id="exposure">--</div>
+                    <div class="label">Exposure / $5</div>
+                </div>
+                <div class="agent-stat">
+                    <div class="value" id="positions">--</div>
+                    <div class="label">Positions</div>
+                </div>
+                <div class="agent-stat">
+                    <div class="value" id="pnl">--</div>
+                    <div class="label">Total P&L</div>
+                </div>
+                <div class="agent-stat">
+                    <div class="value"><span class="status-dot" id="status-dot"></span><span id="status-text">--</span></div>
+                    <div class="label">Status</div>
+                </div>
+            </div>
+
+            <!-- Open Positions -->
+            <div id="positions-section" style="margin-bottom: 20px; display: none;">
+                <h3 style="font-size: 14px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px;">Open Positions</h3>
+                <div class="positions-grid" id="positions-grid"></div>
+            </div>
+
+            <!-- Agent's Thinking -->
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h2 style="margin: 0; font-size: 18px;">Agent's Thinking</h2>
+                    <span class="model-badge" id="model-badge">--</span>
+                </div>
+                <div class="thinking-panel" id="thinking-panel">
+                    <div class="no-thinking">Waiting for first cycle... The agent thinks every 5 minutes.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/agent.js?v=1"></script>
+</body>
+</html>

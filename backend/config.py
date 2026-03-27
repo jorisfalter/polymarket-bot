@@ -88,6 +88,14 @@ class Settings(BaseSettings):
     arb_max_hours_to_end: float = 48.0           # Market must end within this window
     arb_min_liquidity: float = 5000.0            # Minimum market liquidity USD
 
+    # AI Trading Agent
+    agent_enabled: bool = True
+    anthropic_api_key: Optional[str] = None
+    agent_model: str = "claude-haiku-4-5-20251001"
+    agent_max_positions: int = 5
+    agent_max_per_trade: float = 1.0        # Penny trades: max $1 per trade
+    agent_max_total_exposure: float = 5.0    # Max $5 total at risk
+
     # Database
     database_url: str = "sqlite+aiosqlite:///./insider_detector.db"
     

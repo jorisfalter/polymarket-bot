@@ -35,6 +35,7 @@ from .trade_tracker import trade_tracker
 from .auto_seller import auto_seller
 from .strategy_engine import strategy_engine
 from .trade_journal import journal as trade_journal
+from .ai_agent import ai_agent
 
 
 def _get_trade_key(trade) -> str:
@@ -395,6 +396,11 @@ async def scan_for_suspicious_activity():
 
     logger.info(f"✅ Scan complete. Total alerts: {len(alerts_store)}, New this scan: {new_alerts_count}")
 
+    # Feed new alerts to AI agent for next cycle
+    if new_alerts_count > 0:
+        recent = [a for a in alerts_store[:new_alerts_count]]
+        ai_agent.feed_alerts(recent)
+
 
 def _generate_narrative(suspicious: SuspiciousTrade) -> str:
     """Generate a human-readable explanation of why this trade is suspicious"""
@@ -470,6 +476,12 @@ async def lifespan(app: FastAPI):
         'interval',
         minutes=2,  # Run strategy engine every 2 minutes
         id='strategy_cycle_job'
+    )
+    scheduler.add_job(
+        ai_agent.run_cycle,
+        'interval',
+        minutes=5,  # AI agent thinks every 5 minutes
+        id='ai_agent_job'
     )
     scheduler.start()
 
@@ -1226,6 +1238,28 @@ async def get_strategy_journal(limit: int = Query(100, le=500)):
 async def get_strategy_performance():
     """Get P&L summary by strategy."""
     return trade_journal.get_performance()
+
+
+# ==================== AI AGENT ====================
+
+@app.get("/api/agent/status")
+async def get_agent_status():
+    """Get AI agent status, portfolio, and last thinking."""
+    return ai_agent.get_status()
+
+
+@app.get("/api/agent/thinking")
+async def get_agent_thinking(limit: int = Query(50, le=200)):
+    """Get the agent's thinking journal."""
+    return ai_agent.get_thinking_history(limit)
+
+
+@app.get("/agent")
+async def serve_agent():
+    return FileResponse(
+        "frontend/agent.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
 
 
 @app.get("/strategy")
