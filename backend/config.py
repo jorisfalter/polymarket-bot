@@ -61,11 +61,11 @@ class Settings(BaseSettings):
     exclude_sports_alerts: bool = True  # Skip alerts for sports events
     exclude_crypto_price_alerts: bool = True  # Skip alerts for BTC/ETH price markets
     
-    # Strategy Engine (PAPER trading)
-    strategy_enabled: bool = True
-    strategy_insider_enabled: bool = True
-    strategy_smartmoney_enabled: bool = True
-    strategy_arbitrage_enabled: bool = True
+    # Strategy Engine (DISABLED — replaced by AI agent)
+    strategy_enabled: bool = False
+    strategy_insider_enabled: bool = False
+    strategy_smartmoney_enabled: bool = False
+    strategy_arbitrage_enabled: bool = False
 
     # Hard limits — DO NOT raise without explicit user approval
     strategy_max_total_exposure: float = 100.0   # Max USD across ALL open positions
