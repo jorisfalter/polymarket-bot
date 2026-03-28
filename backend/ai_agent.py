@@ -21,9 +21,11 @@ from .ai_prompts import (
     build_portfolio_summary,
     build_thinking_history,
     build_smart_money_summary,
+    build_thesis_board,
 )
 
 THINKING_LOG_PATH = Path(__file__).parent.parent / "data" / "agent_thinking.jsonl"
+THESES_PATH = Path(__file__).parent.parent / "data" / "agent_theses.json"
 
 # Try to import anthropic
 try:
@@ -42,7 +44,9 @@ class AITradingAgent:
         self._recent_alerts: list = []  # Fed by main.py after each scan
         self._recent_smart_money: list = []
         self._thinking_history: List[Dict] = []
+        self.theses: List[Dict] = []
         self._load_recent_thinking()
+        self._load_theses()
 
         if HAS_ANTHROPIC and settings.anthropic_api_key:
             self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -62,6 +66,83 @@ class AITradingAgent:
                 except json.JSONDecodeError:
                     continue
         self._thinking_history = entries[-5:]  # Keep last 5
+
+    def _load_theses(self):
+        """Load thesis board from disk."""
+        if not THESES_PATH.exists():
+            return
+        try:
+            self.theses = json.loads(THESES_PATH.read_text())
+        except (json.JSONDecodeError, Exception):
+            self.theses = []
+
+    def _save_theses(self):
+        """Persist thesis board to disk."""
+        try:
+            THESES_PATH.parent.mkdir(parents=True, exist_ok=True)
+            THESES_PATH.write_text(json.dumps(self.theses, indent=2))
+        except Exception as e:
+            logger.warning(f"Failed to save theses: {e}")
+
+    def _apply_thesis_updates(self, updates: List[Dict]):
+        """Apply CREATE/UPDATE/CLOSE operations to the thesis board."""
+        if not updates:
+            return
+        now = datetime.utcnow().isoformat()
+        changed = False
+
+        for u in updates:
+            action = u.get("action", "").upper()
+            tid = u.get("id", "")
+
+            if action == "CREATE" and tid:
+                # Don't duplicate
+                if any(t["id"] == tid for t in self.theses):
+                    continue
+                self.theses.append({
+                    "id": tid,
+                    "title": u.get("title", ""),
+                    "market_id": u.get("market_id", ""),
+                    "conviction": u.get("conviction", "medium"),
+                    "status": "active",
+                    "created": now,
+                    "updated": now,
+                    "history": [{"timestamp": now, "note": u.get("note", ""), "conviction": u.get("conviction", "medium")}],
+                })
+                logger.info(f"📋 Thesis created: [{tid}] {u.get('title', '')[:50]}")
+                changed = True
+
+            elif action == "UPDATE" and tid:
+                for t in self.theses:
+                    if t["id"] == tid and t["status"] == "active":
+                        if u.get("conviction"):
+                            t["conviction"] = u["conviction"]
+                        t["updated"] = now
+                        t["history"].append({
+                            "timestamp": now,
+                            "note": u.get("note", ""),
+                            "conviction": u.get("conviction", t["conviction"]),
+                        })
+                        logger.info(f"📋 Thesis updated: [{tid}] {u.get('note', '')[:50]}")
+                        changed = True
+                        break
+
+            elif action == "CLOSE" and tid:
+                for t in self.theses:
+                    if t["id"] == tid and t["status"] == "active":
+                        t["status"] = "closed"
+                        t["updated"] = now
+                        t["history"].append({
+                            "timestamp": now,
+                            "note": u.get("note", "Closed"),
+                            "conviction": "closed",
+                        })
+                        logger.info(f"📋 Thesis closed: [{tid}]")
+                        changed = True
+                        break
+
+        if changed:
+            self._save_theses()
 
     def feed_alerts(self, alerts: list):
         """Called by main.py after scan with new alerts."""
@@ -93,7 +174,11 @@ class AITradingAgent:
             # 4. Log thinking
             self._log_thinking(decision)
 
-            # 5. Execute trades
+            # 5. Update thesis board
+            if decision.get("thesis_updates"):
+                self._apply_thesis_updates(decision["thesis_updates"])
+
+            # 6. Execute trades
             if decision.get("trades"):
                 await self._execute_trades(decision["trades"])
 
@@ -128,6 +213,9 @@ class AITradingAgent:
             markets = await client.get_markets(limit=20, order="volume24hr")
             parts.append(build_market_briefing(markets))
 
+        # Thesis board
+        parts.append(build_thesis_board(self.theses))
+
         # Thinking history
         parts.append(build_thinking_history(self._thinking_history))
 
@@ -138,7 +226,7 @@ class AITradingAgent:
         try:
             message = self.client.messages.create(
                 model=settings.agent_model,
-                max_tokens=1024,
+                max_tokens=2048,
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": context}],
             )
@@ -309,6 +397,10 @@ class AITradingAgent:
             },
             "performance": performance,
             "last_thinking": last_thinking,
+            "theses": {
+                "active": [t for t in self.theses if t.get("status") == "active"],
+                "closed_count": sum(1 for t in self.theses if t.get("status") == "closed"),
+            },
         }
 
     def get_thinking_history(self, limit: int = 50) -> List[Dict]:

@@ -22,6 +22,15 @@
         .thinking-meta .watchlist { color: #00d4ff; }
         .thinking-meta .risk { color: #ffaa00; }
         .no-thinking { text-align: center; color: var(--text-secondary); padding: 40px; font-size: 14px; }
+        .thesis-card { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; padding: 14px 16px; }
+        .thesis-card .thesis-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .thesis-card .thesis-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+        .thesis-card .thesis-note { font-size: 12px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4; }
+        .thesis-card .thesis-meta { font-size: 11px; color: var(--text-secondary); margin-top: 6px; font-family: 'JetBrains Mono', monospace; }
+        .conviction-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 3px; text-transform: uppercase; }
+        .conviction-badge.high { background: rgba(0,255,136,0.15); color: #00ff88; }
+        .conviction-badge.medium { background: rgba(255,170,0,0.15); color: #ffaa00; }
+        .conviction-badge.low { background: rgba(136,136,136,0.15); color: #888; }
 
         .agent-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
         .agent-stat { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; padding: 12px 16px; text-align: center; }
@@ -97,6 +106,14 @@
             <div id="positions-section" style="margin-bottom: 20px; display: none;">
                 <h3 style="font-size: 14px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px;">Open Positions</h3>
                 <div class="positions-grid" id="positions-grid"></div>
+            </div>
+
+            <!-- Thesis Board -->
+            <div id="thesis-section" style="margin-bottom: 20px;">
+                <h3 style="font-size: 14px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px;">Thesis Board</h3>
+                <div id="thesis-board" style="display: grid; gap: 8px;">
+                    <div style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No active theses yet. The agent will create them when it spots patterns.</div>
+                </div>
             </div>
 
             <!-- Agent's Thinking -->

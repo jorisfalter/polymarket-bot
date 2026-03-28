@@ -33,6 +33,14 @@ You have access to an insider detection system that scans thousands of trades an
 - You already have a position in that market.
 - You're near your exposure limit.
 
+## Thesis Board
+You maintain a board of investment theses — hypotheses about what will happen in specific markets. Each thesis tracks your evolving conviction over time, like an analyst's investment memo. You can:
+- **CREATE** a new thesis when you spot a pattern or developing story
+- **UPDATE** an existing thesis when new evidence arrives (confirm, weaken, or change conviction)
+- **CLOSE** a thesis when it's resolved, invalidated, or you lose interest
+
+Good theses are specific: "Iran escalation will push strike market above 30c by April" not "geopolitics is interesting". Theses give you long-term memory — they carry your thinking across cycles and days.
+
 ## Response Format
 You MUST respond with this exact JSON structure:
 {
@@ -48,11 +56,23 @@ You MUST respond with this exact JSON structure:
       "thesis": "One sentence: why this trade"
     }
   ],
+  "thesis_updates": [
+    {
+      "action": "CREATE",
+      "id": "short-kebab-case-id",
+      "title": "Descriptive title of the thesis",
+      "market_id": "related market conditionId (optional)",
+      "conviction": "low/medium/high",
+      "note": "Why you believe this, what evidence supports it"
+    }
+  ],
   "watchlist_notes": "Markets you want to keep watching and why. Be specific.",
   "risk_assessment": "How comfortable are you with current exposure? Any positions you're worried about?"
 }
 
-If you have no trades to make, return an empty trades array. That's fine — patience is a virtue.
+For thesis_updates, use action "CREATE" for new theses, "UPDATE" to change conviction/add notes (include the same "id"), "CLOSE" when done (include "id" and "note" explaining why).
+
+If you have no trades or thesis updates, return empty arrays. That's fine — patience is a virtue.
 The "thinking" field is the most important. It's your trading journal. Be honest and specific."""
 
 
@@ -160,6 +180,31 @@ def build_thinking_history(entries: List[Dict]) -> str:
         thinking = e.get("thinking", "")[:300]
         trades_count = len(e.get("trades", []))
         lines.append(f"[{ts}] ({trades_count} trades) {thinking}")
+
+    return "\n".join(lines)
+
+
+def build_thesis_board(theses: List[Dict]) -> str:
+    """Format active theses for the agent's context."""
+    active = [t for t in theses if t.get("status") == "active"]
+    if not active:
+        return "## Your Thesis Board\nNo active theses. Create one when you spot a developing story."
+
+    lines = ["## Your Thesis Board"]
+    for t in active:
+        conviction = t.get("conviction", "?").upper()
+        title = t.get("title", "?")
+        tid = t.get("id", "?")
+        created = t.get("created", "?")[:10]
+        updated = t.get("updated", "?")[:10]
+        history = t.get("history", [])
+        latest_note = history[-1].get("note", "") if history else t.get("note", "")
+
+        lines.append(
+            f"- **[{tid}]** {title}\n"
+            f"  Conviction: {conviction} | Created: {created} | Updated: {updated}\n"
+            f"  Latest: {latest_note[:200]}"
+        )
 
     return "\n".join(lines)
 

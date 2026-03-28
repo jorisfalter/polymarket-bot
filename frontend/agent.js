@@ -57,6 +57,10 @@ function renderStatus(data) {
     const model = data.model || '';
     document.getElementById('model-badge').textContent = model.includes('haiku') ? 'Haiku' : model.includes('sonnet') ? 'Sonnet' : model;
 
+    // Theses
+    const theses = data.theses?.active || [];
+    renderTheses(theses);
+
     // Positions
     const positions = data.portfolio?.positions || [];
     const posSection = document.getElementById('positions-section');
@@ -113,6 +117,31 @@ function renderThinking(entries) {
             <div class="thinking-text">${thinking}</div>
             ${tradesHtml}
             ${metaHtml}
+        </div>`;
+    }).join('');
+}
+
+function renderTheses(theses) {
+    const board = document.getElementById('thesis-board');
+    if (!theses || theses.length === 0) {
+        board.innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No active theses yet. The agent will create them when it spots patterns.</div>';
+        return;
+    }
+
+    board.innerHTML = theses.map(t => {
+        const conviction = t.conviction || 'medium';
+        const history = t.history || [];
+        const latestNote = history.length > 0 ? escapeHtml(history[history.length - 1].note || '') : '';
+        const created = t.created ? t.created.substring(0, 10) : '?';
+        const updates = history.length - 1;
+
+        return `<div class="thesis-card">
+            <div class="thesis-header">
+                <span class="thesis-title">${escapeHtml(t.title || '')}</span>
+                <span class="conviction-badge ${conviction}">${conviction}</span>
+            </div>
+            <div class="thesis-note">${latestNote.substring(0, 200)}</div>
+            <div class="thesis-meta">Created ${created} | ${updates} update${updates !== 1 ? 's' : ''}</div>
         </div>`;
     }).join('');
 }

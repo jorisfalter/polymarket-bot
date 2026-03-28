@@ -1254,6 +1254,12 @@ async def get_agent_thinking(limit: int = Query(50, le=200)):
     return ai_agent.get_thinking_history(limit)
 
 
+@app.get("/api/agent/theses")
+async def get_agent_theses():
+    """Get the agent's thesis board."""
+    return ai_agent.theses
+
+
 @app.get("/agent")
 async def serve_agent():
     return FileResponse(
