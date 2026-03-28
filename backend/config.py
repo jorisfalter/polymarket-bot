@@ -96,6 +96,17 @@ class Settings(BaseSettings):
     agent_max_per_trade: float = 1.0        # Penny trades: max $1 per trade
     agent_max_total_exposure: float = 5.0    # Max $5 total at risk
 
+    # Twitter/X integration
+    twitter_api_key: Optional[str] = None
+    twitter_api_secret: Optional[str] = None
+    twitter_access_token: Optional[str] = None
+    twitter_access_secret: Optional[str] = None
+    twitter_enabled: bool = True
+
+    # Google Sheets integration
+    google_sheets_id: Optional[str] = None               # Spreadsheet ID from URL
+    google_service_account_file: Optional[str] = None     # Path to service account JSON
+
     # Database
     database_url: str = "sqlite+aiosqlite:///./insider_detector.db"
     

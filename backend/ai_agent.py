@@ -14,6 +14,7 @@ from .config import settings
 from .auto_seller import auto_seller
 from .trade_journal import journal
 from .polymarket_client import PolymarketClient
+from .integrations import post_tweet, format_thinking_tweet, log_trade_to_sheets, log_thinking_to_sheets
 from .ai_prompts import (
     SYSTEM_PROMPT,
     build_market_briefing,
@@ -173,6 +174,19 @@ class AITradingAgent:
 
             # 4. Log thinking
             self._log_thinking(decision)
+
+            # 4b. Post to Twitter
+            try:
+                tweet_text = format_thinking_tweet(decision)
+                post_tweet(tweet_text)
+            except Exception as e:
+                logger.debug(f"Tweet skipped: {e}")
+
+            # 4c. Log to Google Sheets
+            try:
+                log_thinking_to_sheets(decision)
+            except Exception as e:
+                logger.debug(f"Sheets thinking log skipped: {e}")
 
             # 5. Update thesis board
             if decision.get("thesis_updates"):
@@ -346,6 +360,20 @@ class AITradingAgent:
                         order_id=result.order_id,
                     )
                     logger.info(f"🤖 AI TRADE: ${amount_usd:.2f} on {market_question[:40]} ({thesis[:30]})")
+
+                    # Log to Google Sheets
+                    log_trade_to_sheets(
+                        strategy="AI-AGENT",
+                        action="BUY",
+                        market_question=market_question,
+                        outcome=outcome,
+                        price=result.price,
+                        shares=result.shares,
+                        amount_usd=amount_usd,
+                        confidence=confidence,
+                        reason=thesis,
+                        order_id=result.order_id or "",
+                    )
                 else:
                     logger.warning(f"AI trade failed: {result.error}")
 

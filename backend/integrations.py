@@ -1,0 +1,250 @@
+"""
+External integrations for the AI Trading Agent.
+- Twitter/X: posts thinking summaries each cycle
+- Google Sheets: logs all trades to a shared spreadsheet
+"""
+import json
+from datetime import datetime
+from typing import Dict, List, Optional
+from loguru import logger
+
+from .config import settings
+
+# ==================== TWITTER/X ====================
+
+_twitter_client = None
+
+
+def _get_twitter_client():
+    """Lazy-init Twitter client."""
+    global _twitter_client
+    if _twitter_client is not None:
+        return _twitter_client
+
+    if not all([
+        settings.twitter_api_key,
+        settings.twitter_api_secret,
+        settings.twitter_access_token,
+        settings.twitter_access_secret,
+    ]):
+        return None
+
+    try:
+        import tweepy
+        _twitter_client = tweepy.Client(
+            consumer_key=settings.twitter_api_key,
+            consumer_secret=settings.twitter_api_secret,
+            access_token=settings.twitter_access_token,
+            access_token_secret=settings.twitter_access_secret,
+        )
+        logger.info("Twitter client initialized")
+        return _twitter_client
+    except Exception as e:
+        logger.warning(f"Twitter init failed: {e}")
+        return None
+
+
+def post_tweet(text: str) -> Optional[str]:
+    """Post a tweet. Returns tweet ID or None."""
+    if not settings.twitter_enabled:
+        return None
+
+    client = _get_twitter_client()
+    if not client:
+        return None
+
+    try:
+        # Twitter limit is 280 chars
+        if len(text) > 280:
+            text = text[:277] + "..."
+
+        response = client.create_tweet(text=text)
+        tweet_id = response.data.get("id") if response.data else None
+        logger.info(f"Tweet posted: {tweet_id}")
+        return tweet_id
+    except Exception as e:
+        logger.warning(f"Tweet failed: {e}")
+        return None
+
+
+def format_thinking_tweet(decision: Dict) -> str:
+    """Format the agent's thinking into a tweet."""
+    thinking = decision.get("thinking", "")
+    trades = decision.get("trades", [])
+    theses = decision.get("thesis_updates", [])
+
+    parts = []
+
+    # Thinking summary (first ~180 chars)
+    if thinking:
+        # Take first sentence or first 180 chars
+        first_sentence = thinking.split(". ")[0] + "."
+        if len(first_sentence) > 180:
+            first_sentence = thinking[:177] + "..."
+        parts.append(first_sentence)
+
+    # Trade actions
+    if trades:
+        for t in trades[:2]:
+            action = t.get("action", "?")
+            question = t.get("market_question", "?")[:40]
+            amount = t.get("amount_usd", 0)
+            parts.append(f"{action} ${amount:.2f} on \"{question}\"")
+
+    # Thesis updates
+    if theses:
+        for t in theses[:1]:
+            action = t.get("action", "?")
+            title = t.get("title", "?")[:30]
+            parts.append(f"Thesis {action}: {title}")
+
+    if not trades and not theses:
+        parts.append("No trades this cycle.")
+
+    tweet = " | ".join(parts)
+
+    # Add hashtag
+    if len(tweet) < 260:
+        tweet += " #Polymarket #AITrading"
+
+    return tweet[:280]
+
+
+# ==================== GOOGLE SHEETS ====================
+
+_sheets_client = None
+_worksheet = None
+
+
+def _get_worksheet():
+    """Lazy-init Google Sheets worksheet."""
+    global _sheets_client, _worksheet
+    if _worksheet is not None:
+        return _worksheet
+
+    if not settings.google_sheets_id:
+        return None
+
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+
+        # Try service account file first, then default credentials
+        if settings.google_service_account_file:
+            creds = Credentials.from_service_account_file(
+                settings.google_service_account_file, scopes=scopes
+            )
+        else:
+            from google.auth import default
+            creds, _ = default(scopes=scopes)
+
+        _sheets_client = gspread.authorize(creds)
+        spreadsheet = _sheets_client.open_by_key(settings.google_sheets_id)
+
+        # Get or create "Trades" sheet
+        try:
+            _worksheet = spreadsheet.worksheet("Trades")
+        except gspread.WorksheetNotFound:
+            _worksheet = spreadsheet.add_worksheet("Trades", rows=1000, cols=12)
+            # Add headers
+            _worksheet.update("A1:L1", [[
+                "Timestamp", "Strategy", "Action", "Market",
+                "Outcome", "Price", "Shares", "Amount USD",
+                "Confidence", "Thesis/Reason", "Order ID", "P&L"
+            ]])
+            _worksheet.format("A1:L1", {"textFormat": {"bold": True}})
+
+        logger.info("Google Sheets connected")
+        return _worksheet
+    except Exception as e:
+        logger.warning(f"Google Sheets init failed: {e}")
+        return None
+
+
+def log_trade_to_sheets(
+    strategy: str,
+    action: str,
+    market_question: str,
+    outcome: str = "",
+    price: float = 0,
+    shares: float = 0,
+    amount_usd: float = 0,
+    confidence: float = 0,
+    reason: str = "",
+    order_id: str = "",
+    pnl: float = 0,
+):
+    """Append a trade row to Google Sheets."""
+    ws = _get_worksheet()
+    if not ws:
+        return
+
+    try:
+        row = [
+            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            strategy,
+            action,
+            market_question[:80],
+            outcome,
+            f"{price:.4f}",
+            f"{shares:.4f}",
+            f"{amount_usd:.2f}",
+            f"{confidence:.0%}" if confidence else "",
+            reason[:100],
+            order_id or "",
+            f"{pnl:.2f}" if pnl else "",
+        ]
+        ws.append_row(row, value_input_option="USER_ENTERED")
+        logger.debug(f"Trade logged to Sheets: {action} {market_question[:30]}")
+    except Exception as e:
+        logger.warning(f"Sheets log failed: {e}")
+
+
+def log_thinking_to_sheets(decision: Dict):
+    """Log thinking summary to a 'Thinking' tab."""
+    if not settings.google_sheets_id:
+        return
+
+    try:
+        ws_thinking = None
+        spreadsheet = _sheets_client.open_by_key(settings.google_sheets_id) if _sheets_client else None
+        if not spreadsheet:
+            return
+
+        import gspread
+        try:
+            ws_thinking = spreadsheet.worksheet("Thinking")
+        except gspread.WorksheetNotFound:
+            ws_thinking = spreadsheet.add_worksheet("Thinking", rows=1000, cols=6)
+            ws_thinking.update("A1:F1", [[
+                "Timestamp", "Thinking", "Trades", "Thesis Updates",
+                "Watchlist", "Risk Assessment"
+            ]])
+            ws_thinking.format("A1:F1", {"textFormat": {"bold": True}})
+
+        trades_summary = "; ".join(
+            f"{t.get('action')} {t.get('market_question', '?')[:30]}"
+            for t in decision.get("trades", [])
+        ) or "None"
+
+        thesis_summary = "; ".join(
+            f"{t.get('action')} [{t.get('id')}]"
+            for t in decision.get("thesis_updates", [])
+        ) or "None"
+
+        row = [
+            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            decision.get("thinking", "")[:500],
+            trades_summary,
+            thesis_summary,
+            decision.get("watchlist_notes", "")[:200],
+            decision.get("risk_assessment", "")[:200],
+        ]
+        ws_thinking.append_row(row, value_input_option="USER_ENTERED")
+    except Exception as e:
+        logger.warning(f"Sheets thinking log failed: {e}")

@@ -34,3 +34,8 @@ py-clob-client>=0.17.0
 # AI Agent (Claude API)
 anthropic>=0.39.0
 
+# Integrations
+tweepy>=4.14.0
+gspread>=6.0.0
+google-auth>=2.0.0
+
