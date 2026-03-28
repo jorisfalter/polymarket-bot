@@ -142,6 +142,7 @@ def _get_worksheet():
         elif settings.google_oauth_creds_file:
             import json as _json
             from google.oauth2.credentials import Credentials as UserCredentials
+            from google.auth.transport.requests import Request
             with open(settings.google_oauth_creds_file) as f:
                 cred_data = _json.load(f)
             creds = UserCredentials(
@@ -150,8 +151,8 @@ def _get_worksheet():
                 client_id=cred_data.get("client_id"),
                 client_secret=cred_data.get("client_secret"),
                 token_uri="https://oauth2.googleapis.com/token",
-                scopes=scopes,
             )
+            creds.refresh(Request())
         else:
             from google.auth import default
             creds, _ = default(scopes=scopes)
