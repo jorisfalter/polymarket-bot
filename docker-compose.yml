@@ -11,6 +11,7 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+      - ./google-oauth-creds.json:/app/google-oauth-creds.json:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/stats')"]
       interval: 30s

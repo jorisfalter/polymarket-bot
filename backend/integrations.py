@@ -134,10 +134,23 @@ def _get_worksheet():
             "https://www.googleapis.com/auth/drive",
         ]
 
-        # Try service account file first, then default credentials
+        # Try service account file, then OAuth user creds, then default
         if settings.google_service_account_file:
             creds = Credentials.from_service_account_file(
                 settings.google_service_account_file, scopes=scopes
+            )
+        elif settings.google_oauth_creds_file:
+            import json as _json
+            from google.oauth2.credentials import Credentials as UserCredentials
+            with open(settings.google_oauth_creds_file) as f:
+                cred_data = _json.load(f)
+            creds = UserCredentials(
+                token=None,
+                refresh_token=cred_data.get("refresh_token"),
+                client_id=cred_data.get("client_id"),
+                client_secret=cred_data.get("client_secret"),
+                token_uri="https://oauth2.googleapis.com/token",
+                scopes=scopes,
             )
         else:
             from google.auth import default

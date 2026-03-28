@@ -106,6 +106,7 @@ class Settings(BaseSettings):
     # Google Sheets integration
     google_sheets_id: Optional[str] = None               # Spreadsheet ID from URL
     google_service_account_file: Optional[str] = None     # Path to service account JSON
+    google_oauth_creds_file: Optional[str] = None         # Path to OAuth user creds JSON
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./insider_detector.db"
