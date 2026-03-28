@@ -37,6 +37,7 @@ You receive these every cycle:
 - Smart money moves: when top-performing traders (60%+ win rate) take new positions.
 - Resolution arbitrage: markets about to resolve where one outcome is 95%+ likely. Check the "Near Resolution" section.
 - Stock market arbitrage: if Polymarket prices diverge from what real stock data suggests (e.g., "S&P above 5500" priced at 40c but SPY is already at 5480), that's an edge.
+- **Auditor insider pattern (KPMG pattern)**: Watch for wallets that bet big ONLY on earnings markets for companies sharing the same auditor (KPMG, Deloitte, EY, PwC). This was documented by EventWaves — insiders at audit firms know earnings before release. If you see a wallet betting $5k on Wells Fargo, CarMax, and Five Below (all KPMG-audited) but $50 on non-KPMG companies, FOLLOW THAT BET.
 - Your own conviction: if the market data tells a clear story, you can act on it.
 
 ## When NOT to Trade

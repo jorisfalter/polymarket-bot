@@ -16,6 +16,7 @@ from .trade_journal import journal
 from .polymarket_client import PolymarketClient
 from .integrations import post_tweet, format_thinking_tweet, log_trade_to_sheets, log_thinking_to_sheets
 from .leaderboard import tracker
+from .auditor_data import get_auditor, is_earnings_market, analyze_wallet_auditor_pattern
 from .ai_prompts import (
     SYSTEM_PROMPT,
     build_market_briefing,
@@ -317,6 +318,11 @@ class AITradingAgent:
         # Insider alerts
         parts.append(build_alert_summary(self._recent_alerts))
 
+        # Auditor pattern analysis on insider alerts
+        auditor_notes = self._check_auditor_patterns()
+        if auditor_notes:
+            parts.append(auditor_notes)
+
         # Smart money
         parts.append(build_smart_money_summary(self._recent_smart_money))
 
@@ -493,6 +499,35 @@ class AITradingAgent:
 
             except Exception as e:
                 logger.error(f"AI trade execution error: {e}")
+
+    def _check_auditor_patterns(self) -> Optional[str]:
+        """Check insider alerts for the KPMG-style auditor clustering pattern."""
+        if not self._recent_alerts:
+            return None
+
+        lines = []
+        for alert in self._recent_alerts:
+            st = alert.suspicious_trade if hasattr(alert, "suspicious_trade") else alert
+            trade = st.trade if hasattr(st, "trade") else st
+            question = getattr(trade, "market_question", "")
+
+            if not is_earnings_market(question):
+                continue
+
+            auditor = get_auditor(question)
+            if auditor:
+                notional = getattr(trade, "notional_usd", 0)
+                wallet_addr = getattr(st.wallet, "address", "?")[:12] if hasattr(st, "wallet") else "?"
+                lines.append(
+                    f"- EARNINGS ALERT on {auditor}-audited company: {question[:60]}\n"
+                    f"  Wallet: {wallet_addr}... | ${notional:,.0f}\n"
+                    f"  CHECK: Does this wallet also bet big on other {auditor} clients?"
+                )
+
+        if not lines:
+            return None
+
+        return "## Auditor Pattern Watch (KPMG-style)\n" + "\n".join(lines)
 
     async def _resolve_token_id(self, market_id: str, outcome: str) -> Optional[str]:
         """Resolve a market_id + outcome to a CLOB token_id."""
