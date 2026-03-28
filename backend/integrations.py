@@ -158,8 +158,9 @@ def format_thinking_tweet(decision: Dict) -> str:
 
     tweet = "\n".join(lines)
 
-    # Add hashtags
-    tweet += "\n\n#Polymarket #AITrading"
+    # Add timestamp to avoid duplicate content errors + hashtags
+    now = datetime.utcnow().strftime("%H:%M UTC")
+    tweet += f"\n\n[{now}] #Polymarket #AITrading"
 
     # No need to truncate — post_tweet handles threading
     return tweet
