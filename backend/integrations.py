@@ -45,7 +45,7 @@ def _get_twitter_client():
 
 
 def post_tweet(text: str) -> Optional[str]:
-    """Post a tweet. Returns tweet ID or None."""
+    """Post a tweet or thread if over 280 chars. Returns first tweet ID or None."""
     if not settings.twitter_enabled:
         return None
 
@@ -54,17 +54,62 @@ def post_tweet(text: str) -> Optional[str]:
         return None
 
     try:
-        # Twitter limit is 280 chars
-        if len(text) > 280:
-            text = text[:277] + "..."
+        if len(text) <= 280:
+            response = client.create_tweet(text=text)
+            tweet_id = response.data.get("id") if response.data else None
+            logger.info(f"Tweet posted: {tweet_id}")
+            return tweet_id
 
-        response = client.create_tweet(text=text)
-        tweet_id = response.data.get("id") if response.data else None
-        logger.info(f"Tweet posted: {tweet_id}")
-        return tweet_id
+        # Split into thread
+        chunks = _split_into_thread(text)
+        first_id = None
+        reply_to = None
+
+        for i, chunk in enumerate(chunks):
+            if reply_to:
+                response = client.create_tweet(text=chunk, in_reply_to_tweet_id=reply_to)
+            else:
+                response = client.create_tweet(text=chunk)
+
+            tweet_id = response.data.get("id") if response.data else None
+            if i == 0:
+                first_id = tweet_id
+            reply_to = tweet_id
+            logger.info(f"Thread {i+1}/{len(chunks)} posted: {tweet_id}")
+
+        return first_id
     except Exception as e:
         logger.warning(f"Tweet failed: {e}")
         return None
+
+
+def _split_into_thread(text: str, max_len: int = 275) -> list:
+    """Split text into tweet-sized chunks, breaking at newlines or sentences."""
+    chunks = []
+    remaining = text
+
+    while remaining:
+        if len(remaining) <= max_len:
+            chunks.append(remaining)
+            break
+
+        # Try to break at newline
+        cut = remaining[:max_len].rfind("\n")
+        if cut < 100:
+            # Try sentence break
+            cut = remaining[:max_len].rfind(". ")
+            if cut < 100:
+                # Try space
+                cut = remaining[:max_len].rfind(" ")
+                if cut < 100:
+                    cut = max_len
+
+        chunk = remaining[:cut + 1].rstrip()
+        remaining = remaining[cut + 1:].lstrip()
+        if chunk:
+            chunks.append(chunk)
+
+    return chunks
 
 
 def format_thinking_tweet(decision: Dict) -> str:
@@ -104,22 +149,20 @@ def format_thinking_tweet(decision: Dict) -> str:
         if not good_sentences:
             good_sentences = sentences
         if good_sentences:
-            # Take up to 2 substantive sentences
-            analysis = ". ".join(good_sentences[:2]) + "."
-            remaining = 255 - sum(len(l) + 1 for l in lines) - 22  # room for hashtags
-            if remaining > 50:
-                lines.append(analysis[:remaining])
+            # Take up to 4 substantive sentences — threading handles overflow
+            analysis = ". ".join(good_sentences[:4]) + "."
+            lines.append(analysis[:500])
 
     if not lines:
         lines.append("Scanning markets. No actionable signals this cycle. Patience.")
 
     tweet = "\n".join(lines)
 
-    # Add hashtags if room
-    if len(tweet) < 258:
-        tweet += "\n#Polymarket"
+    # Add hashtags
+    tweet += "\n\n#Polymarket #AITrading"
 
-    return tweet[:280]
+    # No need to truncate — post_tweet handles threading
+    return tweet
 
 
 # ==================== GOOGLE SHEETS ====================
