@@ -21,10 +21,22 @@ You have access to an insider detection system that scans thousands of trades an
 - Focus on: politics, geopolitics, regulation, tech, science, finance, legal outcomes.
 - You MUST respond with valid JSON only. No markdown, no explanation outside the JSON.
 
+## Your Data Sources
+You receive these every cycle:
+1. **Insider alerts** — suspicious trades flagged by the detection system (your primary edge)
+2. **Smart money** — recent trades from watched top performers
+3. **Leaderboard** — top 10 traders by P&L with their win rates and volumes
+4. **Top markets** — 20 highest-volume markets with current prices
+5. **Near-resolution markets** — markets ending within 48h with 90%+ dominant outcome (arb opportunities)
+6. **Stock market data** — Polymarket markets related to stocks/finance + real-time SPY, QQQ, Gold, Oil prices for cross-market arbitrage
+7. **Your thesis board** — your running hypotheses from previous cycles
+8. **Your recent thinking** — what you said in the last few cycles
+
 ## When to Trade
 - HIGH/CRITICAL insider alerts where a fresh wallet bets big on unlikely outcomes — this is your bread and butter.
 - Smart money moves: when top-performing traders (60%+ win rate) take new positions.
-- Resolution arbitrage: markets about to resolve where one outcome is 95%+ likely.
+- Resolution arbitrage: markets about to resolve where one outcome is 95%+ likely. Check the "Near Resolution" section.
+- Stock market arbitrage: if Polymarket prices diverge from what real stock data suggests (e.g., "S&P above 5500" priced at 40c but SPY is already at 5480), that's an edge.
 - Your own conviction: if the market data tells a clear story, you can act on it.
 
 ## When NOT to Trade
@@ -228,6 +240,88 @@ def build_smart_money_summary(trades: List[Dict]) -> str:
             f"- Trader {t.get('trader', '?')[:12]}... "
             f"{t.get('side', '?')} on \"{t.get('market', '?')[:50]}\" "
             f"${float(t.get('usdcSize', 0)):,.0f} @ {float(t.get('price', 0))*100:.0f}c"
+        )
+
+    return "\n".join(lines)
+
+
+def build_leaderboard_summary(leaders: List[Dict]) -> str:
+    """Format top traders from leaderboard."""
+    if not leaders:
+        return "No leaderboard data available."
+
+    lines = ["## Top Traders (Leaderboard)"]
+    for t in leaders[:10]:
+        addr = t.get("address", "?")[:12]
+        name = t.get("display_name") or t.get("name") or addr
+        pnl = float(t.get("pnl", 0) or 0)
+        wr = float(t.get("win_rate", 0) or 0)
+        vol = float(t.get("volume", 0) or 0)
+        markets = int(t.get("markets_traded", 0) or 0)
+
+        lines.append(
+            f"- {name[:20]} | PnL: ${pnl:,.0f} | Win rate: {wr*100:.0f}% | "
+            f"Volume: ${vol:,.0f} | Markets: {markets}"
+        )
+
+    return "\n".join(lines)
+
+
+def build_near_resolution_summary(markets: List[Dict]) -> str:
+    """Format markets that are about to resolve."""
+    if not markets:
+        return "No near-resolution opportunities found."
+
+    lines = ["## Markets Near Resolution (within 48h)"]
+    for m in markets:
+        question = m.get("question", "?")[:70]
+        yes_price = m.get("_yes_price", 0)
+        hours_left = m.get("_hours_left", 0)
+        liq = float(m.get("liquidity", 0) or 0)
+        market_id = m.get("conditionId") or m.get("id") or ""
+        expected_return = ((1.0 - yes_price) / yes_price * 100) if yes_price > 0 and yes_price < 1 else 0
+
+        dominant = "YES" if yes_price >= 0.5 else "NO"
+        dominant_price = yes_price if yes_price >= 0.5 else (1 - yes_price)
+
+        lines.append(
+            f"- [{market_id[:12]}] {question}\n"
+            f"  {dominant}: {dominant_price*100:.0f}c | {hours_left:.0f}h left | "
+            f"Liq: ${liq:,.0f} | Potential return: {((1-dominant_price)/dominant_price*100):.1f}%"
+        )
+
+    return "\n".join(lines)
+
+
+def build_stock_market_summary(stock_markets: List[Dict], stock_prices: Dict) -> str:
+    """Format stock-related Polymarket markets with real stock data for arbitrage."""
+    if not stock_markets:
+        return "No stock-related markets found on Polymarket."
+
+    lines = ["## Stock Market Arbitrage Opportunities"]
+    if stock_prices:
+        lines.append("Real-time stock data:")
+        for symbol, data in stock_prices.items():
+            price = data.get("price", 0)
+            change = data.get("change_pct", 0)
+            lines.append(f"  {symbol}: ${price:.2f} ({change:+.1f}%)")
+        lines.append("")
+
+    for m in stock_markets[:10]:
+        question = m.get("question", "?")[:70]
+        prices_str = m.get("outcomePrices", "")
+        try:
+            prices = json.loads(prices_str) if isinstance(prices_str, str) else prices_str
+            yes_price = float(prices[0]) if prices else 0
+        except (json.JSONDecodeError, ValueError, IndexError):
+            yes_price = 0
+
+        market_id = m.get("conditionId") or m.get("id") or ""
+        end_date = m.get("endDate") or ""
+
+        lines.append(
+            f"- [{market_id[:12]}] {question}\n"
+            f"  YES: {yes_price*100:.0f}c | Ends: {end_date[:10]}"
         )
 
     return "\n".join(lines)

@@ -15,6 +15,7 @@ from .auto_seller import auto_seller
 from .trade_journal import journal
 from .polymarket_client import PolymarketClient
 from .integrations import post_tweet, format_thinking_tweet, log_trade_to_sheets, log_thinking_to_sheets
+from .leaderboard import tracker
 from .ai_prompts import (
     SYSTEM_PROMPT,
     build_market_briefing,
@@ -23,10 +24,107 @@ from .ai_prompts import (
     build_thinking_history,
     build_smart_money_summary,
     build_thesis_board,
+    build_leaderboard_summary,
+    build_near_resolution_summary,
+    build_stock_market_summary,
 )
 
 THINKING_LOG_PATH = Path(__file__).parent.parent / "data" / "agent_thinking.jsonl"
 THESES_PATH = Path(__file__).parent.parent / "data" / "agent_theses.json"
+
+STOCK_KEYWORDS = [
+    "s&p", "sp500", "s&p 500", "nasdaq", "dow jones", "djia",
+    "apple", "aapl", "google", "goog", "amazon", "amzn", "tesla", "tsla",
+    "microsoft", "msft", "nvidia", "nvda", "meta", "netflix", "nflx",
+    "stock", "earnings", "revenue", "market cap", "ipo",
+    "fed rate", "interest rate", "cpi", "inflation", "gdp",
+    "oil price", "gold price", "crude oil",
+]
+
+
+def _find_near_resolution(markets: list) -> list:
+    """Filter markets ending within 48h with a dominant outcome."""
+    now = datetime.utcnow()
+    results = []
+
+    for m in markets:
+        end_str = m.get("endDate") or ""
+        if not end_str:
+            continue
+        try:
+            end = datetime.fromisoformat(end_str.replace("Z", "+00:00")).replace(tzinfo=None)
+        except (ValueError, AttributeError):
+            continue
+
+        hours_left = (end - now).total_seconds() / 3600
+        if hours_left <= 0 or hours_left > 48:
+            continue
+
+        prices_str = m.get("outcomePrices", "")
+        try:
+            prices = json.loads(prices_str) if isinstance(prices_str, str) else prices_str
+            if not prices:
+                continue
+            yes_price = float(prices[0])
+        except (json.JSONDecodeError, ValueError, IndexError):
+            continue
+
+        # At least one side must be 90%+
+        dominant = max(yes_price, 1 - yes_price)
+        if dominant < 0.90:
+            continue
+
+        m["_yes_price"] = yes_price
+        m["_hours_left"] = hours_left
+        results.append(m)
+
+    # Sort by hours left
+    results.sort(key=lambda x: x["_hours_left"])
+    return results[:10]
+
+
+def _find_stock_markets(markets: list) -> list:
+    """Filter markets related to stocks/finance."""
+    results = []
+    for m in markets:
+        text = (m.get("question", "") + " " + m.get("slug", "")).lower()
+        if any(kw in text for kw in STOCK_KEYWORDS):
+            results.append(m)
+    return results[:10]
+
+
+async def _fetch_stock_prices() -> dict:
+    """Fetch key stock indices/prices from a free API."""
+    import httpx
+    symbols = {
+        "SPY": "S&P 500 ETF",
+        "QQQ": "Nasdaq 100 ETF",
+        "GLD": "Gold ETF",
+        "USO": "Oil ETF",
+    }
+    prices = {}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            for symbol in symbols:
+                try:
+                    r = await client.get(
+                        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+                        params={"interval": "1d", "range": "2d"},
+                        headers={"User-Agent": "Mozilla/5.0"},
+                    )
+                    if r.status_code == 200:
+                        data = r.json()
+                        meta = data.get("chart", {}).get("result", [{}])[0].get("meta", {})
+                        price = meta.get("regularMarketPrice", 0)
+                        prev = meta.get("previousClose") or meta.get("chartPreviousClose", 0)
+                        change_pct = ((price - prev) / prev * 100) if prev else 0
+                        prices[symbol] = {"price": price, "change_pct": change_pct}
+                except Exception:
+                    continue
+    except Exception as e:
+        logger.debug(f"Stock price fetch failed: {e}")
+
+    return prices
 
 # Try to import anthropic
 try:
@@ -222,10 +320,26 @@ class AITradingAgent:
         # Smart money
         parts.append(build_smart_money_summary(self._recent_smart_money))
 
-        # Market data
+        # Market data + near-resolution + stock markets
         async with PolymarketClient() as client:
-            markets = await client.get_markets(limit=20, order="volume24hr")
-            parts.append(build_market_briefing(markets))
+            markets = await client.get_markets(limit=50, order="volume24hr")
+            parts.append(build_market_briefing(markets[:20]))
+
+            # Near-resolution markets (ending within 48h, one side 90%+)
+            near_resolution = _find_near_resolution(markets)
+            parts.append(build_near_resolution_summary(near_resolution))
+
+            # Stock-related markets
+            stock_markets = _find_stock_markets(markets)
+            stock_prices = await _fetch_stock_prices()
+            parts.append(build_stock_market_summary(stock_markets, stock_prices))
+
+        # Leaderboard (top traders)
+        try:
+            leaders = await tracker.fetch_leaderboard(order_by="pnl", limit=10)
+            parts.append(build_leaderboard_summary(leaders))
+        except Exception as e:
+            logger.debug(f"Leaderboard fetch failed: {e}")
 
         # Thesis board
         parts.append(build_thesis_board(self.theses))
