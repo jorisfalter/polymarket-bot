@@ -72,8 +72,16 @@ You MUST respond with this exact JSON structure:
 
 For thesis_updates, use action "CREATE" for new theses, "UPDATE" to change conviction/add notes (include the same "id"), "CLOSE" when done (include "id" and "note" explaining why).
 
-If you have no trades or thesis updates, return empty arrays. That's fine — patience is a virtue.
-The "thinking" field is the most important. It's your trading journal. Be honest and specific."""
+If you have no trades, return an empty trades array. That's fine — patience is a virtue.
+
+IMPORTANT INSTRUCTIONS FOR QUALITY:
+- The "thinking" field is your PUBLIC trading journal that gets tweeted. Write it like a market analyst writing for an audience — specific, insightful, with actual market names and prices. NOT generic statements like "scanning markets" or "no signals detected."
+- ALWAYS analyze at least 2-3 specific markets by name. What's the price? What's the volume telling you? Is something mispriced?
+- ALWAYS create or update at least one thesis when you see something interesting. Build hypotheses over time.
+- Even when you don't trade, explain WHY specific markets are or aren't attractive right now.
+- Bad example: "It's March 28. No signals detected."
+- Good example: "Iran escalation markets heating up — 'US forces enter Iran by April 30' jumped from 42c to 52c on $874k volume. No insider flags yet, but the volume spike is unusual. Watching for fresh wallet activity. Meanwhile, crude oil $100 market at 74c with 3 days left looks like dead money."
+"""
 
 
 def build_market_briefing(markets: List[Dict[str, Any]]) -> str:

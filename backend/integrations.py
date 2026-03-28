@@ -68,44 +68,56 @@ def post_tweet(text: str) -> Optional[str]:
 
 
 def format_thinking_tweet(decision: Dict) -> str:
-    """Format the agent's thinking into a tweet."""
+    """Format the agent's thinking into a rich tweet."""
     thinking = decision.get("thinking", "")
     trades = decision.get("trades", [])
     theses = decision.get("thesis_updates", [])
+    watchlist = decision.get("watchlist_notes", "")
+    risk = decision.get("risk_assessment", "")
 
-    parts = []
+    lines = []
 
-    # Thinking summary (first ~180 chars)
-    if thinking:
-        # Take first sentence or first 180 chars
-        first_sentence = thinking.split(". ")[0] + "."
-        if len(first_sentence) > 180:
-            first_sentence = thinking[:177] + "..."
-        parts.append(first_sentence)
-
-    # Trade actions
+    # Trade actions first (most interesting)
     if trades:
         for t in trades[:2]:
             action = t.get("action", "?")
-            question = t.get("market_question", "?")[:40]
+            question = t.get("market_question", "?")[:45]
             amount = t.get("amount_usd", 0)
-            parts.append(f"{action} ${amount:.2f} on \"{question}\"")
+            conf = t.get("confidence", 0)
+            lines.append(f"{'🟢' if action == 'BUY' else '🔴'} {action} ${amount:.2f} on \"{question}\" ({conf:.0%} confidence)")
 
     # Thesis updates
     if theses:
-        for t in theses[:1]:
-            action = t.get("action", "?")
-            title = t.get("title", "?")[:30]
-            parts.append(f"Thesis {action}: {title}")
+        for t in theses[:2]:
+            action = t.get("action", "").upper()
+            title = t.get("title", "")[:40]
+            conviction = t.get("conviction", "")
+            emoji = {"CREATE": "📋", "UPDATE": "🔄", "CLOSE": "✅"}.get(action, "📋")
+            lines.append(f"{emoji} Thesis {action}: {title}" + (f" [{conviction}]" if conviction else ""))
 
-    if not trades and not theses:
-        parts.append("No trades this cycle.")
+    # Main thinking — take the meatiest part
+    if thinking:
+        # Skip boring openers, find substance
+        sentences = [s.strip() for s in thinking.replace("\n", ". ").split(". ") if len(s.strip()) > 20]
+        # Skip meta-sentences about portfolio state, find market analysis
+        good_sentences = [s for s in sentences if not any(skip in s.lower() for skip in ["my portfolio", "my rules", "my exposure", "i have", "i need to", "i must"])]
+        if not good_sentences:
+            good_sentences = sentences
+        if good_sentences:
+            # Take up to 2 substantive sentences
+            analysis = ". ".join(good_sentences[:2]) + "."
+            remaining = 255 - sum(len(l) + 1 for l in lines) - 22  # room for hashtags
+            if remaining > 50:
+                lines.append(analysis[:remaining])
 
-    tweet = " | ".join(parts)
+    if not lines:
+        lines.append("Scanning markets. No actionable signals this cycle. Patience.")
 
-    # Add hashtag
-    if len(tweet) < 260:
-        tweet += " #Polymarket #AITrading"
+    tweet = "\n".join(lines)
+
+    # Add hashtags if room
+    if len(tweet) < 258:
+        tweet += "\n#Polymarket"
 
     return tweet[:280]
 
