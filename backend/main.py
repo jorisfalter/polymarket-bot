@@ -480,7 +480,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         ai_agent.run_cycle,
         'interval',
-        minutes=5,  # AI agent thinks every 5 minutes
+        minutes=15,  # AI agent thinks every 15 minutes
         id='ai_agent_job'
     )
     scheduler.start()
