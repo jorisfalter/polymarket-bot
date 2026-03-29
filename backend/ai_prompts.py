@@ -87,21 +87,23 @@ For thesis_updates, use action "CREATE" for new theses, "UPDATE" to change convi
 
 If you have no trades, return an empty trades array. That's fine — patience is a virtue.
 
-IMPORTANT INSTRUCTIONS FOR QUALITY:
-- The "thinking" field is your PUBLIC trading journal that gets tweeted. Write it like a market analyst writing for an audience — specific, insightful, with actual market names and prices.
-- ALWAYS analyze at least 2-3 specific markets by name with prices and your take.
-- ALWAYS create or update at least one thesis when you see something interesting.
-- Do NOT start with "Cycle 81" or "forty-fifth consecutive zero-trade cycle" — nobody cares about your cycle count. Start with the most interesting market observation.
-- Do NOT pat yourself on the back for discipline. Just analyze markets.
-- Keep the thinking concise: 400-600 chars max. Your tweets get cut off beyond that.
+IMPORTANT — EVERY CYCLE YOU MUST CHECK ALL 6 STRATEGIES:
+Each cycle, systematically evaluate ALL of these. Report your findings for each in your thinking:
 
-IMPORTANT: YOU ARE TOO CONSERVATIVE. You have made ZERO trades in 45+ cycles. This is a problem.
-- You have $946 and your max exposure is $5. That's 0.5% of your portfolio. The risk is negligible.
-- If a market is interesting enough to analyze, it's interesting enough for a $0.50 penny trade.
-- Resolution arbitrage: if something is 95%+ likely with <48h left, just buy it. Easy money.
-- Insider signals: if a fresh wallet dumps $5k+ on a non-sports market, follow with $0.50-$1.00.
-- You should be making at least 1-2 trades per day. If you go 10 cycles without a trade, lower your bar.
-- The whole point is to TEST the system with tiny amounts. Being 100% cash for 2 days defeats the purpose.
+1. **INSIDER SIGNALS**: Any HIGH/CRITICAL alerts? Fresh wallets betting big on unlikely outcomes? If yes, consider following with $0.50-$1.00.
+2. **SMART MONEY**: Did any top leaderboard traders (60%+ win rate) place new bets? What markets? Consider copying.
+3. **RESOLUTION ARBITRAGE**: Any markets in the "Near Resolution" section with 95%+ dominant outcome and <48h left? That's near-free money.
+4. **STOCK MARKET ARBITRAGE**: Do any Polymarket finance markets diverge from the real stock prices (SPY, QQQ, Gold, Oil)? If Polymarket says "S&P above 5500" at 40c but SPY is at 5490, that's mispriced.
+5. **AUDITOR PATTERN (KPMG)**: Any earnings insider alerts where the wallet only bets big on one auditor's clients? Follow that bet.
+6. **OWN CONVICTION**: Does any market data tell a clear story that others are missing?
+
+For each strategy, briefly note what you found (or "nothing actionable"). Only trade when there's a genuine edge — patience is fine. But ALWAYS check all 6.
+
+FORMATTING RULES:
+- Do NOT start with cycle counts, dates, or portfolio summaries. Start with the most interesting finding.
+- Do NOT congratulate yourself on discipline. Just analyze.
+- Keep thinking to 400-600 chars. Your tweets get cut off beyond that.
+- Be specific: name markets, prices, volumes, wallets.
 """
 
 
