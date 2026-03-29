@@ -172,15 +172,14 @@ def format_thinking_tweet(decision: Dict) -> str:
 
 # ==================== GOOGLE SHEETS ====================
 
-_sheets_client = None
-_worksheet = None
+_spreadsheet = None
 
 
-def _get_worksheet():
-    """Lazy-init Google Sheets worksheet."""
-    global _sheets_client, _worksheet
-    if _worksheet is not None:
-        return _worksheet
+def _get_spreadsheet():
+    """Lazy-init Google Sheets connection."""
+    global _spreadsheet
+    if _spreadsheet is not None:
+        return _spreadsheet
 
     if not settings.google_sheets_id:
         return None
@@ -194,7 +193,6 @@ def _get_worksheet():
             "https://www.googleapis.com/auth/drive",
         ]
 
-        # Try service account file, then OAuth user creds, then default
         if settings.google_service_account_file:
             creds = Credentials.from_service_account_file(
                 settings.google_service_account_file, scopes=scopes
@@ -217,26 +215,31 @@ def _get_worksheet():
             from google.auth import default
             creds, _ = default(scopes=scopes)
 
-        _sheets_client = gspread.authorize(creds)
-        spreadsheet = _sheets_client.open_by_key(settings.google_sheets_id)
-
-        # Get or create "Trades" sheet
-        try:
-            _worksheet = spreadsheet.worksheet("Trades")
-        except gspread.WorksheetNotFound:
-            _worksheet = spreadsheet.add_worksheet("Trades", rows=1000, cols=12)
-            # Add headers
-            _worksheet.update("A1:L1", [[
-                "Timestamp", "Strategy", "Action", "Market",
-                "Outcome", "Price", "Shares", "Amount USD",
-                "Confidence", "Thesis/Reason", "Order ID", "P&L"
-            ]])
-            _worksheet.format("A1:L1", {"textFormat": {"bold": True}})
-
+        client = gspread.authorize(creds)
+        _spreadsheet = client.open_by_key(settings.google_sheets_id)
         logger.info("Google Sheets connected")
-        return _worksheet
+        return _spreadsheet
     except Exception as e:
         logger.warning(f"Google Sheets init failed: {e}")
+        return None
+
+
+def _get_or_create_tab(name: str, headers: list) -> "gspread.Worksheet | None":
+    """Get or create a worksheet tab with headers."""
+    spreadsheet = _get_spreadsheet()
+    if not spreadsheet:
+        return None
+    try:
+        import gspread
+        try:
+            return spreadsheet.worksheet(name)
+        except gspread.WorksheetNotFound:
+            ws = spreadsheet.add_worksheet(name, rows=2000, cols=len(headers))
+            ws.update(f"A1:{chr(64 + len(headers))}1", [headers])
+            ws.format(f"A1:{chr(64 + len(headers))}1", {"textFormat": {"bold": True}})
+            return ws
+    except Exception as e:
+        logger.warning(f"Failed to get/create tab '{name}': {e}")
         return None
 
 
@@ -253,8 +256,12 @@ def log_trade_to_sheets(
     order_id: str = "",
     pnl: float = 0,
 ):
-    """Append a trade row to Google Sheets."""
-    ws = _get_worksheet()
+    """Append a trade row to the Trades tab."""
+    ws = _get_or_create_tab("Trades", [
+        "Timestamp", "Strategy", "Action", "Market",
+        "Outcome", "Price", "Shares", "Amount USD",
+        "Confidence", "Thesis/Reason", "Order ID", "P&L"
+    ])
     if not ws:
         return
 
@@ -263,62 +270,55 @@ def log_trade_to_sheets(
             datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
             strategy,
             action,
-            market_question[:80],
+            market_question[:100],
             outcome,
             f"{price:.4f}",
             f"{shares:.4f}",
             f"{amount_usd:.2f}",
             f"{confidence:.0%}" if confidence else "",
-            reason[:100],
+            reason[:150],
             order_id or "",
             f"{pnl:.2f}" if pnl else "",
         ]
         ws.append_row(row, value_input_option="USER_ENTERED")
         logger.debug(f"Trade logged to Sheets: {action} {market_question[:30]}")
     except Exception as e:
-        logger.warning(f"Sheets log failed: {e}")
+        logger.warning(f"Sheets trade log failed: {e}")
 
 
 def log_thinking_to_sheets(decision: Dict):
-    """Log thinking summary to a 'Thinking' tab."""
-    if not settings.google_sheets_id:
+    """Log full thinking to the Agent Log tab — runs every 5 min."""
+    ws = _get_or_create_tab("Agent Log", [
+        "Timestamp", "Thinking", "Trades", "Thesis Updates",
+        "Watchlist", "Risk Assessment", "Active Theses"
+    ])
+    if not ws:
         return
 
     try:
-        ws_thinking = None
-        spreadsheet = _sheets_client.open_by_key(settings.google_sheets_id) if _sheets_client else None
-        if not spreadsheet:
-            return
-
-        import gspread
-        try:
-            ws_thinking = spreadsheet.worksheet("Thinking")
-        except gspread.WorksheetNotFound:
-            ws_thinking = spreadsheet.add_worksheet("Thinking", rows=1000, cols=6)
-            ws_thinking.update("A1:F1", [[
-                "Timestamp", "Thinking", "Trades", "Thesis Updates",
-                "Watchlist", "Risk Assessment"
-            ]])
-            ws_thinking.format("A1:F1", {"textFormat": {"bold": True}})
-
-        trades_summary = "; ".join(
-            f"{t.get('action')} {t.get('market_question', '?')[:30]}"
+        trades_summary = "\n".join(
+            f"{t.get('action')} ${t.get('amount_usd', 0):.2f} on {t.get('market_question', '?')[:50]} [{t.get('confidence', 0):.0%}] — {t.get('thesis', '')[:60]}"
             for t in decision.get("trades", [])
-        ) or "None"
+        ) or "No trades"
 
-        thesis_summary = "; ".join(
-            f"{t.get('action')} [{t.get('id')}]"
+        thesis_summary = "\n".join(
+            f"{t.get('action')} [{t.get('id')}] {t.get('title', '')[:40]} — {t.get('note', '')[:60]}"
             for t in decision.get("thesis_updates", [])
-        ) or "None"
+        ) or "No updates"
 
         row = [
             datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            decision.get("thinking", "")[:500],
+            decision.get("thinking", "")[:2000],
             trades_summary,
             thesis_summary,
-            decision.get("watchlist_notes", "")[:200],
-            decision.get("risk_assessment", "")[:200],
+            decision.get("watchlist_notes", "")[:500],
+            decision.get("risk_assessment", "")[:500],
+            ", ".join(
+                f"[{t.get('id')}] {t.get('conviction', '?')}"
+                for t in decision.get("_active_theses", [])
+            ) or "",
         ]
-        ws_thinking.append_row(row, value_input_option="USER_ENTERED")
+        ws.append_row(row, value_input_option="USER_ENTERED")
+        logger.debug("Thinking logged to Sheets")
     except Exception as e:
         logger.warning(f"Sheets thinking log failed: {e}")

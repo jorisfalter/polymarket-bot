@@ -283,6 +283,7 @@ class AITradingAgent:
 
             # 4c. Log to Google Sheets
             try:
+                decision["_active_theses"] = [t for t in self.theses if t.get("status") == "active"]
                 log_thinking_to_sheets(decision)
             except Exception as e:
                 logger.debug(f"Sheets thinking log skipped: {e}")

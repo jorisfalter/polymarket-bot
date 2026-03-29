@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     twitter_api_secret: Optional[str] = None
     twitter_access_token: Optional[str] = None
     twitter_access_secret: Optional[str] = None
-    twitter_enabled: bool = True
+    twitter_enabled: bool = False
 
     # Google Sheets integration
     google_sheets_id: Optional[str] = None               # Spreadsheet ID from URL
