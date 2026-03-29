@@ -144,14 +144,18 @@ def format_thinking_tweet(decision: Dict) -> str:
     if thinking:
         # Skip boring openers, find substance
         sentences = [s.strip() for s in thinking.replace("\n", ". ").split(". ") if len(s.strip()) > 20]
-        # Skip meta-sentences about portfolio state, find market analysis
-        good_sentences = [s for s in sentences if not any(skip in s.lower() for skip in ["my portfolio", "my rules", "my exposure", "i have", "i need to", "i must"])]
+        # Skip meta-sentences about portfolio/discipline, find market analysis
+        skip_words = [
+            "my portfolio", "my rules", "my exposure", "i have", "i need to",
+            "i must", "this discipline", "zero-trade cycle", "cycle ",
+            "consecutive", "portfolio stable", "portfolio:", "this is correct",
+        ]
+        good_sentences = [s for s in sentences if not any(skip in s.lower() for skip in skip_words)]
         if not good_sentences:
             good_sentences = sentences
         if good_sentences:
-            # Take up to 4 substantive sentences — threading handles overflow
-            analysis = ". ".join(good_sentences[:4]) + "."
-            lines.append(analysis[:500])
+            analysis = ". ".join(good_sentences[:6]) + "."
+            lines.append(analysis[:600])
 
     if not lines:
         lines.append("Scanning markets. No actionable signals this cycle. Patience.")
