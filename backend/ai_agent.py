@@ -469,9 +469,10 @@ class AITradingAgent:
                     continue
 
                 # Get token_id for the market
+                logger.info(f"🤖 Attempting trade: {action} ${amount_usd:.2f} on {market_question[:40]} (ID: {market_id})")
                 token_id = await self._resolve_token_id(market_id, outcome)
                 if not token_id:
-                    logger.warning(f"Could not resolve token for {market_question[:30]}")
+                    logger.warning(f"Could not resolve token for {market_question[:30]} (ID: {market_id})")
                     continue
 
                 # Execute real penny trade
@@ -560,7 +561,21 @@ class AITradingAgent:
         """Resolve a market_id + outcome to a CLOB token_id."""
         async with PolymarketClient() as client:
             market = await client.get_market(market_id)
+
+            # If direct lookup fails, the agent might have sent a partial ID
+            # Search through recent markets to find a match
+            if not market and len(market_id) < 66:
+                logger.info(f"Partial market ID '{market_id}', searching markets...")
+                markets = await client.get_markets(limit=100, order="volume24hr")
+                for m in markets:
+                    full_id = m.get("conditionId") or m.get("id") or ""
+                    if full_id.startswith(market_id):
+                        market = m
+                        logger.info(f"Matched partial ID to {full_id[:20]}...")
+                        break
+
             if not market:
+                logger.warning(f"Could not find market for ID: {market_id}")
                 return None
 
             tokens = market.get("tokens", []) or market.get("clobTokenIds", [])

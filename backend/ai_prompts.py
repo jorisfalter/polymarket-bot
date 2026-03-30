@@ -141,7 +141,7 @@ def build_market_briefing(markets: List[Dict[str, Any]]) -> str:
         end_date = m.get("endDate") or ""
 
         lines.append(
-            f"- [{market_id[:12]}] {question}\n"
+            f"- [{market_id}] {question}\n"
             f"  YES: {yes_price*100:.0f}c | NO: {no_price*100:.0f}c | "
             f"Vol24h: ${vol:,.0f} | Liq: ${liq:,.0f} | Ends: {end_date[:10]}"
         )
@@ -179,7 +179,7 @@ def build_alert_summary(alerts: list) -> str:
             )
 
         lines.append(
-            f"- **{severity.upper()}** (score: {score}) [{market_id[:12]}]\n"
+            f"- **{severity.upper()}** (score: {score}) [{market_id}]\n"
             f"  {question}\n"
             f"  {side} {outcome} @ {price:.0f}c | ${notional:,.0f}\n"
             f"  Flags: {', '.join(flags[:4])}\n"
@@ -308,7 +308,7 @@ def build_near_resolution_summary(markets: List[Dict]) -> str:
         dominant_price = yes_price if yes_price >= 0.5 else (1 - yes_price)
 
         lines.append(
-            f"- [{market_id[:12]}] {question}\n"
+            f"- [{market_id}] {question}\n"
             f"  {dominant}: {dominant_price*100:.0f}c | {hours_left:.0f}h left | "
             f"Liq: ${liq:,.0f} | Potential return: {((1-dominant_price)/dominant_price*100):.1f}%"
         )
@@ -343,7 +343,7 @@ def build_stock_market_summary(stock_markets: List[Dict], stock_prices: Dict) ->
         end_date = m.get("endDate") or ""
 
         lines.append(
-            f"- [{market_id[:12]}] {question}\n"
+            f"- [{market_id}] {question}\n"
             f"  YES: {yes_price*100:.0f}c | Ends: {end_date[:10]}"
         )
 
