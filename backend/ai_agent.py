@@ -17,6 +17,7 @@ from .polymarket_client import PolymarketClient
 from .integrations import post_tweet, format_thinking_tweet, log_trade_to_sheets, log_thinking_to_sheets, send_telegram, format_thinking_telegram, format_trade_telegram
 from .leaderboard import tracker
 from .auditor_data import get_auditor, is_earnings_market, analyze_wallet_auditor_pattern
+from .intel_feeds import fetch_all_intel
 from .ai_prompts import (
     SYSTEM_PROMPT,
     build_market_briefing,
@@ -354,6 +355,13 @@ class AITradingAgent:
             parts.append(build_leaderboard_summary(leaders))
         except Exception as e:
             logger.debug(f"Leaderboard fetch failed: {e}")
+
+        # External intel (Twitter + RSS)
+        try:
+            intel = await fetch_all_intel()
+            parts.append(intel)
+        except Exception as e:
+            logger.debug(f"Intel fetch failed: {e}")
 
         # Thesis board
         parts.append(build_thesis_board(self.theses))
