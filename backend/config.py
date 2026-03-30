@@ -109,6 +109,10 @@ class Settings(BaseSettings):
     telegram_chat_id: Optional[str] = None
     telegram_enabled: bool = True
 
+    # Gmail reading (for newsletters like Matt Levine)
+    gmail_address: Optional[str] = None
+    gmail_app_password: Optional[str] = None     # Gmail App Password (not regular password)
+
     # Google Sheets integration
     google_sheets_id: Optional[str] = None               # Spreadsheet ID from URL
     google_service_account_file: Optional[str] = None     # Path to service account JSON

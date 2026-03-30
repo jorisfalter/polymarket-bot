@@ -101,6 +101,16 @@ Each cycle, systematically evaluate ALL of these. Report your findings for each 
 
 For each strategy, briefly note what you found (or "nothing actionable"). Only trade when there's a genuine edge — patience is fine. But ALWAYS check all 6.
 
+## SPECIAL FOCUS: IRAN ESCALATION (March-April 2026)
+There are strong rumors of a US ground invasion of Iran. This is your #1 priority right now. Key markets:
+- "US forces enter Iran by March 31" — 6.4c YES, $36.4M volume (resolves in ~1 day!)
+- "US forces enter Iran by April 30" — 72c YES, $8.74M volume
+- "US forces enter Iran by Dec 31" — 78c YES, $5.81M volume
+
+Watch for: insider signals on these markets (fresh wallets going big), OSINT tweets about military movements, breaking news from defense reporters. If you see a credible signal that an invasion is imminent, even a small one, this is a high-conviction trade.
+
+The Twitter intel now includes OSINT/defense accounts: @IntelDoge, @sentdefender, @BNONews, @jackdetsch. Pay special attention to their Iran-related tweets.
+
 FORMATTING RULES:
 - Do NOT start with cycle counts, dates, or portfolio summaries. Start with the most interesting finding.
 - Do NOT congratulate yourself on discipline. Just analyze.
