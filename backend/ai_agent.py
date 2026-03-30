@@ -14,7 +14,7 @@ from .config import settings
 from .auto_seller import auto_seller
 from .trade_journal import journal
 from .polymarket_client import PolymarketClient
-from .integrations import post_tweet, format_thinking_tweet, log_trade_to_sheets, log_thinking_to_sheets
+from .integrations import post_tweet, format_thinking_tweet, log_trade_to_sheets, log_thinking_to_sheets, send_telegram, format_thinking_telegram, format_trade_telegram
 from .leaderboard import tracker
 from .auditor_data import get_auditor, is_earnings_market, analyze_wallet_auditor_pattern
 from .ai_prompts import (
@@ -274,7 +274,14 @@ class AITradingAgent:
             # 4. Log thinking
             self._log_thinking(decision)
 
-            # 4b. Post to Twitter
+            # 4b. Send to Telegram
+            try:
+                tg_text = format_thinking_telegram(decision)
+                await send_telegram(tg_text)
+            except Exception as e:
+                logger.debug(f"Telegram skipped: {e}")
+
+            # 4c. Post to Twitter (disabled)
             try:
                 tweet_text = format_thinking_tweet(decision)
                 post_tweet(tweet_text)
@@ -481,6 +488,17 @@ class AITradingAgent:
                         order_id=result.order_id,
                     )
                     logger.info(f"🤖 AI TRADE: ${amount_usd:.2f} on {market_question[:40]} ({thesis[:30]})")
+
+                    # Notify via Telegram
+                    try:
+                        tg_msg = format_trade_telegram(
+                            "AI-AGENT", "BUY", market_question,
+                            outcome, result.price, amount_usd,
+                            thesis, result.order_id or "",
+                        )
+                        await send_telegram(tg_msg)
+                    except Exception:
+                        pass
 
                     # Log to Google Sheets
                     log_trade_to_sheets(

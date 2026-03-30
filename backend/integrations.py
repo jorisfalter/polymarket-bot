@@ -10,6 +10,141 @@ from loguru import logger
 
 from .config import settings
 
+# ==================== TELEGRAM ====================
+
+_telegram_bot = None
+
+
+def _get_telegram_bot():
+    """Lazy-init Telegram bot."""
+    global _telegram_bot
+    if _telegram_bot is not None:
+        return _telegram_bot
+
+    if not settings.telegram_bot_token:
+        return None
+
+    try:
+        import telegram
+        _telegram_bot = telegram.Bot(token=settings.telegram_bot_token)
+        logger.info("Telegram bot initialized")
+        return _telegram_bot
+    except Exception as e:
+        logger.warning(f"Telegram init failed: {e}")
+        return None
+
+
+async def send_telegram(text: str, parse_mode: str = "HTML") -> bool:
+    """Send a message to the configured Telegram chat."""
+    if not settings.telegram_enabled or not settings.telegram_chat_id:
+        return False
+
+    bot = _get_telegram_bot()
+    if not bot:
+        return False
+
+    try:
+        # Telegram limit is 4096 chars
+        if len(text) > 4096:
+            # Split into multiple messages
+            chunks = [text[i:i+4096] for i in range(0, len(text), 4096)]
+            for chunk in chunks:
+                await bot.send_message(
+                    chat_id=settings.telegram_chat_id,
+                    text=chunk,
+                    parse_mode=parse_mode,
+                )
+        else:
+            await bot.send_message(
+                chat_id=settings.telegram_chat_id,
+                text=text,
+                parse_mode=parse_mode,
+            )
+        logger.debug("Telegram message sent")
+        return True
+    except Exception as e:
+        logger.warning(f"Telegram send failed: {e}")
+        return False
+
+
+def format_thinking_telegram(decision: Dict) -> str:
+    """Format agent's thinking for Telegram (HTML)."""
+    lines = []
+
+    # Header
+    now = datetime.utcnow().strftime("%H:%M UTC")
+    lines.append(f"🧠 <b>Agent Cycle</b> — {now}")
+    lines.append("")
+
+    # Trades
+    trades = decision.get("trades", [])
+    if trades:
+        lines.append("💰 <b>TRADES:</b>")
+        for t in trades:
+            action = t.get("action", "?")
+            question = t.get("market_question", "?")[:60]
+            amount = t.get("amount_usd", 0)
+            conf = t.get("confidence", 0)
+            thesis = t.get("thesis", "")[:80]
+            emoji = "🟢" if action == "BUY" else "🔴"
+            lines.append(f"{emoji} {action} ${amount:.2f} on <i>{question}</i>")
+            lines.append(f"   Confidence: {conf:.0%} — {thesis}")
+        lines.append("")
+
+    # Thesis updates
+    theses = decision.get("thesis_updates", [])
+    if theses:
+        lines.append("📋 <b>THESES:</b>")
+        for t in theses:
+            action = t.get("action", "?").upper()
+            title = t.get("title", "?")[:50]
+            conviction = t.get("conviction", "")
+            note = t.get("note", "")[:100]
+            emoji = {"CREATE": "📋", "UPDATE": "🔄", "CLOSE": "✅"}.get(action, "📋")
+            lines.append(f"{emoji} {action}: <b>{title}</b> [{conviction}]")
+            if note:
+                lines.append(f"   {note}")
+        lines.append("")
+
+    # Thinking
+    thinking = decision.get("thinking", "")
+    if thinking:
+        lines.append("💭 <b>THINKING:</b>")
+        lines.append(thinking[:1500])
+        lines.append("")
+
+    # Watchlist
+    watchlist = decision.get("watchlist_notes", "")
+    if watchlist:
+        lines.append(f"👀 <b>Watchlist:</b> {watchlist[:300]}")
+        lines.append("")
+
+    # Risk
+    risk = decision.get("risk_assessment", "")
+    if risk:
+        lines.append(f"⚠️ <b>Risk:</b> {risk[:200]}")
+
+    return "\n".join(lines)
+
+
+def format_trade_telegram(
+    strategy: str, action: str, market_question: str,
+    outcome: str, price: float, amount_usd: float,
+    reason: str, order_id: str = "",
+) -> str:
+    """Format a trade execution for Telegram."""
+    emoji = "🟢" if action == "BUY" else "🔴"
+    return (
+        f"{emoji} <b>TRADE EXECUTED</b>\n\n"
+        f"Strategy: {strategy}\n"
+        f"Action: {action} {outcome}\n"
+        f"Market: <i>{market_question[:80]}</i>\n"
+        f"Price: {price:.4f} | Amount: ${amount_usd:.2f}\n"
+        f"Reason: {reason[:150]}\n"
+        + (f"Order: {order_id}" if order_id else "")
+    )
+
+
 # ==================== TWITTER/X ====================
 
 _twitter_client = None

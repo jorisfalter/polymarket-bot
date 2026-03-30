@@ -36,6 +36,7 @@ anthropic>=0.39.0
 
 # Integrations
 tweepy>=4.14.0
+python-telegram-bot>=21.0
 gspread>=6.0.0
 google-auth>=2.0.0
 
