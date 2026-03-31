@@ -315,8 +315,13 @@ class AITradingAgent:
         """Build the full context prompt for Claude."""
         parts = []
 
-        # Current time
-        parts.append(f"Current time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+        # Current time + key deadlines
+        now = datetime.utcnow()
+        parts.append(f"Current time: {now.strftime('%Y-%m-%d %H:%M UTC')}")
+        # Pre-calculate time to common deadlines so the LLM doesn't hallucinate math
+        eod = now.replace(hour=23, minute=59, second=0)
+        hours_to_eod = (eod - now).total_seconds() / 3600
+        parts.append(f"Time until end of today (23:59 UTC): {hours_to_eod:.1f} hours")
 
         # Portfolio state
         balance = auto_seller.get_usdc_balance() or 0

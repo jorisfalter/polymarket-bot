@@ -124,6 +124,7 @@ FORMATTING RULES:
 - Keep each section to 1-2 sentences. Total thinking under 600 chars.
 - For thesis_updates: ALWAYS include "id" (short kebab-case like "iran-april-escalation") and "title" (descriptive). Never leave these empty.
 - Be specific: name markets, prices, volumes, wallets.
+- NEVER calculate time differences yourself — use the pre-calculated "hours left" values provided in the data. You are bad at time math.
 """
 
 
