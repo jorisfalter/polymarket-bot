@@ -144,17 +144,12 @@ class AutoSeller:
         min_price: Optional[float] = None,
     ) -> SellResult:
         """
-        Execute a market sell order.
-
-        Args:
-            trade_id: Internal trade tracking ID
-            token_id: Polymarket CLOB token ID
-            shares: Number of shares to sell
-            min_price: Minimum acceptable price (0-1 scale), or None for market order
-
-        Returns:
-            SellResult with order details or error
+        Execute a market sell order. Routes through trade proxy if configured.
         """
+        # Route through proxy if configured
+        if settings.trade_proxy_url:
+            return await self._proxy_sell(token_id, shares, min_price)
+
         if not self.is_ready():
             return SellResult(
                 success=False,
@@ -278,113 +273,120 @@ class AutoSeller:
         max_price: Optional[float] = None,
     ) -> "BuyResult":
         """
-        Execute a buy order.
-
-        Args:
-            token_id: Polymarket CLOB token ID
-            amount_usd: USD amount to spend
-            max_price: Maximum acceptable price (0-1 scale), or None for market order
-
-        Returns:
-            BuyResult with order details or error
+        Execute a buy order. Routes through trade proxy if configured
+        (to bypass Polymarket geoblock), otherwise executes directly.
         """
+        # Route through proxy if configured
+        if settings.trade_proxy_url:
+            return await self._proxy_buy(token_id, amount_usd, max_price)
+
         if not self.is_ready():
             return BuyResult(
-                success=False,
-                token_id=token_id,
-                amount_usd=amount_usd,
-                price=0,
-                error="Auto-seller not initialized. Check credentials.",
+                success=False, token_id=token_id, amount_usd=amount_usd,
+                price=0, error="Auto-seller not initialized.",
             )
 
         try:
             logger.info(f"Executing buy: ${amount_usd:.2f} of {token_id[:20]}...")
 
-            # Get current order book
             book = self.client.get_order_book(token_id)
             if not book or not book.asks:
-                return BuyResult(
-                    success=False,
-                    token_id=token_id,
-                    amount_usd=amount_usd,
-                    price=0,
-                    error="No asks available in order book",
-                )
+                return BuyResult(success=False, token_id=token_id, amount_usd=amount_usd, price=0, error="No asks in orderbook")
 
-            # Best ask is what we'll pay
             best_ask = float(book.asks[0].price)
-
-            # Check max price
             if max_price is not None and best_ask > max_price:
-                return BuyResult(
-                    success=False,
-                    token_id=token_id,
-                    amount_usd=amount_usd,
-                    price=best_ask,
-                    error=f"Price {best_ask:.4f} above max {max_price:.4f}",
-                )
+                return BuyResult(success=False, token_id=token_id, amount_usd=amount_usd, price=best_ask, error=f"Price {best_ask:.4f} above max {max_price:.4f}")
 
-            # Calculate shares from USD amount
             shares = amount_usd / best_ask if best_ask > 0 else 0
             if shares <= 0:
-                return BuyResult(
-                    success=False,
-                    token_id=token_id,
-                    amount_usd=amount_usd,
-                    price=best_ask,
-                    error="Calculated zero shares",
-                )
+                return BuyResult(success=False, token_id=token_id, amount_usd=amount_usd, price=best_ask, error="Zero shares")
 
-            # Create and execute buy order
-            order_args = OrderArgs(
-                token_id=token_id,
-                price=best_ask,
-                size=shares,
-                side=BUY,
-            )
-
+            order_args = OrderArgs(token_id=token_id, price=best_ask, size=shares, side=BUY)
             signed_order = self.client.create_order(order_args)
             response = self.client.post_order(signed_order, OrderType.GTC)
 
             if response and response.get("success"):
                 order_id = response.get("orderID") or response.get("order_id")
                 logger.info(f"✅ Buy order placed: {order_id} | ${amount_usd:.2f} @ {best_ask:.4f}")
-                return BuyResult(
-                    success=True,
-                    token_id=token_id,
-                    amount_usd=amount_usd,
-                    price=best_ask,
-                    shares=shares,
-                    order_id=order_id,
-                )
+                return BuyResult(success=True, token_id=token_id, amount_usd=amount_usd, price=best_ask, shares=shares, order_id=order_id)
             else:
-                error_msg = response.get("errorMsg") or response.get("error") or "Unknown error"
-                return BuyResult(
-                    success=False,
-                    token_id=token_id,
-                    amount_usd=amount_usd,
-                    price=best_ask,
-                    error=f"Order rejected: {error_msg}",
-                )
+                error_msg = response.get("errorMsg") or response.get("error") or "Unknown"
+                return BuyResult(success=False, token_id=token_id, amount_usd=amount_usd, price=best_ask, error=f"Order rejected: {error_msg}")
 
         except Exception as e:
             logger.error(f"Buy execution error: {e}")
-            return BuyResult(
-                success=False,
-                token_id=token_id,
-                amount_usd=amount_usd,
-                price=0,
-                error=str(e),
-            )
+            return BuyResult(success=False, token_id=token_id, amount_usd=amount_usd, price=0, error=str(e))
+
+    async def _proxy_buy(self, token_id: str, amount_usd: float, max_price: Optional[float]) -> "BuyResult":
+        """Execute buy via the trade proxy (Fly.io Tokyo)."""
+        import httpx
+        try:
+            logger.info(f"Proxy buy: ${amount_usd:.2f} of {token_id[:20]}...")
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r = await client.post(
+                    f"{settings.trade_proxy_url}/buy",
+                    headers={"Authorization": f"Bearer {settings.trade_proxy_secret}"},
+                    json={"token_id": token_id, "amount_usd": amount_usd, "max_price": max_price},
+                )
+                data = r.json()
+                if data.get("success"):
+                    logger.info(f"✅ Proxy buy success: {data.get('order_id')} @ {data.get('price')}")
+                    return BuyResult(
+                        success=True, token_id=token_id, amount_usd=amount_usd,
+                        price=data.get("price", 0), shares=data.get("shares", 0),
+                        order_id=data.get("order_id"),
+                    )
+                else:
+                    return BuyResult(success=False, token_id=token_id, amount_usd=amount_usd, price=data.get("price", 0), error=data.get("error", "Proxy error"))
+        except Exception as e:
+            logger.error(f"Proxy buy error: {e}")
+            return BuyResult(success=False, token_id=token_id, amount_usd=amount_usd, price=0, error=str(e))
+
+    async def _proxy_sell(self, token_id: str, shares: float, min_price: Optional[float]) -> "SellResult":
+        """Execute sell via the trade proxy (Fly.io Tokyo)."""
+        import httpx
+        try:
+            logger.info(f"Proxy sell: {shares:.4f} shares of {token_id[:20]}...")
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r = await client.post(
+                    f"{settings.trade_proxy_url}/sell",
+                    headers={"Authorization": f"Bearer {settings.trade_proxy_secret}"},
+                    json={"token_id": token_id, "shares": shares, "min_price": min_price},
+                )
+                data = r.json()
+                if data.get("success"):
+                    logger.info(f"✅ Proxy sell success: {data.get('order_id')} @ {data.get('price')}")
+                    return SellResult(
+                        success=True, trade_id="proxy", token_id=token_id,
+                        shares_sold=data.get("shares", shares), price=data.get("price", 0),
+                        order_id=data.get("order_id"),
+                    )
+                else:
+                    return SellResult(success=False, trade_id="proxy", token_id=token_id, shares_sold=0, price=data.get("price", 0), error=data.get("error", "Proxy error"))
+        except Exception as e:
+            logger.error(f"Proxy sell error: {e}")
+            return SellResult(success=False, trade_id="proxy", token_id=token_id, shares_sold=0, price=0, error=str(e))
 
     def get_usdc_balance(self) -> Optional[float]:
-        """Get current USDC balance from the CLOB API."""
+        """Get current USDC balance. Uses proxy if configured."""
+        # Try proxy first
+        if settings.trade_proxy_url:
+            try:
+                import httpx
+                r = httpx.get(
+                    f"{settings.trade_proxy_url}/balance",
+                    headers={"Authorization": f"Bearer {settings.trade_proxy_secret}"},
+                    timeout=10.0,
+                )
+                data = r.json()
+                return data.get("balance")
+            except Exception as e:
+                logger.debug(f"Proxy balance failed: {e}")
+
         if not self.is_ready():
             return None
         try:
             from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
-            # signature_type=1 = Polymarket proxy wallet (where funds live)
-            # signature_type=0 = EOA (always shows 0 for proxy wallets)
             params = BalanceAllowanceParams(
                 asset_type=AssetType.COLLATERAL,
                 signature_type=1,
@@ -392,7 +394,7 @@ class AutoSeller:
             result = self.client.get_balance_allowance(params)
             if isinstance(result, dict):
                 raw = result.get("balance", 0)
-                return float(raw) / 1e6  # USDC has 6 decimals
+                return float(raw) / 1e6
             return None
         except Exception as e:
             logger.error(f"Error getting USDC balance: {e}")
