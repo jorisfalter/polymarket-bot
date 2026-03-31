@@ -68,61 +68,62 @@ async def send_telegram(text: str, parse_mode: str = "HTML") -> bool:
 
 
 def format_thinking_telegram(decision: Dict) -> str:
-    """Format agent's thinking for Telegram (HTML)."""
+    """Format agent's thinking for Telegram (HTML). Structured and concise."""
     lines = []
 
-    # Header
     now = datetime.utcnow().strftime("%H:%M UTC")
     lines.append(f"🧠 <b>Agent Cycle</b> — {now}")
-    lines.append("")
 
-    # Trades
+    # Trades first (most important)
     trades = decision.get("trades", [])
     if trades:
+        lines.append("")
         lines.append("💰 <b>TRADES:</b>")
         for t in trades:
             action = t.get("action", "?")
-            question = t.get("market_question", "?")[:60]
+            question = t.get("market_question", "?")[:55]
             amount = t.get("amount_usd", 0)
             conf = t.get("confidence", 0)
             thesis = t.get("thesis", "")[:80]
             emoji = "🟢" if action == "BUY" else "🔴"
-            lines.append(f"{emoji} {action} ${amount:.2f} on <i>{question}</i>")
-            lines.append(f"   Confidence: {conf:.0%} — {thesis}")
+            lines.append(f"{emoji} {action} ${amount:.2f} — <i>{question}</i>")
+            lines.append(f"   {conf:.0%} confidence: {thesis}")
+
+    # Thinking — structured per strategy
+    thinking = decision.get("thinking", "")
+    if thinking:
         lines.append("")
+        lines.append("📊 <b>ANALYSIS:</b>")
+        # Keep it concise
+        lines.append(thinking[:1200])
 
     # Thesis updates
     theses = decision.get("thesis_updates", [])
     if theses:
+        lines.append("")
         lines.append("📋 <b>THESES:</b>")
         for t in theses:
             action = t.get("action", "?").upper()
-            title = t.get("title", "?")[:50]
+            title = t.get("title", "") or t.get("id", "?")
             conviction = t.get("conviction", "")
-            note = t.get("note", "")[:100]
-            emoji = {"CREATE": "📋", "UPDATE": "🔄", "CLOSE": "✅"}.get(action, "📋")
-            lines.append(f"{emoji} {action}: <b>{title}</b> [{conviction}]")
+            note = t.get("note", "")[:120]
+            emoji = {"CREATE": "🆕", "UPDATE": "🔄", "CLOSE": "✅"}.get(action, "📋")
+            conv_str = f" [{conviction}]" if conviction else ""
+            lines.append(f"{emoji} <b>{title[:50]}</b>{conv_str}")
             if note:
                 lines.append(f"   {note}")
-        lines.append("")
 
-    # Thinking
-    thinking = decision.get("thinking", "")
-    if thinking:
-        lines.append("💭 <b>THINKING:</b>")
-        lines.append(thinking[:1500])
-        lines.append("")
-
-    # Watchlist
+    # Watchlist (brief)
     watchlist = decision.get("watchlist_notes", "")
     if watchlist:
-        lines.append(f"👀 <b>Watchlist:</b> {watchlist[:300]}")
         lines.append("")
+        lines.append(f"👀 {watchlist[:250]}")
 
-    # Risk
+    # Risk (brief)
     risk = decision.get("risk_assessment", "")
     if risk:
-        lines.append(f"⚠️ <b>Risk:</b> {risk[:200]}")
+        lines.append("")
+        lines.append(f"⚠️ {risk[:200]}")
 
     return "\n".join(lines)
 

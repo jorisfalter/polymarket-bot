@@ -36,7 +36,7 @@ You receive these every cycle:
 
 ## When to Trade
 - HIGH/CRITICAL insider alerts where a fresh wallet bets big on unlikely outcomes — this is your bread and butter.
-- Smart money moves: when top-performing traders (60%+ win rate) take new positions.
+- Smart money moves: when top-performing traders (high PnL, high efficiency ratio) take new positions.
 - Resolution arbitrage: markets about to resolve where one outcome is 95%+ likely. Check the "Near Resolution" section.
 - Stock market arbitrage: if Polymarket prices diverge from what real stock data suggests (e.g., "S&P above 5500" priced at 40c but SPY is already at 5480), that's an edge.
 - **Auditor insider pattern (KPMG pattern)**: Watch for wallets that bet big ONLY on earnings markets for companies sharing the same auditor (KPMG, Deloitte, EY, PwC). This was documented by EventWaves — insiders at audit firms know earnings before release. If you see a wallet betting $5k on Wells Fargo, CarMax, and Five Below (all KPMG-audited) but $50 on non-KPMG companies, FOLLOW THAT BET.
@@ -112,9 +112,17 @@ Watch for: insider signals on these markets (fresh wallets going big), OSINT twe
 The Twitter intel now includes OSINT/defense accounts: @IntelDoge, @sentdefender, @BNONews, @jackdetsch. Pay special attention to their Iran-related tweets.
 
 FORMATTING RULES:
-- Do NOT start with cycle counts, dates, or portfolio summaries. Start with the most interesting finding.
-- Do NOT congratulate yourself on discipline. Just analyze.
-- Keep thinking to 400-600 chars. Your tweets get cut off beyond that.
+- Do NOT start with cycle counts ("Cycle 173") or portfolio summaries. Start with the most interesting finding.
+- Do NOT congratulate yourself on discipline or patience. Just analyze.
+- Structure your thinking as a brief summary per strategy check:
+  1. INSIDER: [what you found or "nothing"]
+  2. SMART MONEY: [what you found]
+  3. RESOLUTION ARB: [what you found]
+  4. STOCK ARB: [what you found]
+  5. AUDITOR: [what you found]
+  6. CONVICTION: [your overall take]
+- Keep each section to 1-2 sentences. Total thinking under 600 chars.
+- For thesis_updates: ALWAYS include "id" (short kebab-case like "iran-april-escalation") and "title" (descriptive). Never leave these empty.
 - Be specific: name markets, prices, volumes, wallets.
 """
 
@@ -273,18 +281,18 @@ def build_leaderboard_summary(leaders: List[Dict]) -> str:
     if not leaders:
         return "No leaderboard data available."
 
-    lines = ["## Top Traders (Leaderboard)"]
+    lines = ["## Top Traders (Leaderboard by PnL)"]
     for t in leaders[:10]:
         addr = t.get("address", "?")[:12]
         name = t.get("display_name") or t.get("name") or addr
         pnl = float(t.get("pnl", 0) or 0)
-        wr = float(t.get("win_rate", 0) or 0)
         vol = float(t.get("volume", 0) or 0)
-        markets = int(t.get("markets_traded", 0) or 0)
+        # PnL/Volume ratio is a rough proxy for skill (high ratio = efficient trader)
+        efficiency = (pnl / vol * 100) if vol > 0 else 0
 
         lines.append(
-            f"- {name[:20]} | PnL: ${pnl:,.0f} | Win rate: {wr*100:.0f}% | "
-            f"Volume: ${vol:,.0f} | Markets: {markets}"
+            f"- #{t.get('rank', '?')} {name[:20]} | PnL: ${pnl:,.0f} | "
+            f"Volume: ${vol:,.0f} | Efficiency: {efficiency:.0f}%"
         )
 
     return "\n".join(lines)
