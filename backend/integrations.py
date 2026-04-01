@@ -44,10 +44,19 @@ async def send_telegram(text: str, parse_mode: str = "HTML") -> bool:
         return False
 
     try:
-        # Telegram limit is 4096 chars
-        if len(text) > 4096:
-            # Split into multiple messages
-            chunks = [text[i:i+4096] for i in range(0, len(text), 4096)]
+        # Telegram limit is 4096 chars — split at newlines if needed
+        if len(text) > 4000:
+            chunks = []
+            remaining = text
+            while remaining:
+                if len(remaining) <= 4000:
+                    chunks.append(remaining)
+                    break
+                cut = remaining[:4000].rfind("\n")
+                if cut < 500:
+                    cut = 4000
+                chunks.append(remaining[:cut])
+                remaining = remaining[cut:].lstrip()
             for chunk in chunks:
                 await bot.send_message(
                     chat_id=settings.telegram_chat_id,

@@ -564,29 +564,41 @@ class AITradingAgent:
 
     async def _resolve_token_id(self, market_id: str, outcome: str) -> Optional[str]:
         """Resolve a market_id + outcome to a CLOB token_id."""
+        import json as _json
+
         async with PolymarketClient() as client:
             market = await client.get_market(market_id)
 
-            # If direct lookup fails, the agent might have sent a partial ID
-            # Search through recent markets to find a match
-            if not market and len(market_id) < 66:
-                logger.info(f"Partial market ID '{market_id}', searching markets...")
-                markets = await client.get_markets(limit=100, order="volume24hr")
+            # If direct lookup fails, search through top markets
+            # Polymarket event markets often can't be looked up by conditionId directly
+            if not market:
+                logger.info(f"Direct lookup failed for '{market_id[:30]}...', searching top markets...")
+                markets = await client.get_markets(limit=200, order="volume24hr")
                 for m in markets:
                     full_id = m.get("conditionId") or m.get("id") or ""
-                    if full_id.startswith(market_id):
+                    if full_id == market_id or full_id.startswith(market_id) or market_id.startswith(full_id):
                         market = m
-                        logger.info(f"Matched partial ID to {full_id[:20]}...")
+                        logger.info(f"Matched to: {m.get('question', '?')[:40]}")
                         break
 
             if not market:
                 logger.warning(f"Could not find market for ID: {market_id}")
                 return None
 
-            tokens = market.get("tokens", []) or market.get("clobTokenIds", [])
+            # Parse clobTokenIds — can be JSON string or list
+            tokens_raw = market.get("clobTokenIds", []) or market.get("tokens", [])
+            if isinstance(tokens_raw, str):
+                try:
+                    tokens = _json.loads(tokens_raw)
+                except _json.JSONDecodeError:
+                    tokens = []
+            else:
+                tokens = tokens_raw
+
             if not tokens:
                 return None
 
+            # Handle exactly 2 tokens (binary market)
             idx = 0 if outcome in ("Yes", "YES", "yes") else 1
 
             if isinstance(tokens[0], dict):
@@ -595,6 +607,7 @@ class AITradingAgent:
                         return t.get("token_id")
                 return tokens[0].get("token_id") if tokens else None
             else:
+                # tokens is a list of token ID strings
                 return tokens[idx] if idx < len(tokens) else tokens[0] if tokens else None
 
     def get_status(self) -> Dict:
