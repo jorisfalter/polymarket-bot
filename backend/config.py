@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     # AI Trading Agent
     agent_enabled: bool = True
     anthropic_api_key: Optional[str] = None
-    agent_model: str = "claude-sonnet-4-6-20250514"
+    agent_model: str = "claude-haiku-4-5-20251001"
     agent_max_positions: int = 5
     agent_max_per_trade: float = 1.50        # Min $1 on Polymarket, small buffer
     agent_max_total_exposure: float = 5.0    # Max $5 total at risk
