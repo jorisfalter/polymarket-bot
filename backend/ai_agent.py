@@ -354,9 +354,14 @@ class AITradingAgent:
             stock_prices = await _fetch_stock_prices()
             parts.append(build_stock_market_summary(stock_markets, stock_prices))
 
-        # Leaderboard (top traders)
+        # Leaderboard (top traders) — annotate with cached specializations
         try:
             leaders = await tracker.fetch_leaderboard(order_by="pnl", limit=10)
+            for leader in leaders:
+                addr = leader.get("address", "").lower()
+                spec = tracker.get_wallet_specialization(addr)
+                if spec:
+                    leader["specialization"] = spec
             parts.append(build_leaderboard_summary(leaders))
         except Exception as e:
             logger.debug(f"Leaderboard fetch failed: {e}")

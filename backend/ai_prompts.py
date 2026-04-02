@@ -37,7 +37,7 @@ You receive these every cycle:
 
 ## When to Trade
 - HIGH/CRITICAL insider alerts where a fresh wallet bets big on unlikely outcomes — this is your bread and butter.
-- Smart money moves: when top-performing traders (high PnL, high efficiency ratio) take new positions.
+- Smart money moves: when top-performing traders take new positions **that are in their specialty category** (marked ⚡ IN SPECIALTY). A trader with 80% win rate in politics making a politics trade = strong signal. The same trader on a sports market (⚠️ outside specialty) = weaker signal, treat skeptically.
 - Resolution arbitrage: markets about to resolve where one outcome is 95%+ likely. Check the "Near Resolution" section.
 - Stock market arbitrage: if Polymarket prices diverge from what real stock data suggests (e.g., "S&P above 5500" priced at 40c but SPY is already at 5480), that's an edge.
 - **Auditor insider pattern (KPMG pattern)**: Watch for wallets that bet big ONLY on earnings markets for companies sharing the same auditor (KPMG, Deloitte, EY, PwC). This was documented by EventWaves — insiders at audit firms know earnings before release. If you see a wallet betting $5k on Wells Fargo, CarMax, and Five Below (all KPMG-audited) but $50 on non-KPMG companies, FOLLOW THAT BET.
@@ -263,23 +263,38 @@ def build_thesis_board(theses: List[Dict]) -> str:
 
 
 def build_smart_money_summary(trades: List[Dict]) -> str:
-    """Format recent smart money trades."""
+    """Format recent smart money trades, including category specialty signals."""
     if not trades:
         return "No new smart money activity."
 
     lines = ["## Smart Money Moves"]
     for t in trades[:10]:
+        category = t.get("category", "other")
+        in_specialty = t.get("in_specialty", False)
+        specialty = t.get("wallet_specialty", "unknown")
+        specialty_pct = t.get("wallet_specialty_pct", 0)
+
+        # Build specialty tag
+        if specialty and specialty != "unknown" and specialty_pct > 0:
+            spec_tag = f" | Specialty: {specialty} ({specialty_pct}%)"
+            match_tag = " ⚡ IN SPECIALTY" if in_specialty else " ⚠️ outside specialty"
+        else:
+            spec_tag = ""
+            match_tag = ""
+
         lines.append(
             f"- Trader {t.get('trader', '?')[:12]}... "
             f"{t.get('side', '?')} on \"{t.get('market', '?')[:50]}\" "
             f"${float(t.get('usdcSize', 0)):,.0f} @ {float(t.get('price', 0))*100:.0f}c"
+            f" [{category}]{spec_tag}{match_tag}"
         )
 
+    lines.append("\nNote: ⚡ = trade is in wallet's dominant category (higher signal strength). ⚠️ = outside their specialty (treat with more skepticism).")
     return "\n".join(lines)
 
 
 def build_leaderboard_summary(leaders: List[Dict]) -> str:
-    """Format top traders from leaderboard."""
+    """Format top traders from leaderboard, with category specialization if available."""
     if not leaders:
         return "No leaderboard data available."
 
@@ -289,12 +304,16 @@ def build_leaderboard_summary(leaders: List[Dict]) -> str:
         name = t.get("display_name") or t.get("name") or addr
         pnl = float(t.get("pnl", 0) or 0)
         vol = float(t.get("volume", 0) or 0)
-        # PnL/Volume ratio is a rough proxy for skill (high ratio = efficient trader)
         efficiency = (pnl / vol * 100) if vol > 0 else 0
+
+        spec = t.get("specialization", {})
+        spec_str = ""
+        if spec and spec.get("top_category") and spec.get("top_category") != "unknown":
+            spec_str = f" | Specialty: {spec['top_category']} ({spec.get('top_pct', 0)}%)"
 
         lines.append(
             f"- #{t.get('rank', '?')} {name[:20]} | PnL: ${pnl:,.0f} | "
-            f"Volume: ${vol:,.0f} | Efficiency: {efficiency:.0f}%"
+            f"Volume: ${vol:,.0f} | Efficiency: {efficiency:.0f}%{spec_str}"
         )
 
     return "\n".join(lines)

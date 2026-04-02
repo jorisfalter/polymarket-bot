@@ -17,6 +17,69 @@ WATCHLIST_PATH = os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "data", "watched_wallets.json"
 )
 
+# Keywords for classifying market questions by category
+CATEGORY_KEYWORDS = {
+    "sports": [
+        "nfl", "nba", "mlb", "nhl", "fifa", "soccer", "football", "basketball",
+        "baseball", "tennis", "golf", "boxing", "ufc", "mma", "superbowl", "super bowl",
+        "championship", "world cup", "league", "playoff", "match", "game", "season",
+        "team", "player", "score", "win", "tournament", "series",
+    ],
+    "crypto": [
+        "bitcoin", "btc", "ethereum", "eth", "solana", "sol", "crypto", "token",
+        "coin", "blockchain", "defi", "nft", "altcoin", "binance", "coinbase",
+        "stablecoin", "usdc", "usdt", "doge", "xrp", "ripple", "cardano",
+        "price above", "price below", "reach $", "hit $",
+    ],
+    "politics": [
+        "election", "president", "congress", "senate", "house", "democrat",
+        "republican", "vote", "ballot", "legislation", "bill", "supreme court",
+        "governor", "mayor", "parliament", "prime minister", "cabinet", "impeach",
+        "approval rating", "poll", "campaign", "candidate", "party",
+    ],
+    "geopolitics": [
+        "war", "military", "attack", "ceasefire", "missile", "bomb", "troops",
+        "sanctions", "nato", "israel", "iran", "ukraine", "russia", "china",
+        "taiwan", "north korea", "middle east", "conflict", "invasion", "coup",
+        "nuclear", "diplomatic", "treaty", "alliance", "occupation",
+    ],
+    "finance": [
+        "stock", "earnings", "revenue", "fed rate", "interest rate", "cpi",
+        "inflation", "gdp", "recession", "bank", "s&p", "nasdaq", "dow",
+        "market cap", "ipo", "merger", "acquisition", "bankruptcy", "bonds",
+        "yield", "hedge fund", "treasury", "federal reserve",
+    ],
+    "tech": [
+        "apple", "google", "microsoft", "amazon", "meta", "tesla", "openai",
+        "nvidia", "ai model", "artificial intelligence", "launch", "release",
+        "product", "spacex", "starship", "gpt", "claude", "gemini", "llm",
+        "chip", "semiconductor", "app", "software", "hardware",
+    ],
+    "science": [
+        "asteroid", "climate", "temperature", "vaccine", "drug", "disease",
+        "cancer", "fda", "trial", "study", "nasa", "space", "planet", "moon",
+        "earthquake", "hurricane", "storm", "wildfire",
+    ],
+    "entertainment": [
+        "oscar", "grammy", "emmy", "golden globe", "celebrity", "movie",
+        "film", "show", "actor", "actress", "music", "album", "award",
+        "box office", "spotify", "netflix", "disney",
+    ],
+}
+
+
+def classify_market_category(question: str) -> str:
+    """Classify a market question into a category based on keywords."""
+    text = question.lower()
+    scores: Dict[str, int] = {}
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in text)
+        if score > 0:
+            scores[category] = score
+    if not scores:
+        return "other"
+    return max(scores, key=lambda c: scores[c])
+
 
 class LeaderboardTracker:
     """
@@ -26,6 +89,7 @@ class LeaderboardTracker:
     def __init__(self):
         self.watched_wallets: Set[str] = set()
         self._last_seen_trades: Dict[str, str] = {}  # wallet -> last trade timestamp
+        self._wallet_specializations: Dict[str, Dict] = {}  # wallet -> category breakdown
         self._load_watchlist()
 
     def _load_watchlist(self):
@@ -36,6 +100,7 @@ class LeaderboardTracker:
                     data = json.load(f)
                 self.watched_wallets = set(data.get("wallets", []))
                 self._last_seen_trades = data.get("last_seen", {})
+                self._wallet_specializations = data.get("specializations", {})
                 logger.info(f"Loaded {len(self.watched_wallets)} watched wallets")
         except Exception as e:
             logger.error(f"Error loading watchlist: {e}")
@@ -49,12 +114,45 @@ class LeaderboardTracker:
                     {
                         "wallets": list(self.watched_wallets),
                         "last_seen": self._last_seen_trades,
+                        "specializations": self._wallet_specializations,
                     },
                     f,
                     indent=2,
                 )
         except Exception as e:
             logger.error(f"Error saving watchlist: {e}")
+
+    async def analyze_wallet_specialization(self, address: str, trades: list) -> Dict:
+        """
+        Build a category profile from a wallet's recent trades.
+        Returns dict: {category: count, ...} plus top_category.
+        """
+        counts: Dict[str, int] = {}
+        for t in trades:
+            question = t.get("title") or t.get("question") or t.get("market") or ""
+            if question:
+                cat = classify_market_category(question)
+                counts[cat] = counts.get(cat, 0) + 1
+
+        if not counts:
+            return {"top_category": "unknown", "distribution": {}}
+
+        total = sum(counts.values())
+        distribution = {k: round(v / total * 100) for k, v in sorted(counts.items(), key=lambda x: -x[1])}
+        top = max(counts, key=lambda c: counts[c])
+        top_pct = distribution[top]
+
+        return {
+            "top_category": top,
+            "top_pct": top_pct,
+            "distribution": distribution,
+            "total_classified": total,
+            "updated": datetime.utcnow().isoformat(),
+        }
+
+    def get_wallet_specialization(self, address: str) -> Optional[Dict]:
+        """Return cached specialization data for a wallet."""
+        return self._wallet_specializations.get(address.lower())
 
     def watch(self, address: str):
         """Add a wallet to the watchlist."""
@@ -120,6 +218,11 @@ class LeaderboardTracker:
                     "timestamp": t.get("timestamp") or t.get("createdAt") or "",
                 })
 
+            # Compute and cache specialization
+            spec = await self.analyze_wallet_specialization(address, trades)
+            self._wallet_specializations[address.lower()] = spec
+            self._save_watchlist()
+
             return {
                 "address": address,
                 "total_trades": wallet.get("total_trades", 0),
@@ -128,6 +231,7 @@ class LeaderboardTracker:
                 "win_rate": wallet.get("win_rate"),
                 "recent_trades": recent_trades,
                 "is_watched": address.lower() in self.watched_wallets,
+                "specialization": spec,
             }
 
     async def check_watched_traders(self) -> List[Dict[str, Any]]:
@@ -144,9 +248,18 @@ class LeaderboardTracker:
         async with PolymarketClient() as client:
             for address in list(self.watched_wallets):
                 try:
-                    trades = await client.get_user_trades(address, limit=10)
+                    trades = await client.get_user_trades(address, limit=20)
                     if not trades:
                         continue
+
+                    # Build specialization lazily if we don't have it yet
+                    addr_lower = address.lower()
+                    if addr_lower not in self._wallet_specializations:
+                        spec = await self.analyze_wallet_specialization(address, trades)
+                        self._wallet_specializations[addr_lower] = spec
+                        logger.debug(f"Built specialization for {address[:12]}...: {spec.get('top_category')} ({spec.get('top_pct')}%)")
+
+                    spec = self._wallet_specializations.get(addr_lower, {})
 
                     last_seen = self._last_seen_trades.get(address)
                     latest_ts = None
@@ -159,15 +272,28 @@ class LeaderboardTracker:
                             if not latest_ts or ts > latest_ts:
                                 latest_ts = ts
 
+                            # Classify this trade's category
+                            market_question = trade.get("title") or trade.get("question") or trade.get("market") or "Unknown"
+                            trade_category = classify_market_category(market_question)
+
+                            # Is it in the wallet's specialty?
+                            top_cat = spec.get("top_category", "unknown")
+                            top_pct = spec.get("top_pct", 0)
+                            in_specialty = trade_category == top_cat and top_pct >= 40
+
                             # This is a new trade
                             new_trade = {
                                 "trader": address,
-                                "market": trade.get("title") or trade.get("question") or trade.get("market") or "Unknown",
+                                "market": market_question,
                                 "side": trade.get("side") or "BUY",
                                 "size": float(trade.get("size") or trade.get("amount") or 0),
                                 "price": float(trade.get("price") or 0),
                                 "usdcSize": float(trade.get("usdcSize") or 0),
                                 "timestamp": ts,
+                                "category": trade_category,
+                                "in_specialty": in_specialty,
+                                "wallet_specialty": top_cat,
+                                "wallet_specialty_pct": top_pct,
                             }
                             new_trades.append(new_trade)
 
