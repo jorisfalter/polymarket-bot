@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+py-clob-client>=0.17.0
+loguru
+pydantic
