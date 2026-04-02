@@ -454,7 +454,10 @@ class AITradingAgent:
 
                 # Enforce hard limits
                 amount_usd = min(amount_usd, settings.agent_max_per_trade)
-                if amount_usd < 0.01:
+                # Polymarket minimum order is $1.00 — bump up if below
+                if amount_usd < 1.05:
+                    amount_usd = 1.05
+                if amount_usd > settings.agent_max_per_trade:
                     continue
 
                 # Check exposure
