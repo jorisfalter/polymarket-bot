@@ -3,12 +3,36 @@ External integrations for the AI Trading Agent.
 - Twitter/X: posts thinking summaries each cycle
 - Google Sheets: logs all trades to a shared spreadsheet
 """
+import csv
 import json
+import os
 from datetime import datetime
 from typing import Dict, List, Optional
 from loguru import logger
 
 from .config import settings
+
+TRADES_BACKUP_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "data", "trades_backup.csv"
+)
+_BACKUP_HEADERS = [
+    "Timestamp", "Strategy", "Action", "Market", "Outcome",
+    "Price", "Shares", "Amount USD", "Confidence", "Thesis/Reason", "Order ID", "P&L"
+]
+
+
+def _write_trade_backup(row: list):
+    """Write trade to local CSV backup — always called, regardless of Sheets."""
+    try:
+        os.makedirs(os.path.dirname(TRADES_BACKUP_PATH), exist_ok=True)
+        write_header = not os.path.exists(TRADES_BACKUP_PATH)
+        with open(TRADES_BACKUP_PATH, "a", newline="") as f:
+            writer = csv.writer(f)
+            if write_header:
+                writer.writerow(_BACKUP_HEADERS)
+            writer.writerow(row)
+    except Exception as e:
+        logger.warning(f"Trade backup write failed: {e}")
 
 # ==================== TELEGRAM ====================
 
@@ -400,35 +424,47 @@ def log_trade_to_sheets(
     reason: str = "",
     order_id: str = "",
     pnl: float = 0,
-):
-    """Append a trade row to the Trades tab."""
+) -> bool:
+    """Append a trade row to the Trades tab. Always writes local CSV backup. Returns True if Sheets succeeded."""
+    global _spreadsheet
+
+    row = [
+        datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        strategy,
+        action,
+        market_question[:100],
+        outcome,
+        f"{price:.4f}",
+        f"{shares:.4f}",
+        f"{amount_usd:.2f}",
+        f"{confidence:.0%}" if confidence else "",
+        reason[:150],
+        order_id or "",
+        f"{pnl:.2f}" if pnl else "",
+    ]
+
+    # Always write to local backup first
+    _write_trade_backup(row)
+
+    # Then try Sheets
     ws = _get_or_create_tab("Trades", [
         "Timestamp", "Strategy", "Action", "Market",
         "Outcome", "Price", "Shares", "Amount USD",
         "Confidence", "Thesis/Reason", "Order ID", "P&L"
     ])
     if not ws:
-        return
+        logger.warning(f"Sheets unavailable — trade saved to local backup only: {action} {market_question[:30]}")
+        return False
 
     try:
-        row = [
-            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            strategy,
-            action,
-            market_question[:100],
-            outcome,
-            f"{price:.4f}",
-            f"{shares:.4f}",
-            f"{amount_usd:.2f}",
-            f"{confidence:.0%}" if confidence else "",
-            reason[:150],
-            order_id or "",
-            f"{pnl:.2f}" if pnl else "",
-        ]
         ws.append_row(row, value_input_option="USER_ENTERED")
         logger.debug(f"Trade logged to Sheets: {action} {market_question[:30]}")
+        return True
     except Exception as e:
-        logger.warning(f"Sheets trade log failed: {e}")
+        logger.warning(f"Sheets trade log failed: {e} — saved to local backup")
+        # Reset connection so next call tries to reconnect
+        _spreadsheet = None
+        return False
 
 
 def log_thinking_to_sheets(decision: Dict):

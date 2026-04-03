@@ -468,24 +468,28 @@ class AITradingAgent:
                 # Check exposure
                 current_exposure = journal.get_total_exposure()
                 if current_exposure + amount_usd > settings.agent_max_total_exposure:
-                    logger.info(f"Agent trade skipped: exposure limit (${current_exposure + amount_usd:.2f} > ${settings.agent_max_total_exposure:.2f})")
+                    reason = f"exposure limit (${current_exposure + amount_usd:.2f} > ${settings.agent_max_total_exposure:.2f})"
+                    logger.info(f"Agent trade skipped: {reason}")
+                    await send_telegram(f"⏭️ Trade skipped: {market_question[:50]}\nReason: {reason}")
                     continue
 
                 # Check position count
                 if len(journal.get_open_positions()) >= settings.agent_max_positions:
                     logger.info("Agent trade skipped: max positions reached")
+                    await send_telegram(f"⏭️ Trade skipped: {market_question[:50]}\nReason: max {settings.agent_max_positions} positions already open")
                     continue
 
                 # Check duplicate
                 if journal.has_open_position(market_id):
                     logger.info(f"Agent trade skipped: already have position in {market_question[:30]}")
-                    continue
+                    continue  # No Telegram — not interesting
 
                 # Get token_id for the market
                 logger.info(f"🤖 Attempting trade: {action} ${amount_usd:.2f} on {market_question[:40]} (ID: {market_id})")
                 token_id = await self._resolve_token_id(market_id, outcome)
                 if not token_id:
                     logger.warning(f"Could not resolve token for {market_question[:30]} (ID: {market_id})")
+                    await send_telegram(f"❌ Trade failed: {market_question[:50]}\nReason: could not resolve token ID for market {market_id[:20]}")
                     continue
 
                 # Execute real penny trade
@@ -522,8 +526,8 @@ class AITradingAgent:
                     except Exception:
                         pass
 
-                    # Log to Google Sheets
-                    log_trade_to_sheets(
+                    # Log to Google Sheets (always writes local backup too)
+                    sheets_ok = log_trade_to_sheets(
                         strategy="AI-AGENT",
                         action="BUY",
                         market_question=market_question,
@@ -535,8 +539,15 @@ class AITradingAgent:
                         reason=thesis,
                         order_id=result.order_id or "",
                     )
+                    if not sheets_ok:
+                        await send_telegram(
+                            f"⚠️ <b>Sheets write failed</b> — trade saved to local backup only\n"
+                            f"BUY ${amount_usd:.2f} on <i>{market_question[:60]}</i>\n"
+                            f"Order: {result.order_id or 'n/a'}"
+                        )
                 else:
                     logger.warning(f"AI trade failed: {result.error}")
+                    await send_telegram(f"❌ Trade failed: {market_question[:50]}\nReason: {result.error}")
 
             except Exception as e:
                 logger.error(f"AI trade execution error: {e}")
