@@ -146,6 +146,7 @@ class AITradingAgent:
         self._recent_smart_money: list = []
         self._thinking_history: List[Dict] = []
         self.theses: List[Dict] = []
+        self._live_positions: List[Dict] = []  # Synced from Polymarket each cycle
         self._load_recent_thinking()
         self._load_theses()
 
@@ -253,12 +254,43 @@ class AITradingAgent:
         """Called by main.py with new smart money trades."""
         self._recent_smart_money = trades
 
+    async def _sync_live_positions(self) -> List[Dict]:
+        """Fetch actual open positions from Polymarket. Used as source of truth for risk checks."""
+        wallet = settings.poly_wallet_address
+        if not wallet:
+            return []
+        try:
+            async with PolymarketClient() as client:
+                raw = await client.get_user_positions(wallet)
+            positions = []
+            for p in (raw or []):
+                size = float(p.get("size") or p.get("currentValue") or 0)
+                cash_value = float(p.get("cashBalance") or p.get("value") or size)
+                if cash_value < 0.01:
+                    continue
+                positions.append({
+                    "market_question": p.get("title") or p.get("question") or p.get("market") or "?",
+                    "outcome": p.get("outcome") or "?",
+                    "size_usd": cash_value,
+                    "token_id": p.get("asset") or p.get("tokenId") or p.get("token_id") or "",
+                    "condition_id": p.get("conditionId") or "",
+                })
+            self._live_positions = positions
+            logger.debug(f"Synced {len(positions)} live positions from Polymarket")
+            return positions
+        except Exception as e:
+            logger.warning(f"Failed to sync live positions: {e}")
+            return self._live_positions  # Return cached if fetch fails
+
     async def run_cycle(self):
         """Main cycle — gather data, ask Claude, execute."""
         if not settings.agent_enabled or not self.client:
             return
 
         try:
+            # 0. Sync live positions from Polymarket (source of truth)
+            await self._sync_live_positions()
+
             # 1. Gather context
             context = await self._gather_context()
 
@@ -323,11 +355,11 @@ class AITradingAgent:
         hours_to_eod = (eod - now).total_seconds() / 3600
         parts.append(f"Time until end of today (23:59 UTC): {hours_to_eod:.1f} hours")
 
-        # Portfolio state
+        # Portfolio state — use LIVE positions from Polymarket as source of truth
         balance = auto_seller.get_usdc_balance() or 0
-        positions = journal.get_open_positions()
-        exposure = journal.get_total_exposure()
-        parts.append(build_portfolio_summary(positions, balance, exposure))
+        live_positions = self._live_positions
+        live_exposure = sum(p.get("size_usd", 0) for p in live_positions)
+        parts.append(build_portfolio_summary(live_positions, balance, live_exposure, live=True))
 
         # Insider alerts
         parts.append(build_alert_summary(self._recent_alerts))
@@ -465,23 +497,29 @@ class AITradingAgent:
                 if amount_usd > settings.agent_max_per_trade:
                     continue
 
-                # Check exposure
-                current_exposure = journal.get_total_exposure()
-                if current_exposure + amount_usd > settings.agent_max_total_exposure:
-                    reason = f"exposure limit (${current_exposure + amount_usd:.2f} > ${settings.agent_max_total_exposure:.2f})"
+                # Check exposure using LIVE positions (source of truth)
+                live_exposure = sum(p.get("size_usd", 0) for p in self._live_positions)
+                if live_exposure + amount_usd > settings.agent_max_total_exposure:
+                    reason = f"exposure limit (${live_exposure + amount_usd:.2f} > ${settings.agent_max_total_exposure:.2f})"
                     logger.info(f"Agent trade skipped: {reason}")
                     await send_telegram(f"⏭️ Trade skipped: {market_question[:50]}\nReason: {reason}")
                     continue
 
-                # Check position count
-                if len(journal.get_open_positions()) >= settings.agent_max_positions:
+                # Check position count using LIVE positions
+                if len(self._live_positions) >= settings.agent_max_positions:
                     logger.info("Agent trade skipped: max positions reached")
                     await send_telegram(f"⏭️ Trade skipped: {market_question[:50]}\nReason: max {settings.agent_max_positions} positions already open")
                     continue
 
-                # Check duplicate
-                if journal.has_open_position(market_id):
-                    logger.info(f"Agent trade skipped: already have position in {market_question[:30]}")
+                # Check duplicate against live positions (by market question, case-insensitive)
+                mq_lower = market_question.lower()
+                already_held = any(
+                    mq_lower in p.get("market_question", "").lower() or
+                    p.get("market_question", "").lower() in mq_lower
+                    for p in self._live_positions
+                )
+                if already_held:
+                    logger.info(f"Agent trade skipped: already have live position in {market_question[:30]}")
                     continue  # No Telegram — not interesting
 
                 # Get token_id for the market

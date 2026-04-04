@@ -199,23 +199,30 @@ def build_alert_summary(alerts: list) -> str:
     return "\n".join(lines)
 
 
-def build_portfolio_summary(positions: List[Dict], balance: float, exposure: float) -> str:
-    """Format current portfolio state."""
+def build_portfolio_summary(positions: List[Dict], balance: float, exposure: float, live: bool = False) -> str:
+    """Format current portfolio state. If live=True, positions are from Polymarket API."""
+    source = "LIVE from Polymarket" if live else "local journal"
     lines = [
         "## Your Portfolio",
         f"USDC Balance: ${balance:.2f}",
-        f"Total Exposure: ${exposure:.2f} / $5.00",
+        f"Total Exposure: ${exposure:.2f} / ${5.00:.2f} ({source})",
         f"Open Positions: {len(positions)} / 5",
     ]
 
     if positions:
         lines.append("")
         for p in positions:
-            lines.append(
-                f"- {p.get('market_question', '?')[:60]}\n"
-                f"  Entry: {p.get('price', 0):.4f} | Amount: ${p.get('amount_usd', 0):.2f} | "
-                f"Strategy: {p.get('strategy', '?')}"
-            )
+            if live:
+                lines.append(
+                    f"- {p.get('market_question', '?')[:60]}\n"
+                    f"  Outcome: {p.get('outcome', '?')} | Current value: ${p.get('size_usd', 0):.2f}"
+                )
+            else:
+                lines.append(
+                    f"- {p.get('market_question', '?')[:60]}\n"
+                    f"  Entry: {p.get('price', 0):.4f} | Amount: ${p.get('amount_usd', 0):.2f} | "
+                    f"Strategy: {p.get('strategy', '?')}"
+                )
     else:
         lines.append("\nNo open positions.")
 
