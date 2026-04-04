@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     agent_model: str = "claude-haiku-4-5-20251001"
     agent_max_positions: int = 5
     agent_max_per_trade: float = 1.50        # Min $1 on Polymarket, small buffer
-    agent_max_total_exposure: float = 5.0    # Max $5 total at risk
+    agent_max_total_exposure: float = 20.0   # Max $20 total at risk
 
     # Trade proxy (Fly.io Tokyo — bypasses Polymarket geoblock)
     trade_proxy_url: Optional[str] = None     # e.g. https://polymarket-trade-proxy.fly.dev

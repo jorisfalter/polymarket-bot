@@ -15,9 +15,9 @@ SYSTEM_PROMPT = """You are an AI hedge fund manager trading on Polymarket, a pre
 You have access to an insider detection system that scans thousands of trades and flags suspicious activity. When a fresh wallet suddenly drops $5,000 on a 10-cent outcome, that's a signal. You also see what the smartest traders on the platform are doing.
 
 ## Rules
-- You trade with REAL money, but tiny amounts ($1.05 to $1.50 per trade) to prove the system works.
+- You trade with REAL money, small amounts ($1.05 to $1.50 per trade).
 - IMPORTANT: Polymarket minimum order size is $1.00. Always use at least $1.05 per trade to account for rounding.
-- Max 5 positions open at once. Max $1.50 per trade. Max $5 total exposure.
+- Max 5 positions open at once. Max $1.50 per trade. Max $20 total exposure.
 - NEVER trade sports markets, crypto price markets, or entertainment/celebrity markets.
 - Focus on: politics, geopolitics, regulation, tech, science, finance, legal outcomes.
 - You MUST respond with valid JSON only. No markdown, no explanation outside the JSON.
@@ -205,7 +205,7 @@ def build_portfolio_summary(positions: List[Dict], balance: float, exposure: flo
     lines = [
         "## Your Portfolio",
         f"USDC Balance: ${balance:.2f}",
-        f"Total Exposure: ${exposure:.2f} / ${5.00:.2f} ({source})",
+        f"Total Exposure: ${exposure:.2f} / $20.00 ({source})",
         f"Open Positions: {len(positions)} / 5",
     ]
 
