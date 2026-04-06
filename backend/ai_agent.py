@@ -264,8 +264,20 @@ class AITradingAgent:
                 raw = await client.get_user_positions(wallet)
             positions = []
             for p in (raw or []):
-                size = float(p.get("size") or p.get("currentValue") or 0)
-                cash_value = float(p.get("cashBalance") or p.get("value") or size)
+                # Use currentValue (market value) or initialValue (cost basis) — never cashBalance
+                # cashBalance is the wallet's USDC cash, not a position value
+                cash_value = float(
+                    p.get("currentValue") or
+                    p.get("initialValue") or
+                    p.get("value") or
+                    0
+                )
+                # Fallback: size * avgPrice if currentValue not present
+                if cash_value < 0.01:
+                    size = float(p.get("size") or 0)
+                    avg_price = float(p.get("avgPrice") or p.get("price") or 0)
+                    if size > 0 and avg_price > 0:
+                        cash_value = size * avg_price
                 if cash_value < 0.01:
                     continue
                 positions.append({
@@ -275,6 +287,7 @@ class AITradingAgent:
                     "token_id": p.get("asset") or p.get("tokenId") or p.get("token_id") or "",
                     "condition_id": p.get("conditionId") or "",
                 })
+            logger.debug(f"Live positions raw sample: {(raw or [{}])[0] if raw else 'empty'}")
             self._live_positions = positions
             logger.debug(f"Synced {len(positions)} live positions from Polymarket")
             return positions
