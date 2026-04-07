@@ -1260,6 +1260,13 @@ async def get_agent_theses():
     return ai_agent.theses
 
 
+@app.post("/api/agent/run")
+async def trigger_agent_cycle():
+    """Manually trigger one agent cycle."""
+    await ai_agent.run_cycle()
+    return {"ok": True, "thinking": ai_agent._thinking_history[-1] if ai_agent._thinking_history else None}
+
+
 @app.get("/agent")
 async def serve_agent():
     return FileResponse(
