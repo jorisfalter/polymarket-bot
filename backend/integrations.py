@@ -158,7 +158,11 @@ def format_thinking_telegram(decision: Dict) -> str:
         lines.append("")
         lines.append(f"⚠️ {risk[:200]}")
 
-    return "\n".join(lines)
+    msg = "\n".join(lines)
+    # Telegram hard limit is 4096 chars
+    if len(msg) > 4000:
+        msg = msg[:3980] + "\n…"
+    return msg
 
 
 def format_trade_telegram(
