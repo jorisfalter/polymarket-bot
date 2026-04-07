@@ -255,45 +255,74 @@ class AITradingAgent:
         self._recent_smart_money = trades
 
     async def _sync_live_positions(self) -> List[Dict]:
-        """Fetch actual open positions from Polymarket. Used as source of truth for risk checks."""
-        wallet = settings.poly_wallet_address
-        if not wallet:
+        """Reconcile journal open positions against live Polymarket holdings.
+
+        Dollar amounts come from the journal (we know exactly what was spent).
+        The live API is used only to detect which positions have resolved/closed.
+        This avoids unreliable Data API field scaling (size = shares, not USD).
+        """
+        journal_positions = journal.get_open_positions()
+
+        if not journal_positions:
+            self._live_positions = []
             return []
+
+        # Collect live token IDs from CLOB client (authoritative for what exists)
+        live_token_ids: set = set()
         try:
-            async with PolymarketClient() as client:
-                raw = await client.get_user_positions(wallet)
-            positions = []
-            for p in (raw or []):
-                # Use currentValue (market value) or initialValue (cost basis) — never cashBalance
-                # cashBalance is the wallet's USDC cash, not a position value
-                cash_value = float(
-                    p.get("currentValue") or
-                    p.get("initialValue") or
-                    p.get("value") or
-                    0
-                )
-                # Fallback: size * avgPrice if currentValue not present
-                if cash_value < 0.01:
-                    size = float(p.get("size") or 0)
-                    avg_price = float(p.get("avgPrice") or p.get("price") or 0)
-                    if size > 0 and avg_price > 0:
-                        cash_value = size * avg_price
-                if cash_value < 0.01:
-                    continue
-                positions.append({
-                    "market_question": p.get("title") or p.get("question") or p.get("market") or "?",
-                    "outcome": p.get("outcome") or "?",
-                    "size_usd": cash_value,
-                    "token_id": p.get("asset") or p.get("tokenId") or p.get("token_id") or "",
-                    "condition_id": p.get("conditionId") or "",
-                })
-            logger.debug(f"Live positions raw sample: {(raw or [{}])[0] if raw else 'empty'}")
-            self._live_positions = positions
-            logger.debug(f"Synced {len(positions)} live positions from Polymarket")
-            return positions
+            if auto_seller.is_ready():
+                clob_pos = auto_seller.client.get_positions()
+                for p in (clob_pos or []):
+                    tid = p.get("asset_id") or p.get("token_id") or ""
+                    if tid:
+                        live_token_ids.add(tid)
         except Exception as e:
-            logger.warning(f"Failed to sync live positions: {e}")
-            return self._live_positions  # Return cached if fetch fails
+            logger.debug(f"CLOB positions fetch failed: {e}")
+
+        # Collect live market questions from Data API (for question-based matching)
+        live_market_questions: set = set()
+        try:
+            wallet = settings.poly_wallet_address
+            if wallet:
+                async with PolymarketClient() as client:
+                    raw = await client.get_user_positions(wallet)
+                for p in (raw or []):
+                    q = (p.get("title") or p.get("question") or p.get("market") or "").strip().lower()
+                    if q:
+                        live_market_questions.add(q)
+                    # Also store token IDs from Data API
+                    tid = p.get("asset") or p.get("tokenId") or p.get("token_id") or ""
+                    if tid:
+                        live_token_ids.add(tid)
+        except Exception as e:
+            logger.debug(f"Data API positions fetch failed: {e}")
+
+        # If we couldn't reach any live API, keep all journal positions (fail safe)
+        if not live_token_ids and not live_market_questions:
+            logger.debug("No live position data — keeping all journal positions as-is")
+            self._live_positions = journal_positions
+            return journal_positions
+
+        # Cross-reference: keep journal positions that are still live
+        reconciled = []
+        for jp in journal_positions:
+            token_id = jp.get("token_id", "")
+            market_q = jp.get("market_question", "").strip().lower()
+
+            token_match = bool(token_id and token_id in live_token_ids)
+            question_match = any(
+                market_q in q or q in market_q
+                for q in live_market_questions
+            ) if live_market_questions and market_q else False
+
+            if token_match or question_match:
+                reconciled.append(jp)
+            else:
+                logger.info(f"Position not found in live data, treating as resolved: {jp.get('market_question', '?')[:50]}")
+
+        self._live_positions = reconciled
+        logger.info(f"Live positions: {len(reconciled)}/{len(journal_positions)} journal positions still active (exposure: ${sum(p.get('amount_usd',0) for p in reconciled):.2f})")
+        return reconciled
 
     async def run_cycle(self):
         """Main cycle — gather data, ask Claude, execute."""
@@ -368,10 +397,11 @@ class AITradingAgent:
         hours_to_eod = (eod - now).total_seconds() / 3600
         parts.append(f"Time until end of today (23:59 UTC): {hours_to_eod:.1f} hours")
 
-        # Portfolio state — use LIVE positions from Polymarket as source of truth
+        # Portfolio state — use reconciled journal positions (live-cross-referenced)
+        # Exposure = sum of amount_usd from journal entries (what we actually spent)
         balance = auto_seller.get_usdc_balance() or 0
         live_positions = self._live_positions
-        live_exposure = sum(p.get("size_usd", 0) for p in live_positions)
+        live_exposure = sum(p.get("amount_usd", 0) for p in live_positions)
         parts.append(build_portfolio_summary(live_positions, balance, live_exposure, live=True))
 
         # Insider alerts
@@ -510,8 +540,8 @@ class AITradingAgent:
                 if amount_usd > settings.agent_max_per_trade:
                     continue
 
-                # Check exposure using LIVE positions (source of truth)
-                live_exposure = sum(p.get("size_usd", 0) for p in self._live_positions)
+                # Check exposure: use amount_usd from journal entries (what we actually spent)
+                live_exposure = sum(p.get("amount_usd", 0) for p in self._live_positions)
                 if live_exposure + amount_usd > settings.agent_max_total_exposure:
                     reason = f"exposure limit (${live_exposure + amount_usd:.2f} > ${settings.agent_max_total_exposure:.2f})"
                     logger.info(f"Agent trade skipped: {reason}")

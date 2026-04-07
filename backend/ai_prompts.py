@@ -212,17 +212,11 @@ def build_portfolio_summary(positions: List[Dict], balance: float, exposure: flo
     if positions:
         lines.append("")
         for p in positions:
-            if live:
-                lines.append(
-                    f"- {p.get('market_question', '?')[:60]}\n"
-                    f"  Outcome: {p.get('outcome', '?')} | Current value: ${p.get('size_usd', 0):.2f}"
-                )
-            else:
-                lines.append(
-                    f"- {p.get('market_question', '?')[:60]}\n"
-                    f"  Entry: {p.get('price', 0):.4f} | Amount: ${p.get('amount_usd', 0):.2f} | "
-                    f"Strategy: {p.get('strategy', '?')}"
-                )
+            lines.append(
+                f"- {p.get('market_question', '?')[:60]}\n"
+                f"  Entry: {p.get('price', 0):.4f} | Spent: ${p.get('amount_usd', 0):.2f} | "
+                f"Outcome: {p.get('side', p.get('outcome', '?'))}"
+            )
     else:
         lines.append("\nNo open positions.")
 
