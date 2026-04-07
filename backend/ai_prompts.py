@@ -126,6 +126,8 @@ FORMATTING RULES:
 - For thesis_updates: ALWAYS include "id" (short kebab-case like "iran-april-escalation") and "title" (descriptive). Never leave these empty.
 - Be specific: name markets, prices, volumes, wallets.
 - NEVER calculate time differences yourself — use the pre-calculated "hours left" values provided in the data. You are bad at time math.
+- NEVER create theses about your own portfolio state, leverage, exposure, or position lock-in. These are operational facts shown in your Portfolio section, not strategic theses. Only create theses about MARKET events and opportunities.
+- NEVER compute exposure as shares × current_price. Exposure = cost basis = what you spent. Always use the "RISK CAPITAL DEPLOYED" number from your Portfolio section.
 """
 
 
@@ -200,12 +202,15 @@ def build_alert_summary(alerts: list) -> str:
 
 
 def build_portfolio_summary(positions: List[Dict], balance: float, exposure: float, live: bool = False) -> str:
-    """Format current portfolio state. If live=True, positions are from Polymarket API."""
-    source = "LIVE from Polymarket" if live else "local journal"
+    """Format current portfolio state."""
     lines = [
         "## Your Portfolio",
         f"USDC Balance: ${balance:.2f}",
-        f"Total Exposure: ${exposure:.2f} / $20.00 ({source})",
+        f"",
+        f"RISK CAPITAL DEPLOYED (cost basis): ${exposure:.2f} / $20.00",
+        f"⚠️ IMPORTANT: 'exposure' = dollars you SPENT (cost basis), NOT current market value.",
+        f"  Shares may be worth more or less than you paid. Your risk is only what you spent.",
+        f"  Never compute exposure from share_count × current_price.",
         f"Open Positions: {len(positions)} / 5",
     ]
 
@@ -214,11 +219,12 @@ def build_portfolio_summary(positions: List[Dict], balance: float, exposure: flo
         for p in positions:
             lines.append(
                 f"- {p.get('market_question', '?')[:60]}\n"
-                f"  Entry: {p.get('price', 0):.4f} | Spent: ${p.get('amount_usd', 0):.2f} | "
+                f"  Entry price: {p.get('price', 0):.4f} | Cost basis (your risk): ${p.get('amount_usd', 0):.2f} | "
                 f"Outcome: {p.get('side', p.get('outcome', '?'))}"
             )
+        lines.append(f"\nTotal risk capital: ${exposure:.2f} (well within $20 limit)")
     else:
-        lines.append("\nNo open positions.")
+        lines.append("\nNo open positions. Full $20 capacity available.")
 
     return "\n".join(lines)
 
