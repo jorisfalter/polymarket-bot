@@ -212,7 +212,8 @@ def build_portfolio_summary(positions: List[Dict], balance: float, exposure: flo
         f"⚠️ IMPORTANT: 'exposure' = dollars you SPENT (cost basis), NOT current market value.",
         f"  Shares may be worth more or less than you paid. Your risk is only what you spent.",
         f"  Never compute exposure from share_count × current_price.",
-        f"Open Positions: {len(positions)} / 5",
+        f"Open Positions: {len(positions)} / 5  ({5 - len(positions)} slots free)",
+        f"Available to trade: ${20.0 - exposure:.2f} remaining",
     ]
 
     if positions:

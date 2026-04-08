@@ -101,68 +101,39 @@ async def send_telegram(text: str, parse_mode: str = "HTML") -> bool:
 
 
 def format_thinking_telegram(decision: Dict) -> str:
-    """Format agent's thinking for Telegram (HTML). Structured and concise."""
-    lines = []
-
+    """Format agent's thinking for Telegram. Target: under 1000 chars so it fits without 'show more'."""
     now = datetime.utcnow().strftime("%H:%M UTC")
-    lines.append(f"🧠 <b>Agent Cycle</b> — {now}")
+    lines = [f"🧠 <b>Agent Cycle</b> — {now}"]
 
-    # Trades first (most important)
+    # Trades (most important — always show in full)
     trades = decision.get("trades", [])
     if trades:
-        lines.append("")
-        lines.append("💰 <b>TRADES:</b>")
+        lines.append("\n💰 <b>TRADES:</b>")
         for t in trades:
-            action = t.get("action", "?")
-            question = t.get("market_question", "?")[:55]
-            amount = t.get("amount_usd", 0)
-            conf = t.get("confidence", 0)
-            thesis = t.get("thesis", "")[:80]
-            emoji = "🟢" if action == "BUY" else "🔴"
-            lines.append(f"{emoji} {action} ${amount:.2f} — <i>{question}</i>")
-            lines.append(f"   {conf:.0%} confidence: {thesis}")
+            emoji = "🟢" if t.get("action") == "BUY" else "🔴"
+            lines.append(f"{emoji} {t.get('action')} ${t.get('amount_usd',0):.2f} — <i>{t.get('market_question','?')[:50]}</i>")
+            lines.append(f"   {t.get('confidence',0):.0%} — {t.get('thesis','')[:70]}")
 
-    # Thinking — structured per strategy
+    # Analysis: first 500 chars only
     thinking = decision.get("thinking", "")
     if thinking:
-        lines.append("")
-        lines.append("📊 <b>ANALYSIS:</b>")
-        # Keep it concise
-        lines.append(thinking[:1200])
+        lines.append(f"\n📊 {thinking[:500]}")
 
-    # Thesis updates
-    theses = decision.get("thesis_updates", [])
+    # Theses: max 2, title only (no note)
+    theses = [t for t in decision.get("thesis_updates", []) if t.get("action","").upper() in ("CREATE","UPDATE")][:2]
     if theses:
-        lines.append("")
-        lines.append("📋 <b>THESES:</b>")
+        lines.append("\n📋 <b>THESES:</b>")
         for t in theses:
-            action = t.get("action", "?").upper()
-            title = t.get("title", "") or t.get("id", "?")
-            conviction = t.get("conviction", "")
-            note = t.get("note", "")[:120]
-            emoji = {"CREATE": "🆕", "UPDATE": "🔄", "CLOSE": "✅"}.get(action, "📋")
-            conv_str = f" [{conviction}]" if conviction else ""
-            lines.append(f"{emoji} <b>{title[:50]}</b>{conv_str}")
-            if note:
-                lines.append(f"   {note}")
+            emoji = "🆕" if t.get("action","").upper() == "CREATE" else "🔄"
+            conv = f" [{t.get('conviction','')}]" if t.get("conviction") else ""
+            lines.append(f"{emoji} {t.get('title', t.get('id','?'))[:55]}{conv}")
 
-    # Watchlist (brief)
-    watchlist = decision.get("watchlist_notes", "")
-    if watchlist:
-        lines.append("")
-        lines.append(f"👀 {watchlist[:250]}")
-
-    # Risk (brief)
+    # Risk: one line only
     risk = decision.get("risk_assessment", "")
     if risk:
-        lines.append("")
-        lines.append(f"⚠️ {risk[:200]}")
+        lines.append(f"\n⚠️ {risk[:120]}")
 
-    msg = "\n".join(lines)
-    # Telegram hard limit is 4096 chars
-    if len(msg) > 4000:
-        msg = msg[:3980] + "\n…"
-    return msg
+    return "\n".join(lines)
 
 
 def format_trade_telegram(
