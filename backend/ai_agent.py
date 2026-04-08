@@ -192,11 +192,11 @@ def _find_market_inconsistencies(markets: list) -> list:
                     })
 
         # HIERARCHY check: numeric thresholds in same topic (e.g. BTC >60k vs >70k)
-        threshold_pattern = re.compile(r"[\$]?(\d[\d,\.]+)[k]?\s*(thousand|million|k\b)?")
+        threshold_pattern = re.compile(r"[\$]?(\d[\d,\.]+)(?:k\b|thousand|million)?")
         for i in range(len(parsed)):
             for j in range(i + 1, len(parsed)):
                 a, b = parsed[i], parsed[j]
-                # Try to extract numeric thresholds from questions
+                # Try to extract numeric thresholds from questions (single group → strings)
                 nums_a = [float(n.replace(",", "")) for n in threshold_pattern.findall(a["question"].lower())[0:1]]
                 nums_b = [float(n.replace(",", "")) for n in threshold_pattern.findall(b["question"].lower())[0:1]]
                 if not nums_a or not nums_b or nums_a[0] == nums_b[0]:
