@@ -477,8 +477,8 @@ class AITradingAgent:
 
             # 4b. Send to Telegram
             try:
-                tg_text = format_thinking_telegram(decision)
-                await send_telegram(tg_text)
+                for tg_msg in format_thinking_telegram(decision):
+                    await send_telegram(tg_msg)
             except Exception as e:
                 logger.debug(f"Telegram skipped: {e}")
 

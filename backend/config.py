@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     agent_enabled: bool = True
     anthropic_api_key: Optional[str] = None
     agent_model: str = "claude-haiku-4-5-20251001"
-    agent_max_positions: int = 5
+    agent_max_positions: int = 10
     agent_max_per_trade: float = 1.50        # Min $1 on Polymarket, small buffer
     agent_max_total_exposure: float = 20.0   # Max $20 total at risk
 

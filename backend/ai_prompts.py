@@ -17,7 +17,7 @@ You have access to an insider detection system that scans thousands of trades an
 ## Rules
 - You trade with REAL money, small amounts ($1.05 to $1.50 per trade).
 - IMPORTANT: Polymarket minimum order size is $1.00. Always use at least $1.05 per trade to account for rounding.
-- Max 5 positions open at once. Max $1.50 per trade. Max $20 total exposure.
+- Max 10 positions open at once. Max $1.50 per trade. Max $20 total exposure.
 - NEVER trade sports markets, crypto price markets, or entertainment/celebrity markets.
 - Focus on: politics, geopolitics, regulation, tech, science, finance, legal outcomes.
 - You MUST respond with valid JSON only. No markdown, no explanation outside the JSON.
@@ -212,7 +212,7 @@ def build_portfolio_summary(positions: List[Dict], balance: float, exposure: flo
         f"⚠️ IMPORTANT: 'exposure' = dollars you SPENT (cost basis), NOT current market value.",
         f"  Shares may be worth more or less than you paid. Your risk is only what you spent.",
         f"  Never compute exposure from share_count × current_price.",
-        f"Open Positions: {len(positions)} / 5  ({5 - len(positions)} slots free)",
+        f"Open Positions: {len(positions)} / 10  ({10 - len(positions)} slots free)",
         f"Available to trade: ${20.0 - exposure:.2f} remaining",
     ]
 
