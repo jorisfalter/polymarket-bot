@@ -29,10 +29,26 @@ from .ai_prompts import (
     build_leaderboard_summary,
     build_near_resolution_summary,
     build_stock_market_summary,
+    build_inconsistency_summary,
 )
 
 THINKING_LOG_PATH = Path(__file__).parent.parent / "data" / "agent_thinking.jsonl"
 THESES_PATH = Path(__file__).parent.parent / "data" / "agent_theses.json"
+
+# Topic clusters for inconsistency detection
+# Each entry: (topic_id, keywords_to_match)
+TOPIC_CLUSTERS = [
+    ("iran",        ["iran", "tehran", "khamenei", "irgc", "persian"]),
+    ("ceasefire",   ["ceasefire", "cease-fire", "peace deal", "truce"]),
+    ("fed",         ["fed rate", "federal reserve", "fomc", "basis point", "bps cut", "rate cut"]),
+    ("bitcoin",     ["bitcoin", "btc"]),
+    ("ethereum",    ["ethereum", "eth "]),
+    ("oil",         ["oil", "crude", "wti", "brent", "opec"]),
+    ("trump",       ["trump"]),
+    ("ukraine",     ["ukraine", "zelensky", "russia", "nato"]),
+    ("china_taiwan",["taiwan", "china invade", "pla"]),
+    ("sp500",       ["s&p", "sp500", "nasdaq"]),
+]
 
 STOCK_KEYWORDS = [
     "s&p", "sp500", "s&p 500", "nasdaq", "dow jones", "djia",
@@ -93,6 +109,116 @@ def _find_stock_markets(markets: list) -> list:
         if any(kw in text for kw in STOCK_KEYWORDS):
             results.append(m)
     return results[:10]
+
+
+def _find_market_inconsistencies(markets: list) -> list:
+    """Detect pricing inconsistencies between logically related markets.
+
+    Returns list of dicts describing each inconsistency found.
+    Types detected:
+      - TEMPORAL: P(event by date A) > P(event by date B) where A < B — impossible
+      - HIERARCHY: P(X > threshold_high) > P(X > threshold_low) — impossible
+    """
+    from datetime import datetime as dt
+    import re
+
+    inconsistencies = []
+
+    # Group markets by topic
+    topic_markets: dict = {}
+    for m in markets:
+        text = (m.get("question", "") + " " + m.get("slug", "")).lower()
+        for topic_id, keywords in TOPIC_CLUSTERS:
+            if any(kw in text for kw in keywords):
+                topic_markets.setdefault(topic_id, []).append(m)
+                break  # one topic per market
+
+    for topic_id, group in topic_markets.items():
+        if len(group) < 2:
+            continue
+
+        # Parse yes_price and end_date for each market in group
+        parsed = []
+        for m in group:
+            prices_raw = m.get("outcomePrices", "")
+            try:
+                prices = json.loads(prices_raw) if isinstance(prices_raw, str) else prices_raw
+                yes_price = float(prices[0]) if prices else None
+            except Exception:
+                yes_price = None
+
+            end_str = m.get("endDate", "") or ""
+            try:
+                end_dt = dt.fromisoformat(end_str.replace("Z", "+00:00")).replace(tzinfo=None)
+            except Exception:
+                end_dt = None
+
+            if yes_price is not None:
+                parsed.append({
+                    "question": m.get("question", "")[:80],
+                    "yes_price": yes_price,
+                    "end_dt": end_dt,
+                    "market_id": m.get("conditionId") or m.get("id", ""),
+                    "volume": float(m.get("volume24hr") or m.get("volume") or 0),
+                })
+
+        # TEMPORAL check: for same-topic markets, P(by earlier date) <= P(by later date)
+        # (assuming they're asking the same question with different deadlines)
+        # Only check pairs where questions are very similar
+        for i in range(len(parsed)):
+            for j in range(i + 1, len(parsed)):
+                a, b = parsed[i], parsed[j]
+                if not a["end_dt"] or not b["end_dt"]:
+                    continue
+                # Sort so 'early' has the earlier end date
+                early, late = (a, b) if a["end_dt"] < b["end_dt"] else (b, a)
+
+                # Temporal inconsistency: P(earlier) > P(later) by more than 5% (noise threshold)
+                if early["yes_price"] > late["yes_price"] + 0.05:
+                    gap = early["yes_price"] - late["yes_price"]
+                    inconsistencies.append({
+                        "type": "TEMPORAL",
+                        "topic": topic_id,
+                        "description": (
+                            f"{early['question'][:60]} = {early['yes_price']:.0%} YES "
+                            f"(ends {early['end_dt'].strftime('%b %d')}) "
+                            f"BUT {late['question'][:60]} = {late['yes_price']:.0%} YES "
+                            f"(ends {late['end_dt'].strftime('%b %d')}) — "
+                            f"earlier deadline priced HIGHER by {gap:.0%}"
+                        ),
+                        "edge": gap,
+                        "early_id": early["market_id"],
+                        "late_id": late["market_id"],
+                    })
+
+        # HIERARCHY check: numeric thresholds in same topic (e.g. BTC >60k vs >70k)
+        threshold_pattern = re.compile(r"[\$]?(\d[\d,\.]+)[k]?\s*(thousand|million|k\b)?")
+        for i in range(len(parsed)):
+            for j in range(i + 1, len(parsed)):
+                a, b = parsed[i], parsed[j]
+                # Try to extract numeric thresholds from questions
+                nums_a = [float(n.replace(",", "")) for n in threshold_pattern.findall(a["question"].lower())[0:1]]
+                nums_b = [float(n.replace(",", "")) for n in threshold_pattern.findall(b["question"].lower())[0:1]]
+                if not nums_a or not nums_b or nums_a[0] == nums_b[0]:
+                    continue
+                # low_threshold market should have higher yes_price
+                low, high = (a, b) if nums_a[0] < nums_b[0] else (b, a)
+                if low["yes_price"] < high["yes_price"] - 0.05:
+                    gap = high["yes_price"] - low["yes_price"]
+                    inconsistencies.append({
+                        "type": "HIERARCHY",
+                        "topic": topic_id,
+                        "description": (
+                            f"'{low['question'][:55]}' = {low['yes_price']:.0%} YES "
+                            f"but '{high['question'][:55]}' = {high['yes_price']:.0%} YES — "
+                            f"higher threshold priced more likely by {gap:.0%}"
+                        ),
+                        "edge": gap,
+                    })
+
+    # Sort by largest edge first, cap at 5
+    inconsistencies.sort(key=lambda x: x["edge"], reverse=True)
+    return inconsistencies[:5]
 
 
 async def _fetch_stock_prices() -> dict:
@@ -428,6 +554,10 @@ class AITradingAgent:
             stock_markets = _find_stock_markets(markets)
             stock_prices = await _fetch_stock_prices()
             parts.append(build_stock_market_summary(stock_markets, stock_prices))
+
+            # Cross-market inconsistencies (temporal + hierarchy arb)
+            inconsistencies = _find_market_inconsistencies(markets)
+            parts.append(build_inconsistency_summary(inconsistencies))
 
         # Leaderboard (top traders) — annotate with cached specializations
         try:

@@ -32,7 +32,8 @@ You receive these every cycle:
 6. **Stock market data** — Polymarket markets related to stocks/finance + real-time SPY, QQQ, Gold, Oil prices for cross-market arbitrage
 7. **Twitter intel** — recent tweets from @unusual_whales, @DeItaone, @Fxhedgers, @zaborado, @EventWavesPM (financial news, options flow, Polymarket analysis)
 8. **Newsletter intel** — recent items from EventWaves, Axios (breaking news relevant to markets)
-9. **Your thesis board** — your running hypotheses from previous cycles
+9. **Market inconsistencies** — pairs of related markets with contradictory pricing (temporal arb: earlier deadline priced higher than later; hierarchy arb: higher threshold priced more likely than lower)
+10. **Your thesis board** — your running hypotheses from previous cycles
 10. **Your recent thinking** — what you said in the last few cycles
 
 ## When to Trade
@@ -323,6 +324,25 @@ def build_leaderboard_summary(leaders: List[Dict]) -> str:
             f"Volume: ${vol:,.0f} | Efficiency: {efficiency:.0f}%{spec_str}"
         )
 
+    return "\n".join(lines)
+
+
+def build_inconsistency_summary(inconsistencies: List[Dict]) -> str:
+    """Format market inconsistencies for the agent."""
+    if not inconsistencies:
+        return "## Market Inconsistencies\nNo logical inconsistencies detected across related markets."
+
+    lines = ["## Market Inconsistencies (Potential Arb)"]
+    lines.append("These market pairs are priced in logically contradictory ways:")
+    lines.append("")
+    for inc in inconsistencies:
+        type_label = "⏰ TEMPORAL" if inc["type"] == "TEMPORAL" else "📊 HIERARCHY"
+        lines.append(f"{type_label} [{inc['topic'].upper()}] — edge: {inc['edge']:.0%}")
+        lines.append(f"  {inc['description']}")
+        lines.append("")
+
+    lines.append("TRADING IMPLICATION: The underpriced side of each pair may be a free-money opportunity.")
+    lines.append("CAUTION: Verify the markets are truly asking the same underlying question before trading.")
     return "\n".join(lines)
 
 
