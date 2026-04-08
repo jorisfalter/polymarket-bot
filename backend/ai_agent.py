@@ -806,14 +806,27 @@ class AITradingAgent:
         async with PolymarketClient() as client:
             market = await client.get_market(market_id)
 
-            # If direct lookup fails, search through top markets
-            # Polymarket event markets often can't be looked up by conditionId directly
+            # If direct lookup fails, search by slug or conditionId in top markets
             if not market:
                 logger.info(f"Direct lookup failed for '{market_id[:30]}...', searching top markets...")
-                markets = await client.get_markets(limit=200, order="volume24hr")
+                # Normalise: strip special chars for slug comparison
+                import unicodedata
+                def _norm(s: str) -> str:
+                    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower().strip("-")
+                market_id_norm = _norm(market_id)
+
+                markets = await client.get_markets(limit=500, order="volume24hr")
                 for m in markets:
                     full_id = m.get("conditionId") or m.get("id") or ""
-                    if full_id == market_id or full_id.startswith(market_id) or market_id.startswith(full_id):
+                    slug = m.get("slug") or ""
+                    if (
+                        full_id == market_id
+                        or full_id.startswith(market_id)
+                        or market_id.startswith(full_id)
+                        or _norm(slug) == market_id_norm
+                        or market_id_norm in _norm(slug)
+                        or _norm(slug) in market_id_norm
+                    ):
                         market = m
                         logger.info(f"Matched to: {m.get('question', '?')[:40]}")
                         break
