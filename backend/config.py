@@ -122,6 +122,10 @@ class Settings(BaseSettings):
     google_service_account_file: Optional[str] = None     # Path to service account JSON
     google_oauth_creds_file: Optional[str] = None         # Path to OAuth user creds JSON
 
+    # Airtable integration (trade tracking)
+    airtable_pat: Optional[str] = None                    # Personal Access Token
+    airtable_base_id: Optional[str] = None                # Base ID (appXXXXX)
+
     # Database
     database_url: str = "sqlite+aiosqlite:///./insider_detector.db"
     

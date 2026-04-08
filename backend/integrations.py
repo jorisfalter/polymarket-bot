@@ -507,3 +507,125 @@ def log_thinking_to_sheets(decision: Dict):
         logger.debug("Thinking logged to Sheets")
     except Exception as e:
         logger.warning(f"Sheets thinking log failed: {e}")
+
+
+# ==================== AIRTABLE ====================
+
+_AIRTABLE_TABLE_NAME = "Trades"
+_airtable_table_id: Optional[str] = None  # Cached after first lookup/create
+
+
+def _get_airtable_table_id() -> Optional[str]:
+    """Get or create the Trades table in Airtable. Returns table ID."""
+    global _airtable_table_id
+    if _airtable_table_id:
+        return _airtable_table_id
+
+    if not settings.airtable_pat or not settings.airtable_base_id:
+        return None
+
+    import httpx
+    headers = {
+        "Authorization": f"Bearer {settings.airtable_pat}",
+        "Content-Type": "application/json",
+    }
+
+    # Check if table already exists
+    try:
+        r = httpx.get(
+            f"https://api.airtable.com/v0/meta/bases/{settings.airtable_base_id}/tables",
+            headers=headers, timeout=10,
+        )
+        r.raise_for_status()
+        for table in r.json().get("tables", []):
+            if table["name"] == _AIRTABLE_TABLE_NAME:
+                _airtable_table_id = table["id"]
+                logger.info(f"Airtable: found existing '{_AIRTABLE_TABLE_NAME}' table")
+                return _airtable_table_id
+    except Exception as e:
+        logger.warning(f"Airtable table lookup failed: {e}")
+        return None
+
+    # Create the table
+    try:
+        payload = {
+            "name": _AIRTABLE_TABLE_NAME,
+            "fields": [
+                {"name": "Timestamp", "type": "singleLineText"},
+                {"name": "Action", "type": "singleLineText"},
+                {"name": "Market", "type": "multilineText"},
+                {"name": "Outcome", "type": "singleLineText"},
+                {"name": "Amount USD", "type": "number", "options": {"precision": 2}},
+                {"name": "Price", "type": "number", "options": {"precision": 4}},
+                {"name": "Shares", "type": "number", "options": {"precision": 4}},
+                {"name": "Confidence", "type": "singleLineText"},
+                {"name": "Thesis", "type": "multilineText"},
+                {"name": "Order ID", "type": "singleLineText"},
+                {"name": "P&L USD", "type": "number", "options": {"precision": 2}},
+            ],
+        }
+        r = httpx.post(
+            f"https://api.airtable.com/v0/meta/bases/{settings.airtable_base_id}/tables",
+            headers=headers, json=payload, timeout=10,
+        )
+        r.raise_for_status()
+        _airtable_table_id = r.json()["id"]
+        logger.info(f"Airtable: created '{_AIRTABLE_TABLE_NAME}' table")
+        return _airtable_table_id
+    except Exception as e:
+        logger.warning(f"Airtable table create failed: {e}")
+        return None
+
+
+def log_trade_to_airtable(
+    action: str,
+    market_question: str,
+    outcome: str,
+    price: float,
+    shares: float,
+    amount_usd: float,
+    confidence: float,
+    reason: str,
+    order_id: str = "",
+    pnl_usd: Optional[float] = None,
+) -> bool:
+    """Log a trade entry/exit to Airtable. Returns True on success."""
+    table_id = _get_airtable_table_id()
+    if not table_id:
+        return False
+
+    import httpx
+    headers = {
+        "Authorization": f"Bearer {settings.airtable_pat}",
+        "Content-Type": "application/json",
+    }
+    record = {
+        "fields": {
+            "Timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+            "Action": action,
+            "Market": market_question,
+            "Outcome": outcome,
+            "Amount USD": round(amount_usd, 2),
+            "Price": round(price, 4),
+            "Shares": round(shares, 4),
+            "Confidence": f"{confidence:.0%}" if confidence else "",
+            "Thesis": reason[:1000] if reason else "",
+            "Order ID": order_id or "",
+        }
+    }
+    if pnl_usd is not None:
+        record["fields"]["P&L USD"] = round(pnl_usd, 2)
+
+    try:
+        r = httpx.post(
+            f"https://api.airtable.com/v0/{settings.airtable_base_id}/{table_id}",
+            headers=headers,
+            json={"records": [record]},
+            timeout=10,
+        )
+        r.raise_for_status()
+        logger.info(f"Airtable: logged {action} ${amount_usd:.2f} on {market_question[:40]}")
+        return True
+    except Exception as e:
+        logger.warning(f"Airtable trade log failed: {e}")
+        return False

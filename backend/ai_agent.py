@@ -14,7 +14,7 @@ from .config import settings
 from .auto_seller import auto_seller
 from .trade_journal import journal
 from .polymarket_client import PolymarketClient
-from .integrations import post_tweet, format_thinking_tweet, log_trade_to_sheets, log_thinking_to_sheets, send_telegram, format_thinking_telegram, format_trade_telegram
+from .integrations import post_tweet, format_thinking_tweet, log_trade_to_sheets, log_thinking_to_sheets, send_telegram, format_thinking_telegram, format_trade_telegram, log_trade_to_airtable
 from .leaderboard import tracker
 from .auditor_data import get_auditor, is_earnings_market, analyze_wallet_auditor_pattern
 from .intel_feeds import fetch_all_intel
@@ -607,8 +607,21 @@ class AITradingAgent:
                     except Exception:
                         pass
 
-                    # Log to Google Sheets (always writes local backup too)
-                    sheets_ok = log_trade_to_sheets(
+                    # Log to Airtable (primary trade tracker)
+                    log_trade_to_airtable(
+                        action="BUY",
+                        market_question=market_question,
+                        outcome=outcome,
+                        price=result.price,
+                        shares=result.shares,
+                        amount_usd=amount_usd,
+                        confidence=confidence,
+                        reason=thesis,
+                        order_id=result.order_id or "",
+                    )
+
+                    # Log to Google Sheets + local CSV backup
+                    log_trade_to_sheets(
                         strategy="AI-AGENT",
                         action="BUY",
                         market_question=market_question,
@@ -620,12 +633,6 @@ class AITradingAgent:
                         reason=thesis,
                         order_id=result.order_id or "",
                     )
-                    if not sheets_ok:
-                        await send_telegram(
-                            f"⚠️ <b>Sheets write failed</b> — trade saved to local backup only\n"
-                            f"BUY ${amount_usd:.2f} on <i>{market_question[:60]}</i>\n"
-                            f"Order: {result.order_id or 'n/a'}"
-                        )
                 else:
                     logger.warning(f"AI trade failed: {result.error}")
                     await send_telegram(f"❌ Trade failed: {market_question[:50]}\nReason: {result.error}")
