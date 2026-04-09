@@ -105,6 +105,19 @@ def _esc(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _trim(text: str, limit: int) -> str:
+    """Trim to limit chars, cutting at last sentence/newline boundary. Adds … if trimmed."""
+    if len(text) <= limit:
+        return text
+    chunk = text[:limit]
+    # Try to cut at last newline or sentence end
+    for sep in ("\n", ". ", "! ", "? ", "; "):
+        pos = chunk.rfind(sep)
+        if pos > limit // 2:
+            return chunk[:pos + len(sep)].rstrip() + " …"
+    return chunk.rstrip() + " …"
+
+
 def format_thinking_telegram(decision: Dict) -> List[str]:
     """Format agent thinking as 1-3 separate Telegram messages to avoid truncation.
     Returns a list of message strings (each safe to send independently)."""
@@ -124,7 +137,7 @@ def format_thinking_telegram(decision: Dict) -> List[str]:
 
     thinking = decision.get("thinking", "")
     if thinking:
-        lines.append(f"\n📊 {_esc(thinking[:600])}")
+        lines.append(f"\n📊 {_esc(_trim(thinking, 600))}")
 
     messages.append("\n".join(lines))
 
@@ -135,8 +148,8 @@ def format_thinking_telegram(decision: Dict) -> List[str]:
         for t in theses:
             emoji = "🆕" if t.get("action","").upper() == "CREATE" else "🔄"
             conv = f" [{_esc(t.get('conviction',''))}]" if t.get("conviction") else ""
-            note = _esc(t.get("note","")[:100])
-            t_lines.append(f"{emoji} <b>{_esc(t.get('title', t.get('id','?'))[:55])}</b>{conv}")
+            note = _esc(_trim(t.get("note",""), 120))
+            t_lines.append(f"{emoji} <b>{_esc(t.get('title', t.get('id','?'))[:60])}</b>{conv}")
             if note:
                 t_lines.append(f"   {note}")
         messages.append("\n".join(t_lines))
@@ -147,9 +160,9 @@ def format_thinking_telegram(decision: Dict) -> List[str]:
     if risk or watchlist:
         r_lines = []
         if risk:
-            r_lines.append(f"⚠️ {_esc(risk[:200])}")
+            r_lines.append(f"⚠️ {_esc(_trim(risk, 250))}")
         if watchlist:
-            r_lines.append(f"\n👀 {_esc(watchlist[:200])}")
+            r_lines.append(f"\n👀 {_esc(_trim(watchlist, 250))}")
         messages.append("\n".join(r_lines))
 
     return messages
