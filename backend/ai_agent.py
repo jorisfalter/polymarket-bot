@@ -254,20 +254,20 @@ async def _fetch_stock_prices() -> dict:
 
     return prices
 
-# Try to import anthropic
+# Try to import openai (used for OpenRouter)
 try:
-    import anthropic
-    HAS_ANTHROPIC = True
+    from openai import OpenAI
+    HAS_OPENAI = True
 except ImportError:
-    HAS_ANTHROPIC = False
-    logger.warning("anthropic SDK not installed. AI agent disabled.")
+    HAS_OPENAI = False
+    logger.warning("openai SDK not installed. AI agent disabled.")
 
 
 class AITradingAgent:
-    """Claude-powered trading agent."""
+    """AI-powered trading agent (via OpenRouter)."""
 
     def __init__(self):
-        self.client: Optional[anthropic.Anthropic] = None
+        self.client: Optional[OpenAI] = None
         self._recent_alerts: list = []  # Fed by main.py after each scan
         self._recent_smart_money: list = []
         self._thinking_history: List[Dict] = []
@@ -276,11 +276,13 @@ class AITradingAgent:
         self._load_recent_thinking()
         self._load_theses()
 
-        if HAS_ANTHROPIC and settings.anthropic_api_key:
-            self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-            logger.info("AI Trading Agent initialized")
-        elif HAS_ANTHROPIC:
-            logger.warning("ANTHROPIC_API_KEY not set — AI agent won't trade")
+        api_key = settings.openrouter_api_key or settings.anthropic_api_key
+        if HAS_OPENAI and api_key:
+            base_url = "https://openrouter.ai/api/v1" if settings.openrouter_api_key else "https://api.anthropic.com/v1"
+            self.client = OpenAI(api_key=api_key, base_url=base_url)
+            logger.info(f"AI Trading Agent initialized (model: {settings.agent_model})")
+        elif HAS_OPENAI:
+            logger.warning("No API key set — AI agent won't trade")
 
     def _load_recent_thinking(self):
         """Load last few thinking entries for continuity."""
@@ -587,40 +589,55 @@ class AITradingAgent:
         return "\n\n".join(parts)
 
     async def _ask_claude(self, context: str) -> Optional[str]:
-        """Call Claude API with the market briefing."""
+        """Call AI model via OpenRouter (or Anthropic fallback)."""
         try:
-            message = self.client.messages.create(
+            response = self.client.chat.completions.create(
                 model=settings.agent_model,
                 max_tokens=2048,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": context}],
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": context},
+                ],
             )
-            return message.content[0].text
+            return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"Claude API error: {e}")
+            logger.error(f"AI API error: {e}")
             return None
 
     def _parse_response(self, response: str) -> Optional[Dict]:
         """Parse Claude's JSON response."""
-        try:
-            # Strip any markdown code blocks if present
-            text = response.strip()
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-                if text.endswith("```"):
-                    text = text[:-3]
-                text = text.strip()
+        import re as _re
+        text = response.strip()
 
+        # Strip markdown code fences (```json ... ``` or ``` ... ```)
+        text = _re.sub(r"^```[a-z]*\n?", "", text)
+        text = _re.sub(r"\n?```$", "", text)
+        text = text.strip()
+
+        # Try direct parse first
+        try:
             return json.loads(text)
         except json.JSONDecodeError:
-            # Try to find JSON in the response
-            try:
-                start = response.index("{")
-                end = response.rindex("}") + 1
-                return json.loads(response[start:end])
-            except (ValueError, json.JSONDecodeError):
-                logger.warning(f"Failed to parse agent response: {response[:200]}")
-                return None
+            pass
+
+        # Extract outermost {...} object
+        try:
+            start = text.index("{")
+            # Find matching closing brace
+            depth = 0
+            end = start
+            for i, ch in enumerate(text[start:], start):
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            return json.loads(text[start:end])
+        except (ValueError, json.JSONDecodeError) as e:
+            logger.warning(f"Failed to parse agent response: {response[:300]}\nError: {e}")
+            return None
 
     def _log_thinking(self, decision: Dict):
         """Append thinking entry to the journal."""

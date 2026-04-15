@@ -31,8 +31,9 @@ python-dateutil==2.8.2
 # Polymarket Trading (for auto-sell functionality)
 py-clob-client>=0.17.0
 
-# AI Agent (Claude API)
+# AI Agent
 anthropic>=0.39.0
+openai>=1.30.0
 
 # Integrations
 tweepy>=4.14.0

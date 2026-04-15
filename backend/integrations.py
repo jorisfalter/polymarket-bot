@@ -137,7 +137,7 @@ def format_thinking_telegram(decision: Dict) -> List[str]:
 
     thinking = decision.get("thinking", "")
     if thinking:
-        lines.append(f"\n📊 {_esc(_trim(thinking, 600))}")
+        lines.append(f"\n📊 {_esc(thinking)}")
 
     messages.append("\n".join(lines))
 
@@ -148,7 +148,7 @@ def format_thinking_telegram(decision: Dict) -> List[str]:
         for t in theses:
             emoji = "🆕" if t.get("action","").upper() == "CREATE" else "🔄"
             conv = f" [{_esc(t.get('conviction',''))}]" if t.get("conviction") else ""
-            note = _esc(_trim(t.get("note",""), 120))
+            note = _esc(t.get("note",""))
             t_lines.append(f"{emoji} <b>{_esc(t.get('title', t.get('id','?'))[:60])}</b>{conv}")
             if note:
                 t_lines.append(f"   {note}")
@@ -160,9 +160,9 @@ def format_thinking_telegram(decision: Dict) -> List[str]:
     if risk or watchlist:
         r_lines = []
         if risk:
-            r_lines.append(f"⚠️ {_esc(_trim(risk, 250))}")
+            r_lines.append(f"⚠️ {_esc(risk)}")
         if watchlist:
-            r_lines.append(f"\n👀 {_esc(_trim(watchlist, 250))}")
+            r_lines.append(f"\n👀 {_esc(watchlist)}")
         messages.append("\n".join(r_lines))
 
     return messages

@@ -90,11 +90,12 @@ class Settings(BaseSettings):
 
     # AI Trading Agent
     agent_enabled: bool = True
-    anthropic_api_key: Optional[str] = None
-    agent_model: str = "claude-haiku-4-5-20251001"
+    anthropic_api_key: Optional[str] = None  # Legacy fallback
+    openrouter_api_key: Optional[str] = None  # Preferred: OpenRouter (cheaper)
+    agent_model: str = "deepseek/deepseek-chat-v3-0324"  # ~$0.10/dag vs $2/dag Haiku
     agent_max_positions: int = 10
-    agent_max_per_trade: float = 1.50        # Min $1 on Polymarket, small buffer
-    agent_max_total_exposure: float = 20.0   # Max $20 total at risk
+    agent_max_per_trade: float = 10.0        # Max $10 per trade
+    agent_max_total_exposure: float = 100.0  # Max $100 total at risk
 
     # Trade proxy (Fly.io Tokyo — bypasses Polymarket geoblock)
     trade_proxy_url: Optional[str] = None     # e.g. https://polymarket-trade-proxy.fly.dev
