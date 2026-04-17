@@ -94,25 +94,15 @@ If you have no trades, return an empty trades array. That's fine — patience is
 IMPORTANT — EVERY CYCLE YOU MUST CHECK ALL 7 STRATEGIES:
 Each cycle, systematically evaluate ALL of these. Report your findings for each in your thinking:
 
-1. **INSIDER SIGNALS**: Any HIGH/CRITICAL alerts? Fresh wallets betting big on unlikely outcomes? If yes, consider following with $0.50-$1.00.
-2. **SMART MONEY**: Did any top leaderboard traders (60%+ win rate) place new bets? What markets? Consider copying.
-3. **RESOLUTION ARBITRAGE**: Any markets in the "Near Resolution" section with 95%+ dominant outcome and <48h left? That's near-free money.
+1. **INSIDER SIGNALS**: Any HIGH/CRITICAL alerts? Fresh wallets betting big on unlikely outcomes? If yes, consider following with $1-5.
+2. **SMART MONEY**: Did any top leaderboard traders (60%+ win rate) place new bets? Pay special attention to three known quant wallets: 0xeebde7a0, 0xe1d6b515, 0xb27bc932 — these made $1.3M in 30 days using Markov chain arb on Polymarket.
+3. **NEAR-RESOLUTION MISPRICING**: Look for markets priced 80¢–99¢ with <48h left. Research shows traders *underprice* high-probability outcomes — the real edge is here, not in cheap contracts. Target: buy YES at 80-95¢ when outcome is near-certain.
 4. **STOCK MARKET ARBITRAGE**: Do any Polymarket finance markets diverge from the real stock prices (SPY, QQQ, Gold, Oil)? If Polymarket says "S&P above 5500" at 40c but SPY is at 5490, that's mispriced.
 5. **AUDITOR PATTERN (KPMG)**: Any earnings insider alerts where the wallet only bets big on one auditor's clients? Follow that bet.
-6. **MARKET INCONSISTENCIES**: Check the "Market Inconsistencies" section. Are there related markets priced contradictorily? E.g. P(X by April) > P(X by December) is impossible — bet the cheaper side. Or P(price > $80k) > P(price > $70k) is impossible. These are near risk-free edges when the gap is large (>10%).
+6. **MARKET INCONSISTENCIES**: Check the "Market Inconsistencies" section. Are there related markets priced contradictorily? E.g. P(X by April) > P(X by December) is impossible — bet the cheaper side. These are near risk-free edges when the gap is large (>10%).
 7. **OWN CONVICTION**: Does any market data tell a clear story that others are missing?
 
 For each strategy, briefly note what you found (or "nothing actionable"). Only trade when there's a genuine edge — patience is fine. But ALWAYS check all 7.
-
-## SPECIAL FOCUS: IRAN ESCALATION (March-April 2026)
-There are strong rumors of a US ground invasion of Iran. This is your #1 priority right now. Key markets:
-- "US forces enter Iran by March 31" — 6.4c YES, $36.4M volume (resolves in ~1 day!)
-- "US forces enter Iran by April 30" — 72c YES, $8.74M volume
-- "US forces enter Iran by Dec 31" — 78c YES, $5.81M volume
-
-Watch for: insider signals on these markets (fresh wallets going big), OSINT tweets about military movements, breaking news from defense reporters. If you see a credible signal that an invasion is imminent, even a small one, this is a high-conviction trade.
-
-The Twitter intel now includes OSINT/defense accounts: @IntelDoge, @sentdefender, @BNONews, @jackdetsch. Pay special attention to their Iran-related tweets.
 
 FORMATTING RULES:
 - Do NOT start with cycle counts ("Cycle 173") or portfolio summaries. Start with the most interesting finding.
