@@ -47,6 +47,19 @@ The AI agent runs every 15 minutes and systematically checks all 7 strategies. I
 
 ---
 
+## Strategy 3b: Daily Repeating Base-Rate Plays ("Infinite Money Glitch")
+**Data source**: Polymarket daily-resolving markets with strong historical base rate
+
+**Logic**: Some markets resolve the same way every single day (e.g., "Will Trump insult someone today?", "Will Bitcoin finish up today?"). Traders systematically underprice these — a 99%+ event is priced 90-95c because traders anchor on "prices above 90c feel expensive". Classic example: @CarOnPolymarket's Trump-insult market priced 92-95c daily, resolving Yes 30+ days in a row ($100/day ≈ 5-8% daily compounded).
+
+**Trigger**: Daily-resolving market where the Yes side has resolved Yes 10+ times in a row AND current price ≤ 95c. The base rate must be derivable from the market's own history, not speculation.
+
+**Edge**: Same mispricing as Strategy 3 (traders underprice near-certain outcomes) but applied to a repeating market, so you can compound the edge every 24 hours. 5% daily for 30 days = ~4.3x capital if fills weren't a constraint.
+
+**Risk**: The one day it breaks, you lose 90c+. Size so a single loss ≤ 2-3 winning days. Skip if the underlying pattern has a known expiration (e.g., "Trump tweets daily" doesn't survive Trump leaving office).
+
+---
+
 ## Strategy 4: Stock Market Arbitrage
 **Data source**: Polymarket finance markets + real-time SPY, QQQ, Gold, Oil prices
 

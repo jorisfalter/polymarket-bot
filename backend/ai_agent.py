@@ -477,8 +477,18 @@ class AITradingAgent:
             # 4. Log thinking
             self._log_thinking(decision)
 
-            # 4b. Send to Telegram
+            # 4b. Send to Telegram — enrich with portfolio snapshot first
             try:
+                live_positions = self._live_positions or []
+                live_exposure = sum(p.get("amount_usd", 0) for p in live_positions)
+                balance = auto_seller.get_usdc_balance() or 0
+                decision["_portfolio"] = {
+                    "balance": balance,
+                    "exposure": live_exposure,
+                    "positions": live_positions,
+                    "max_exposure": settings.agent_max_total_exposure,
+                    "max_positions": settings.agent_max_positions,
+                }
                 for tg_msg in format_thinking_telegram(decision):
                     await send_telegram(tg_msg)
             except Exception as e:

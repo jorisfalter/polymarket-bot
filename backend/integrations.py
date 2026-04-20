@@ -119,50 +119,76 @@ def _trim(text: str, limit: int) -> str:
 
 
 def format_thinking_telegram(decision: Dict) -> List[str]:
-    """Format agent thinking as 1-3 separate Telegram messages to avoid truncation.
+    """Format agent thinking as 1-4 separate Telegram messages.
+    Each message stays under Telegram's 4096-char limit via send_telegram's splitter.
     Returns a list of message strings (each safe to send independently)."""
     now = datetime.utcnow().strftime("%H:%M UTC")
     messages = []
 
-    # Message 1: Trades (if any) + Analysis
+    # Message 1: Header + Portfolio/Exposure snapshot + Trades
     lines = [f"🧠 <b>Agent Cycle</b> — {now}"]
+
+    portfolio = decision.get("_portfolio") or {}
+    if portfolio:
+        balance = portfolio.get("balance", 0) or 0
+        exposure = portfolio.get("exposure", 0) or 0
+        positions = portfolio.get("positions") or []
+        max_exp = portfolio.get("max_exposure", 100) or 100
+        max_pos = portfolio.get("max_positions", 10) or 10
+        pct = (exposure / max_exp * 100) if max_exp else 0
+        lines.append(
+            f"\n💼 <b>EXPOSURE:</b> ${exposure:.2f} / ${max_exp:.0f} ({pct:.0f}%)"
+            f" | Positions: {len(positions)}/{max_pos}"
+            f" | Balance: ${balance:.2f}"
+        )
+        if positions:
+            lines.append("<b>Open positions:</b>")
+            for p in positions[:10]:
+                q = _esc((p.get("market_question") or "?")[:55])
+                side = p.get("side") or p.get("outcome") or "?"
+                amt = p.get("amount_usd", 0) or 0
+                entry = p.get("price", 0) or 0
+                lines.append(f"  • {q} — {side} @ {entry:.2f}, ${amt:.2f}")
 
     trades = decision.get("trades", [])
     if trades:
         lines.append("\n💰 <b>TRADES:</b>")
         for t in trades:
             emoji = "🟢" if t.get("action") == "BUY" else "🔴"
-            lines.append(f"{emoji} {t.get('action')} ${t.get('amount_usd',0):.2f} — <i>{_esc(t.get('market_question','?')[:50])}</i>")
-            lines.append(f"   {t.get('confidence',0):.0%} — {_esc(t.get('thesis','')[:70])}")
-
-    thinking = decision.get("thinking", "")
-    if thinking:
-        lines.append(f"\n📊 {_esc(thinking)}")
+            q = _esc((t.get("market_question") or "?")[:70])
+            lines.append(f"{emoji} {t.get('action')} ${t.get('amount_usd',0):.2f} {t.get('outcome','?')} — <i>{q}</i>")
+            lines.append(f"   conf {t.get('confidence',0):.0%} — {_esc(t.get('thesis','')[:200])}")
 
     messages.append("\n".join(lines))
 
-    # Message 2: Theses (only if there are updates)
-    theses = [t for t in decision.get("thesis_updates", []) if t.get("action","").upper() in ("CREATE","UPDATE")][:3]
+    # Message 2: Full analysis (the agent's thinking, untrimmed)
+    thinking = decision.get("thinking", "")
+    if thinking:
+        messages.append(f"📊 <b>ANALYSIS</b>\n\n{_esc(thinking)}")
+
+    # Message 3: Theses (only if there are updates)
+    theses = [t for t in decision.get("thesis_updates", []) if t.get("action","").upper() in ("CREATE","UPDATE","CLOSE")][:5]
     if theses:
         t_lines = ["📋 <b>THESES:</b>"]
         for t in theses:
-            emoji = "🆕" if t.get("action","").upper() == "CREATE" else "🔄"
+            act = t.get("action","").upper()
+            emoji = {"CREATE":"🆕","UPDATE":"🔄","CLOSE":"✅"}.get(act,"📋")
             conv = f" [{_esc(t.get('conviction',''))}]" if t.get("conviction") else ""
             note = _esc(t.get("note",""))
-            t_lines.append(f"{emoji} <b>{_esc(t.get('title', t.get('id','?'))[:60])}</b>{conv}")
+            t_lines.append(f"{emoji} <b>{_esc(t.get('title', t.get('id','?'))[:80])}</b>{conv}")
             if note:
                 t_lines.append(f"   {note}")
         messages.append("\n".join(t_lines))
 
-    # Message 3: Risk + watchlist
+    # Message 4: Risk + watchlist (full, not trimmed)
     risk = decision.get("risk_assessment", "")
     watchlist = decision.get("watchlist_notes", "")
     if risk or watchlist:
         r_lines = []
         if risk:
-            r_lines.append(f"⚠️ {_esc(risk)}")
+            r_lines.append(f"⚠️ <b>RISK</b>\n{_esc(risk)}")
         if watchlist:
-            r_lines.append(f"\n👀 {_esc(watchlist)}")
+            r_lines.append(f"\n👀 <b>WATCHLIST</b>\n{_esc(watchlist)}")
         messages.append("\n".join(r_lines))
 
     return messages
