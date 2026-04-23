@@ -29,6 +29,7 @@ from .ai_prompts import (
     build_leaderboard_summary,
     build_near_resolution_summary,
     build_daily_repeating_summary,
+    build_long_tail_summary,
     build_stock_market_summary,
     build_inconsistency_summary,
 )
@@ -181,6 +182,57 @@ async def _find_daily_repeating_candidates(client) -> list:
             candidates.append(m)
 
     return candidates
+
+
+def _find_long_tail_mispricing(markets: list, skip_top: int = 50) -> list:
+    """Find 80-99c near-resolution markets OUTSIDE the top N by volume.
+    These are mispricing opportunities the big traders ignore because the
+    absolute dollar size is too small for their operations."""
+    now = datetime.utcnow()
+    results = []
+    for m in markets[skip_top:]:
+        end_str = m.get("endDate") or ""
+        if not end_str:
+            continue
+        try:
+            end = datetime.fromisoformat(end_str.replace("Z", "+00:00")).replace(tzinfo=None)
+        except (ValueError, AttributeError):
+            continue
+        hours_left = (end - now).total_seconds() / 3600
+        if hours_left <= 0 or hours_left > 48:
+            continue
+
+        prices_str = m.get("outcomePrices", "")
+        try:
+            prices = json.loads(prices_str) if isinstance(prices_str, str) else prices_str
+            if not prices:
+                continue
+            yes_price = float(prices[0])
+        except (json.JSONDecodeError, ValueError, IndexError):
+            continue
+
+        dominant = max(yes_price, 1 - yes_price)
+        if dominant < 0.80 or dominant >= 0.99:
+            continue
+
+        vol = float(m.get("volume24hr", 0) or 0)
+        liq = float(m.get("liquidity", 0) or 0)
+        # Need at least some liquidity so we can actually fill a $1-5 order
+        if liq < 500:
+            continue
+
+        m["_yes_price"] = yes_price
+        m["_hours_left"] = hours_left
+        m["_vol24h"] = vol
+        m["_liquidity"] = liq
+        results.append(m)
+
+    # Sort by edge (dominant - 0.80) * liquidity — rank by both mispricing and fillability
+    results.sort(
+        key=lambda x: (max(x["_yes_price"], 1 - x["_yes_price"]) - 0.80) * min(x["_liquidity"], 10000),
+        reverse=True,
+    )
+    return results[:10]
 
 
 def _find_stock_markets(markets: list) -> list:
@@ -761,12 +813,21 @@ class AITradingAgent:
 
         # Market data + near-resolution + stock markets
         async with PolymarketClient() as client:
-            markets = await client.get_markets(limit=50, order="volume24hr")
+            # Fetch a wide net — 300 markets. Briefing only shows top 20 by volume,
+            # but scanners below look for hidden edges in the full list (low-volume
+            # markets can be systematically mispriced because whales don't bother).
+            markets = await client.get_markets(limit=300, order="volume24hr")
             parts.append(build_market_briefing(markets[:20]))
 
             # Near-resolution markets (ending within 48h, one side 90%+)
             near_resolution = _find_near_resolution(markets)
             parts.append(build_near_resolution_summary(near_resolution))
+
+            # Long-tail mispricing: markets OUTSIDE the top 50 with 80-99c dominant
+            # side and ending within 48h. These are the hidden gems — mispriced
+            # because no one's watching.
+            long_tail = _find_long_tail_mispricing(markets)
+            parts.append(build_long_tail_summary(long_tail))
 
             # Daily-repeating base-rate plays (Trump-insult "infinite money glitch" pattern)
             daily_candidates = await _find_daily_repeating_candidates(client)

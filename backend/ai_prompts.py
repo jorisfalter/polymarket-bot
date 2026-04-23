@@ -38,6 +38,7 @@ You receive these every cycle:
 4. **Top markets** — 20 highest-volume markets with current prices
 5. **Near-resolution markets** — markets ending within 48h with 90%+ dominant outcome (arb opportunities)
 5b. **Daily repeating candidates** — markets from known daily-resolving series (e.g. Trump insult) with Yes-streak count + current price. Strategy 3b target.
+5c. **Long-tail mispricing** — 80-99¢ near-resolution markets that are OUTSIDE the volume top-50. Whales don't bother; we can. Small sizes ($1-3), but many of these per week add up.
 6. **Stock market data** — Polymarket markets related to stocks/finance + real-time SPY, QQQ, Gold, Oil prices for cross-market arbitrage
 7. **Twitter intel** — recent tweets from @unusual_whales, @DeItaone, @Fxhedgers, @zaborado, @EventWavesPM (financial news, options flow, Polymarket analysis)
 8. **Newsletter intel** — recent items from EventWaves, Axios (breaking news relevant to markets)
@@ -49,7 +50,8 @@ You receive these every cycle:
 - HIGH/CRITICAL insider alerts where a fresh wallet bets big on unlikely outcomes — this is your bread and butter.
 - Smart money moves: when top-performing traders take new positions **that are in their specialty category** (marked ⚡ IN SPECIALTY). A trader with 80% win rate in politics making a politics trade = strong signal. The same trader on a sports market (⚠️ outside specialty) = weaker signal, treat skeptically.
 - Resolution arbitrage: markets about to resolve where one outcome is 95%+ likely. Check the "Near Resolution" section.
-- Daily repeating base-rate plays: markets that resolve every day where the same outcome has hit 10+ times in a row and is priced ≤95c. Compound 5-8%/day. Size small.
+- Daily repeating base-rate plays: markets in the "Daily Repeating Candidates" section. **Rule: if `base_rate ≥ 90%` and current price ≤ base_rate, take a $1-2 moonshot.** Streak length doesn't matter for this rule — only base rate vs. price.
+- Long-tail mispricing: check the "Long-Tail Mispricing" section. These are 80-99¢ near-resolution markets outside the volume top-50. Whales ignore them. Take $1-3 on the dominant side if fundamentals support the current price.
 - Stock market arbitrage: if Polymarket prices diverge from what real stock data suggests (e.g., "S&P above 5500" priced at 40c but SPY is already at 5480), that's an edge.
 - **Auditor insider pattern (KPMG pattern)**: Watch for wallets that bet big ONLY on earnings markets for companies sharing the same auditor (KPMG, Deloitte, EY, PwC). This was documented by EventWaves — insiders at audit firms know earnings before release. If you see a wallet betting $5k on Wells Fargo, CarMax, and Five Below (all KPMG-audited) but $50 on non-KPMG companies, FOLLOW THAT BET.
 - **Asymmetric bet (Paris-weather pattern)**: If the insider alert carries the `♻️ Asymmetric Bet` flag, that's an insider betting small dollars on an extreme longshot (≤3c, 30x+ payoff). Piggyback with a $1-2 moonshot-sized stake. These live in the Moonshot book. Max $20 total moonshot exposure.
@@ -108,7 +110,7 @@ Each cycle, systematically evaluate ALL of these. Report your findings for each 
 1. **INSIDER SIGNALS**: Any HIGH/CRITICAL alerts? Fresh wallets betting big on unlikely outcomes? If yes, consider following with $1-5.
 2. **SMART MONEY**: Did any top leaderboard traders (60%+ win rate) place new bets? Pay special attention to three known quant wallets: 0xeebde7a0, 0xe1d6b515, 0xb27bc932 — these made $1.3M in 30 days using Markov chain arb on Polymarket.
 3. **NEAR-RESOLUTION MISPRICING**: Look for markets priced 80¢–99¢ with <48h left. Research shows traders *underprice* high-probability outcomes — the real edge is here, not in cheap contracts. Target: buy YES at 80-95¢ when outcome is near-certain.
-3b. **DAILY REPEATING BASE-RATE PLAYS**: Scan for daily-resolving markets where the SAME outcome has resolved Yes 10+ days in a row (e.g. "Will Trump insult someone today?", "Will Bitcoin finish up today?"). If current price ≤95¢ and the streak is ≥10, that's the "infinite money glitch" — compound 5-8% daily. Size small (≤$3) because one broken day loses 90c+.
+3b. **DAILY REPEATING BASE-RATE PLAYS**: Check the "Daily Repeating Candidates" section each cycle. For each market, the data shows `base_rate = total_yes / total_closed` and current price. **Take a $1–2 moonshot whenever `base_rate ≥ 90%` AND `current_price ≤ base_rate`, regardless of current streak length.** Positive EV is positive EV — don't overthink it. Size small because one broken day costs you ~90¢. If the base rate is below 85%, skip.
 4. **STOCK MARKET ARBITRAGE**: Do any Polymarket finance markets diverge from the real stock prices (SPY, QQQ, Gold, Oil)? If Polymarket says "S&P above 5500" at 40c but SPY is at 5490, that's mispriced.
 5. **AUDITOR PATTERN (KPMG)**: Any earnings insider alerts where the wallet only bets big on one auditor's clients? Follow that bet.
 6. **MARKET INCONSISTENCIES**: Check the "Market Inconsistencies" section. Are there related markets priced contradictorily? E.g. P(X by April) > P(X by December) is impossible — bet the cheaper side. These are near risk-free edges when the gap is large (>10%).
@@ -350,6 +352,35 @@ def build_inconsistency_summary(inconsistencies: List[Dict]) -> str:
 
     lines.append("TRADING IMPLICATION: The underpriced side of each pair may be a free-money opportunity.")
     lines.append("CAUTION: Verify the markets are truly asking the same underlying question before trading.")
+    return "\n".join(lines)
+
+
+def build_long_tail_summary(markets: List[Dict]) -> str:
+    """Mispriced near-resolution markets that are OUTSIDE the volume top-50.
+    These are the hidden edges — low visibility, low competition."""
+    if not markets:
+        return "## Long-Tail Mispricing\nNo qualifying low-volume near-resolution markets right now."
+
+    lines = ["## Long-Tail Mispricing (outside volume top-50, 80-99¢, ends ≤48h)"]
+    lines.append("These markets are small enough that whales don't bother — that's the edge. "
+                 "Focus on the side priced 80-95¢ for a systematic near-resolution play.")
+    for m in markets[:10]:
+        question = (m.get("question") or "?")[:80]
+        yes = m.get("_yes_price", 0)
+        hours = m.get("_hours_left", 0)
+        vol = m.get("_vol24h", 0)
+        liq = m.get("_liquidity", 0)
+        market_id = m.get("conditionId") or m.get("id") or ""
+        dominant = max(yes, 1 - yes)
+        dominant_side = "YES" if yes >= 0.5 else "NO"
+        dominant_price = dominant
+        payoff = ((1 - dominant_price) / dominant_price) * 100 if dominant_price > 0 else 0
+        lines.append(
+            f"- [{market_id}] {question}\n"
+            f"  Dominant: {dominant_side} @ {dominant_price*100:.0f}¢ | "
+            f"Ends in {hours:.1f}h | Vol24h: ${vol:,.0f} | Liq: ${liq:,.0f} | "
+            f"Payoff if resolves dominant: +{payoff:.1f}%"
+        )
     return "\n".join(lines)
 
 
