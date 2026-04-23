@@ -382,25 +382,43 @@ class AITradingAgent:
         """Called by main.py with new smart money trades."""
         self._recent_smart_money = trades
 
-    async def _log_exit_for_resolved(self, position: Dict):
-        """Detect the resolution outcome for a position that vanished from live data,
-        compute P&L, and append an EXIT entry to the journal so win/loss stats are correct.
-        Best-effort: if we can't determine the outcome (market not closed yet in Gamma,
-        slug mismatch, etc.), we still log an EXIT with pnl_usd=None so the position
-        stops re-appearing in get_open_positions()."""
+    async def _log_exit_for_resolved(self, position: Dict, live_record: Optional[Dict] = None):
+        """Append an EXIT entry for a resolved position so win/loss stats are correct.
+
+        Two paths for computing P&L:
+        1. live_record from Data API /positions — has `cashPnl` (authoritative, already
+           includes fees) and `redeemable`/`curPrice` telling us the outcome.
+        2. Gamma API fallback lookup by clob_token_ids — only works while the market
+           is still queryable; often returns empty for old redeemed markets.
+
+        If neither works, log EXIT with pnl_usd=None so the position stops appearing
+        in get_open_positions() — unknown P&L is explicitly excluded from stats.
+        """
         token_id = position.get("token_id", "")
         shares = float(position.get("shares", 0) or 0)
         amount_usd = float(position.get("amount_usd", 0) or 0)
         entry_price = float(position.get("price", 0) or 0)
         if entry_price > 1:
-            # stored in cents (0-100); normalise to 0-1 for downstream math
             entry_price = entry_price / 100
 
         resolved_price = None
+        pnl_usd = None
         resolved_status = "unknown"
         market_slug = position.get("market_slug", "")
 
-        if token_id:
+        # Path 1: Data API live_record (preferred — cashPnl is authoritative)
+        if live_record is not None:
+            market_slug = market_slug or live_record.get("slug", "")
+            cur_price = live_record.get("curPrice")
+            cash_pnl = live_record.get("cashPnl")
+            if cash_pnl is not None:
+                pnl_usd = float(cash_pnl)
+                if cur_price is not None:
+                    resolved_price = float(cur_price)
+                resolved_status = "won" if pnl_usd > 0 else "lost"
+
+        # Path 2: Gamma fallback — look up the market by token_id
+        if pnl_usd is None and token_id:
             try:
                 import httpx
                 async with httpx.AsyncClient(timeout=10.0) as hc:
@@ -424,19 +442,14 @@ class AITradingAgent:
                         for tid, p in zip(clob_ids, prices):
                             if str(tid) == str(token_id):
                                 resolved_price = float(p)
+                                payout = shares * resolved_price
+                                pnl_usd = payout - amount_usd
                                 resolved_status = "won" if resolved_price >= 0.5 else "lost"
                                 break
             except Exception as e:
                 logger.debug(f"Gamma lookup failed for token {token_id[:16]}: {e}")
 
-        # Compute P&L from shares × resolved_price
-        if resolved_price is not None:
-            payout = shares * resolved_price
-            pnl_usd = payout - amount_usd
-            pnl_pct = (pnl_usd / amount_usd * 100) if amount_usd else 0
-        else:
-            pnl_usd = None
-            pnl_pct = None
+        pnl_pct = (pnl_usd / amount_usd * 100) if (pnl_usd is not None and amount_usd) else None
 
         journal.log_entry(
             strategy=position.get("strategy", "AI-AGENT"),
@@ -493,8 +506,12 @@ class AITradingAgent:
         except Exception as e:
             logger.debug(f"CLOB positions fetch failed: {e}")
 
-        # Collect live market questions from Data API (for question-based matching)
+        # Collect live market questions + per-token metadata from Data API
+        # (critical: the Data API's `redeemable` + `cashPnl` fields tell us whether
+        #  a position has resolved, and with what P&L — without this we can't
+        #  distinguish "still open" from "resolved but not yet redeemed".)
         live_market_questions: set = set()
+        data_api_positions: Dict[str, Dict] = {}  # token_id -> position record
         try:
             wallet = settings.poly_wallet_address
             if wallet:
@@ -504,10 +521,10 @@ class AITradingAgent:
                     q = (p.get("title") or p.get("question") or p.get("market") or "").strip().lower()
                     if q:
                         live_market_questions.add(q)
-                    # Also store token IDs from Data API
                     tid = p.get("asset") or p.get("tokenId") or p.get("token_id") or ""
                     if tid:
                         live_token_ids.add(tid)
+                        data_api_positions[str(tid)] = p
         except Exception as e:
             logger.debug(f"Data API positions fetch failed: {e}")
 
@@ -529,14 +546,31 @@ class AITradingAgent:
                 for q in live_market_questions
             ) if live_market_questions and market_q else False
 
-            if token_match or question_match:
-                reconciled.append(jp)
-            else:
+            if not (token_match or question_match):
+                # Position vanished entirely — resolved and redeemed long ago.
+                # Try Gamma lookup as best-effort; often returns None for these.
                 logger.info(f"Position not found in live data, treating as resolved: {jp.get('market_question', '?')[:50]}")
                 try:
-                    await self._log_exit_for_resolved(jp)
+                    await self._log_exit_for_resolved(jp, live_record=None)
                 except Exception as e:
                     logger.warning(f"Could not log EXIT for resolved position {token_id[:16]}: {e}")
+                continue
+
+            # Position found in live data. Check if it's actually resolved (redeemable)
+            # or still trading.
+            live = data_api_positions.get(str(token_id))
+            if live and live.get("redeemable") is True:
+                logger.info(
+                    f"Position RESOLVED (redeemable): {jp.get('market_question', '?')[:50]} "
+                    f"cashPnl=${live.get('cashPnl', 0):.2f}"
+                )
+                try:
+                    await self._log_exit_for_resolved(jp, live_record=live)
+                except Exception as e:
+                    logger.warning(f"Could not log EXIT for redeemable position {token_id[:16]}: {e}")
+                continue
+
+            reconciled.append(jp)
 
         self._live_positions = reconciled
         logger.info(f"Live positions: {len(reconciled)}/{len(journal_positions)} journal positions still active (exposure: ${sum(p.get('amount_usd',0) for p in reconciled):.2f})")
