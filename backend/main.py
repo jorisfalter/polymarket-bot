@@ -36,6 +36,7 @@ from .auto_seller import auto_seller
 from .strategy_engine import strategy_engine
 from .trade_journal import journal as trade_journal
 from .ai_agent import ai_agent
+from .daily_summary import run_daily_summary
 
 
 def _get_trade_key(trade) -> str:
@@ -482,6 +483,12 @@ async def lifespan(app: FastAPI):
         'interval',
         minutes=15,  # AI agent thinks every 15 minutes
         id='ai_agent_job'
+    )
+    scheduler.add_job(
+        run_daily_summary,
+        'cron',
+        hour=9, minute=0,  # Daily at 09:00 UTC — social-media-ready recap
+        id='daily_summary_job'
     )
     scheduler.start()
 
@@ -1265,6 +1272,14 @@ async def trigger_agent_cycle():
     """Manually trigger one agent cycle."""
     await ai_agent.run_cycle()
     return {"ok": True, "thinking": ai_agent._thinking_history[-1] if ai_agent._thinking_history else None}
+
+
+@app.post("/api/agent/daily-summary")
+async def trigger_daily_summary():
+    """Manually trigger the daily summary (Telegram + archive)."""
+    from .daily_summary import generate_daily_summary
+    await run_daily_summary()
+    return {"ok": True, "summary": generate_daily_summary()}
 
 
 @app.get("/agent")

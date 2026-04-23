@@ -93,7 +93,22 @@ The AI agent runs every 15 minutes and systematically checks all 7 strategies. I
 
 ---
 
-## Strategy 7: Own Conviction
+## Strategy 8: Asymmetric Bet (Paris-Weather Pattern)
+**Data source**: Detector's new `♻️ Asymmetric Bet` signal (fires in the detector pipeline, not a separate feed)
+
+**Logic**: The Paris Météo-France tampering case (FT, April 2026) exposed a blind spot: insiders routinely bet *small dollar amounts* on *extreme longshots* (<3c) and pocket 50-100x returns. Our $1000 notional floor was hiding this pattern entirely. An insider betting $50 at 0.5c to win $10,000 is exactly as suspicious as one betting $5000 at 50c — just the blast radius differs.
+
+**Trigger**: Detector raises a HIGH-severity alert with `♻️ Asymmetric Bet` flag. That means: BUY side, price ≤3c, stake ≥$5, payoff ratio ≥30x, ideally fresh wallet and low market diversity.
+
+**Edge**: Piggyback the insider's asymmetric bet with our own moonshot-sized stake ($1–3). If they're right, we 30-100x our stake. If they're wrong or it's a false positive, we lose $1–3. The math strongly favors us even at a 10% hit rate.
+
+**Budget**: lives in the Moonshot book (see `docs/trading-philosophy.md`). Max $20 aggregate exposure across all active moonshots.
+
+**Known cases**: `paris_temperature_apr6_2026`, `paris_temperature_apr15_2026` — both backtestable via `backtester.run_known_case()`.
+
+---
+
+## Strategy 9: Own Conviction
 **Data source**: All available data + thesis board
 
 **Logic**: Sometimes the data tells a clear story that doesn't fit neatly into the other strategies. The agent trades on its own analysis when conviction is high.
