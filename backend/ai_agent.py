@@ -28,6 +28,7 @@ from .ai_prompts import (
     build_thesis_board,
     build_leaderboard_summary,
     build_near_resolution_summary,
+    build_daily_repeating_summary,
     build_stock_market_summary,
     build_inconsistency_summary,
 )
@@ -99,6 +100,87 @@ def _find_near_resolution(markets: list) -> list:
     # Sort by hours left
     results.sort(key=lambda x: x["_hours_left"])
     return results[:10]
+
+
+DAILY_REPEATING_EVENT_SLUGS = [
+    "will-trump-publicly-insult-someone-on",  # Trump insult — "infinite money glitch"
+    # Add more daily-repeating events here as discovered.
+]
+
+
+async def _find_daily_repeating_candidates(client) -> list:
+    """For each known daily-repeating event, compute the Yes-streak from closed markets
+    and surface today/tomorrow's market if price ≤95c (Strategy 3b candidate).
+    Returns a list of enriched market dicts with `_streak` and `_yes_price`."""
+    now = datetime.utcnow()
+    candidates = []
+
+    for slug in DAILY_REPEATING_EVENT_SLUGS:
+        try:
+            event = await client.get_event_by_slug(slug)
+        except Exception as e:
+            logger.debug(f"Daily-repeating fetch failed for {slug}: {e}")
+            continue
+        if not event:
+            continue
+
+        markets = event.get("markets", []) or []
+        # Sort markets by end date ascending
+        def _parse_end(m):
+            try:
+                return datetime.fromisoformat((m.get("endDate") or "").replace("Z", "+00:00")).replace(tzinfo=None)
+            except Exception:
+                return datetime.max
+        markets.sort(key=_parse_end)
+
+        # Compute streak + total Yes rate on closed markets
+        closed = [m for m in markets if m.get("closed")]
+        streak = 0
+        total_closed = 0
+        total_yes = 0
+        in_streak = True
+        for m in reversed(closed):
+            prices_str = m.get("outcomePrices", "[]")
+            try:
+                prices = json.loads(prices_str) if isinstance(prices_str, str) else prices_str
+                yes = float(prices[0])
+            except (json.JSONDecodeError, ValueError, IndexError):
+                continue
+            total_closed += 1
+            resolved_yes = yes >= 0.5
+            if resolved_yes:
+                total_yes += 1
+            if in_streak:
+                if resolved_yes:
+                    streak += 1
+                else:
+                    in_streak = False
+
+        # Find today's / next upcoming open market
+        for m in markets:
+            if m.get("closed"):
+                continue
+            end = _parse_end(m)
+            hours_left = (end - now).total_seconds() / 3600
+            if hours_left <= 0 or hours_left > 48:
+                continue
+            prices_str = m.get("outcomePrices", "[]")
+            try:
+                prices = json.loads(prices_str) if isinstance(prices_str, str) else prices_str
+                yes_price = float(prices[0])
+            except (json.JSONDecodeError, ValueError, IndexError):
+                continue
+            if yes_price <= 0 or yes_price >= 0.96:
+                continue  # Either dead or fully priced
+            m["_yes_price"] = yes_price
+            m["_hours_left"] = hours_left
+            m["_streak"] = streak
+            m["_total_yes"] = total_yes
+            m["_total_closed"] = total_closed
+            m["_event_slug"] = slug
+            candidates.append(m)
+
+    return candidates
 
 
 def _find_stock_markets(markets: list) -> list:
@@ -685,6 +767,10 @@ class AITradingAgent:
             # Near-resolution markets (ending within 48h, one side 90%+)
             near_resolution = _find_near_resolution(markets)
             parts.append(build_near_resolution_summary(near_resolution))
+
+            # Daily-repeating base-rate plays (Trump-insult "infinite money glitch" pattern)
+            daily_candidates = await _find_daily_repeating_candidates(client)
+            parts.append(build_daily_repeating_summary(daily_candidates))
 
             # Stock-related markets
             stock_markets = _find_stock_markets(markets)

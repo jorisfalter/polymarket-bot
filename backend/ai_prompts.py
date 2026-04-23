@@ -37,6 +37,7 @@ You receive these every cycle:
 3. **Leaderboard** — top 10 traders by P&L with their win rates and volumes
 4. **Top markets** — 20 highest-volume markets with current prices
 5. **Near-resolution markets** — markets ending within 48h with 90%+ dominant outcome (arb opportunities)
+5b. **Daily repeating candidates** — markets from known daily-resolving series (e.g. Trump insult) with Yes-streak count + current price. Strategy 3b target.
 6. **Stock market data** — Polymarket markets related to stocks/finance + real-time SPY, QQQ, Gold, Oil prices for cross-market arbitrage
 7. **Twitter intel** — recent tweets from @unusual_whales, @DeItaone, @Fxhedgers, @zaborado, @EventWavesPM (financial news, options flow, Polymarket analysis)
 8. **Newsletter intel** — recent items from EventWaves, Axios (breaking news relevant to markets)
@@ -349,6 +350,37 @@ def build_inconsistency_summary(inconsistencies: List[Dict]) -> str:
 
     lines.append("TRADING IMPLICATION: The underpriced side of each pair may be a free-money opportunity.")
     lines.append("CAUTION: Verify the markets are truly asking the same underlying question before trading.")
+    return "\n".join(lines)
+
+
+def build_daily_repeating_summary(candidates: List[Dict]) -> str:
+    """Format daily-repeating base-rate candidates (Strategy 3b) for the agent.
+    Each entry shows the market, current price, streak count, and hours left."""
+    if not candidates:
+        return "## Daily Repeating Candidates\nNo qualifying daily-repeating markets right now."
+
+    lines = ["## Daily Repeating Candidates (Strategy 3b — 'infinite money glitch')"]
+    lines.append("Markets in daily-resolving series with long Yes-streaks. Sized small ($1-3), "
+                 "but high-probability. Check the streak vs. the current price.")
+    for m in candidates[:10]:
+        question = (m.get("question") or "?")[:80]
+        yes = m.get("_yes_price", 0)
+        streak = m.get("_streak", 0)
+        total_yes = m.get("_total_yes", 0)
+        total_closed = m.get("_total_closed", 0)
+        base_rate = (total_yes / total_closed * 100) if total_closed else 0
+        hours = m.get("_hours_left", 0)
+        market_id = m.get("conditionId") or m.get("id") or ""
+        slug = m.get("slug", "")
+        payoff_if_yes = ((1 - yes) / yes) * 100 if yes > 0 else 0
+        edge = base_rate - yes * 100
+        lines.append(
+            f"- [{market_id}] {question}\n"
+            f"  Yes: {yes*100:.0f}¢ | Current streak: {streak} | "
+            f"Historical base rate: {total_yes}/{total_closed} = {base_rate:.0f}% | Edge: {edge:+.1f}pp\n"
+            f"  Ends in {hours:.1f}h | Payoff if Yes: +{payoff_if_yes:.1f}%\n"
+            f"  Slug: {slug}"
+        )
     return "\n".join(lines)
 
 

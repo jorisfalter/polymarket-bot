@@ -144,6 +144,20 @@ class PolymarketClient:
         except Exception as e:
             logger.error(f"Error fetching events: {e}")
             return []
+
+    async def get_event_by_slug(self, slug: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single event (with its markets) by slug."""
+        try:
+            response = await self.client.get(
+                f"{self.gamma_url}/events",
+                params={"slug": slug},
+            )
+            response.raise_for_status()
+            data = response.json() or []
+            return data[0] if data else None
+        except Exception as e:
+            logger.error(f"Error fetching event {slug}: {e}")
+            return None
     
     # ==================== CLOB API (Trading Data) ====================
     
