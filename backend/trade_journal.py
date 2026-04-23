@@ -100,9 +100,11 @@ class TradeJournal:
         return list(enters.values())
 
     def get_performance(self) -> dict:
-        """Compute P&L summary from journal."""
+        """Compute P&L summary from journal. EXIT entries with pnl_usd=None
+        (unresolved / couldn't determine outcome) are excluded from win/loss
+        counts so the win rate isn't polluted by unknowns."""
         if not JOURNAL_PATH.exists():
-            return {"total_pnl": 0, "trades": 0, "wins": 0, "losses": 0, "by_strategy": {}}
+            return {"total_pnl": 0, "trades": 0, "wins": 0, "losses": 0, "win_rate": 0, "unresolved": 0, "by_strategy": {}}
 
         exits = []
         for line in JOURNAL_PATH.read_text().strip().split("\n"):
@@ -115,26 +117,31 @@ class TradeJournal:
             except json.JSONDecodeError:
                 continue
 
-        total_pnl = sum(e.get("pnl_usd", 0) or 0 for e in exits)
-        wins = sum(1 for e in exits if (e.get("pnl_usd") or 0) > 0)
-        losses = sum(1 for e in exits if (e.get("pnl_usd") or 0) <= 0)
+        # Resolved = has a real P&L number. Unknown = pnl_usd is None.
+        resolved = [e for e in exits if e.get("pnl_usd") is not None]
+        unresolved = [e for e in exits if e.get("pnl_usd") is None]
+
+        total_pnl = sum(e["pnl_usd"] for e in resolved)
+        wins = sum(1 for e in resolved if e["pnl_usd"] > 0)
+        losses = sum(1 for e in resolved if e["pnl_usd"] <= 0)
 
         by_strategy = {}
-        for e in exits:
+        for e in resolved:
             strat = e.get("strategy", "unknown")
             if strat not in by_strategy:
                 by_strategy[strat] = {"pnl": 0, "trades": 0, "wins": 0}
-            by_strategy[strat]["pnl"] += e.get("pnl_usd", 0) or 0
+            by_strategy[strat]["pnl"] += e["pnl_usd"]
             by_strategy[strat]["trades"] += 1
-            if (e.get("pnl_usd") or 0) > 0:
+            if e["pnl_usd"] > 0:
                 by_strategy[strat]["wins"] += 1
 
         return {
             "total_pnl": round(total_pnl, 2),
-            "trades": len(exits),
+            "trades": len(resolved),
             "wins": wins,
             "losses": losses,
-            "win_rate": round(wins / len(exits), 2) if exits else 0,
+            "unresolved": len(unresolved),
+            "win_rate": round(wins / len(resolved), 2) if resolved else 0,
             "by_strategy": by_strategy,
         }
 

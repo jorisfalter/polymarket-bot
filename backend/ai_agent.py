@@ -382,6 +382,92 @@ class AITradingAgent:
         """Called by main.py with new smart money trades."""
         self._recent_smart_money = trades
 
+    async def _log_exit_for_resolved(self, position: Dict):
+        """Detect the resolution outcome for a position that vanished from live data,
+        compute P&L, and append an EXIT entry to the journal so win/loss stats are correct.
+        Best-effort: if we can't determine the outcome (market not closed yet in Gamma,
+        slug mismatch, etc.), we still log an EXIT with pnl_usd=None so the position
+        stops re-appearing in get_open_positions()."""
+        token_id = position.get("token_id", "")
+        shares = float(position.get("shares", 0) or 0)
+        amount_usd = float(position.get("amount_usd", 0) or 0)
+        entry_price = float(position.get("price", 0) or 0)
+        if entry_price > 1:
+            # stored in cents (0-100); normalise to 0-1 for downstream math
+            entry_price = entry_price / 100
+
+        resolved_price = None
+        resolved_status = "unknown"
+        market_slug = position.get("market_slug", "")
+
+        if token_id:
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=10.0) as hc:
+                    r = await hc.get(
+                        f"{settings.gamma_api_url}/markets",
+                        params={"clob_token_ids": token_id},
+                    )
+                    r.raise_for_status()
+                    markets = r.json() or []
+                if markets:
+                    m = markets[0]
+                    market_slug = market_slug or m.get("slug", "")
+                    if m.get("closed") or m.get("umaResolutionStatus") == "resolved":
+                        clob_ids = m.get("clobTokenIds", "[]")
+                        prices = m.get("outcomePrices", "[]")
+                        try:
+                            clob_ids = json.loads(clob_ids) if isinstance(clob_ids, str) else clob_ids
+                            prices = json.loads(prices) if isinstance(prices, str) else prices
+                        except json.JSONDecodeError:
+                            clob_ids, prices = [], []
+                        for tid, p in zip(clob_ids, prices):
+                            if str(tid) == str(token_id):
+                                resolved_price = float(p)
+                                resolved_status = "won" if resolved_price >= 0.5 else "lost"
+                                break
+            except Exception as e:
+                logger.debug(f"Gamma lookup failed for token {token_id[:16]}: {e}")
+
+        # Compute P&L from shares × resolved_price
+        if resolved_price is not None:
+            payout = shares * resolved_price
+            pnl_usd = payout - amount_usd
+            pnl_pct = (pnl_usd / amount_usd * 100) if amount_usd else 0
+        else:
+            pnl_usd = None
+            pnl_pct = None
+
+        journal.log_entry(
+            strategy=position.get("strategy", "AI-AGENT"),
+            action="EXIT",
+            market_question=position.get("market_question", ""),
+            market_slug=market_slug,
+            token_id=token_id,
+            side=position.get("side", "SELL"),
+            price=resolved_price if resolved_price is not None else 0,
+            shares=shares,
+            amount_usd=amount_usd,
+            reason="auto-resolved (position disappeared from live data)",
+            order_id=None,
+            entry_price=entry_price,
+            pnl_usd=pnl_usd,
+            pnl_pct=pnl_pct,
+            exit_reason=f"market resolution ({resolved_status})",
+        )
+
+        if pnl_usd is not None:
+            emoji = "🎉" if pnl_usd > 0 else "💀"
+            try:
+                await send_telegram(
+                    f"{emoji} <b>Position resolved</b> — {resolved_status.upper()}\n"
+                    f"Market: <i>{position.get('market_question','?')[:80]}</i>\n"
+                    f"Entry: ${amount_usd:.2f} @ {entry_price*100:.1f}c → Exit @ {resolved_price*100:.1f}c\n"
+                    f"P&amp;L: <b>{'+' if pnl_usd>=0 else ''}${pnl_usd:.2f}</b> ({pnl_pct:+.1f}%)"
+                )
+            except Exception:
+                pass
+
     async def _sync_live_positions(self) -> List[Dict]:
         """Reconcile journal open positions against live Polymarket holdings.
 
@@ -447,6 +533,10 @@ class AITradingAgent:
                 reconciled.append(jp)
             else:
                 logger.info(f"Position not found in live data, treating as resolved: {jp.get('market_question', '?')[:50]}")
+                try:
+                    await self._log_exit_for_resolved(jp)
+                except Exception as e:
+                    logger.warning(f"Could not log EXIT for resolved position {token_id[:16]}: {e}")
 
         self._live_positions = reconciled
         logger.info(f"Live positions: {len(reconciled)}/{len(journal_positions)} journal positions still active (exposure: ${sum(p.get('amount_usd',0) for p in reconciled):.2f})")

@@ -46,15 +46,18 @@ def _recent_exits(hours: int) -> List[Dict]:
 
 def _pnl_window(hours: int) -> Dict:
     exits = _recent_exits(hours)
-    total = sum(e.get("pnl_usd", 0) or 0 for e in exits)
-    wins = sum(1 for e in exits if (e.get("pnl_usd") or 0) > 0)
-    losses = sum(1 for e in exits if (e.get("pnl_usd") or 0) <= 0)
+    resolved = [e for e in exits if e.get("pnl_usd") is not None]
+    unresolved = [e for e in exits if e.get("pnl_usd") is None]
+    total = sum(e["pnl_usd"] for e in resolved)
+    wins = sum(1 for e in resolved if e["pnl_usd"] > 0)
+    losses = sum(1 for e in resolved if e["pnl_usd"] <= 0)
     return {
         "pnl_usd": round(total, 2),
-        "trades": len(exits),
+        "trades": len(resolved),
         "wins": wins,
         "losses": losses,
-        "exits": exits,
+        "unresolved": len(unresolved),
+        "exits": resolved,
     }
 
 
