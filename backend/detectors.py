@@ -154,7 +154,20 @@ class InsiderDetector:
         if odds_score > 0:
             flags.append(f"🎲 Betting on {trade.price:.1f}¢ outcome ({potential_return:.0f}% potential return)")
             severity_score += odds_score
-            
+
+        # 8. Asymmetric Bet (small stake, near-zero price, fresh wallet → Paris-weather pattern)
+        asymmetric_score, is_asymmetric = self._check_asymmetric_bet(trade, wallet)
+        payoff_ratio = (100 / trade.price) if trade.price > 0 else 0
+        signals.append({
+            "signal": "♻️ Asymmetric Bet",
+            "score": asymmetric_score,
+            "details": f"${trade.notional_usd:.0f} @ {trade.price:.2f}¢ → {payoff_ratio:.0f}x payoff",
+            "threshold": f"≥${settings.asymmetric_min_notional:.0f} stake, ≤{settings.asymmetric_max_price_cents:.0f}¢, ≥{settings.asymmetric_min_payoff_ratio:.0f}x",
+        })
+        if asymmetric_score > 0:
+            flags.append(f"♻️ Asymmetric bet: ${trade.notional_usd:.0f} @ {trade.price:.2f}¢ ({payoff_ratio:.0f}x payoff)")
+            severity_score += asymmetric_score
+
         # ========== DETERMINE IF SUSPICIOUS ==========
 
         if severity_score < 20:
@@ -181,31 +194,37 @@ class InsiderDetector:
                 "details": f"${notional:.0f} below ${settings.min_notional_critical:.0f} CRITICAL threshold",
                 "threshold": f">${settings.min_notional_critical:.0f} for CRITICAL"
             })
-        if notional < settings.min_notional_high and severity == AlertSeverity.HIGH:
-            severity = AlertSeverity.MEDIUM
-            signals.append({
-                "signal": "📉 Severity Capped",
-                "score": 0,
-                "details": f"${notional:.0f} below ${settings.min_notional_high:.0f} HIGH threshold",
-                "threshold": f">${settings.min_notional_high:.0f} for HIGH"
-            })
-        if notional < settings.min_notional_medium and severity == AlertSeverity.MEDIUM:
-            severity = AlertSeverity.LOW
-            signals.append({
-                "signal": "📉 Severity Capped",
-                "score": 0,
-                "details": f"${notional:.0f} below ${settings.min_notional_medium:.0f} MEDIUM threshold",
-                "threshold": f">${settings.min_notional_medium:.0f} for MEDIUM"
-            })
-        if notional < settings.min_notional_low:
-            # Trade too small to even be LOW severity - skip entirely
-            signals.append({
-                "signal": "⏭️ Skipped",
-                "score": 0,
-                "details": f"${notional:.0f} below ${settings.min_notional_low:.0f} minimum",
-                "threshold": f">${settings.min_notional_low:.0f} minimum"
-            })
-            return None, signals
+        # Asymmetric bets are exempt from the high/medium/low-notional floors because
+        # their edge is the payoff ratio, not the stake size.
+        if not is_asymmetric:
+            if notional < settings.min_notional_high and severity == AlertSeverity.HIGH:
+                severity = AlertSeverity.MEDIUM
+                signals.append({
+                    "signal": "📉 Severity Capped",
+                    "score": 0,
+                    "details": f"${notional:.0f} below ${settings.min_notional_high:.0f} HIGH threshold",
+                    "threshold": f">${settings.min_notional_high:.0f} for HIGH"
+                })
+            if notional < settings.min_notional_medium and severity == AlertSeverity.MEDIUM:
+                severity = AlertSeverity.LOW
+                signals.append({
+                    "signal": "📉 Severity Capped",
+                    "score": 0,
+                    "details": f"${notional:.0f} below ${settings.min_notional_medium:.0f} MEDIUM threshold",
+                    "threshold": f">${settings.min_notional_medium:.0f} for MEDIUM"
+                })
+            if notional < settings.min_notional_low:
+                signals.append({
+                    "signal": "⏭️ Skipped",
+                    "score": 0,
+                    "details": f"${notional:.0f} below ${settings.min_notional_low:.0f} minimum",
+                    "threshold": f">${settings.min_notional_low:.0f} minimum"
+                })
+                return None, signals
+        else:
+            # Asymmetric bets are capped at HIGH regardless (stake too small for CRITICAL)
+            if severity == AlertSeverity.CRITICAL:
+                severity = AlertSeverity.HIGH
             
         suspicious_trade = SuspiciousTrade(
             trade=trade,
@@ -377,6 +396,31 @@ class InsiderDetector:
         elif trade.price <= 30:
             return 10
         return 0
+
+    def _check_asymmetric_bet(self, trade: Trade, wallet: WalletProfile) -> Tuple[float, bool]:
+        """
+        Small stake + near-zero price + huge payoff multiple = classic insider pattern
+        even when dollar amount is too small to trip the whale threshold.
+        Documented by the Paris-weather Polymarket manipulation case (FT, April 2026).
+        Returns (score, is_asymmetric_flag).
+        """
+        price = trade.price
+        notional = trade.notional_usd
+        if price <= 0 or notional < settings.asymmetric_min_notional:
+            return 0, False
+        if price > settings.asymmetric_max_price_cents:
+            return 0, False
+        payoff_ratio = 100 / price
+        if payoff_ratio < settings.asymmetric_min_payoff_ratio:
+            return 0, False
+        if trade.side.upper() != "BUY":
+            return 0, False
+        score = 30
+        if wallet.total_trades <= settings.fresh_wallet_max_trades:
+            score += 20
+        if wallet.unique_markets and wallet.unique_markets <= 3:
+            score += 10
+        return score, True
     
     # ==================== ADVANCED DETECTION ====================
     

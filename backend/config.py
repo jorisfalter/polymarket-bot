@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     min_notional_high: float = 2000      # Must be $2k+ for HIGH
     min_notional_medium: float = 500     # Must be $500+ for MEDIUM
     min_notional_low: float = 100        # Minimum to generate any alert
+
+    # Asymmetric-bet pattern (Paris-temperature case): small stake, extreme-low price, huge payoff.
+    # These bypass the normal min_notional_low floor but cap severity at HIGH.
+    asymmetric_max_price_cents: float = 3.0   # Entry price must be ≤3c (≤3% implied)
+    asymmetric_min_notional: float = 5.0      # Stake must be ≥$5 (insiders often split buys into tiny chunks)
+    asymmetric_min_payoff_ratio: float = 30.0 # Payoff/stake ≥30x
     
     # Scan pipeline settings
     scan_analysis_cap: int = 200  # Max trades to analyze per scan (was 50)

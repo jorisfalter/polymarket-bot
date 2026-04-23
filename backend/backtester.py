@@ -64,6 +64,30 @@ KNOWN_CASES = {
         "expected_min_score": 60,
         "expected_signals": ["Position Size", "Extreme Odds"],
     },
+    "paris_temperature_apr6_2026": {
+        "id": "paris_temperature_apr6_2026",
+        "name": "Paris Temperature Tampering — April 6 (2026)",
+        "description": 'Météo-France filed a police complaint after temperature sensors at CDG spiked anomalously. Wallet 0xf1faf3f6 bought ~15,368 shares of "21°C" at 0.19-5c for ~$80 stake, winning ~$15,300. FT, April 2026.',
+        "condition_id": "0xefb630b450bc264209fef9a27a6a94e0f54612c2f0f391f08b0629993e396bc7",
+        "slug": "highest-temperature-in-paris-on-april-6-2026-21c",
+        "question": "Will the highest temperature in Paris be 21°C on April 6?",
+        "insider_wallet": "0xf1faf3f6ad1e0264d6cbecc1a416e7c536be047d",
+        "insider_name": "Paris-Apr6-21C-buyer",
+        "expected_min_score": 50,
+        "expected_signals": ["Asymmetric Bet", "Extreme Odds", "Fresh Wallet"],
+    },
+    "paris_temperature_apr15_2026": {
+        "id": "paris_temperature_apr15_2026",
+        "name": "Paris Temperature Tampering — April 15 (2026)",
+        "description": 'Second temperature anomaly at CDG. Wallet 0x1c0f3e4c bought ~27,591 shares of "22°C" at 0.1-3.78c for ~$65 stake, winning ~$27,500. Same wallet also bet on Apr 6 — pattern confirms insider status. FT, April 2026.',
+        "condition_id": "0xdb8d12c38bb10135ee8b344deccfcf3a93abfc8427b5da2474e6c1eadff65b01",
+        "slug": "highest-temperature-in-paris-on-april-15-2026-22c",
+        "question": "Will the highest temperature in Paris be 22°C on April 15?",
+        "insider_wallet": "0x1c0f3e4c90a48e4dd93d0abcdf719a5a5f1599d0",
+        "insider_name": "Paris-Apr15-22C-buyer",
+        "expected_min_score": 50,
+        "expected_signals": ["Asymmetric Bet", "Extreme Odds", "Fresh Wallet"],
+    },
     "iran_strikes_feb2026": {
         "id": "iran_strikes_feb2026",
         "name": "Iran Strikes (Feb 2026)",
@@ -178,10 +202,13 @@ class Backtester:
         return results[:limit]
 
     async def backtest_market(
-        self, condition_id: str, market_question: str = "", market_slug: str = ""
+        self, condition_id: str, market_question: str = "", market_slug: str = "",
+        max_trades: int = 3000,
     ) -> BacktestResult:
         """
         Backtest a single market: fetch all trades and run them through detection.
+        Paginates up to max_trades so earlier insider entries (e.g. <1c buys before
+        a manipulation event) aren't truncated away.
         """
         start = datetime.utcnow()
         result = BacktestResult(
@@ -192,8 +219,23 @@ class Backtester:
 
         try:
             async with PolymarketClient() as client:
-                # Fetch trades for this market
-                trades = await client.get_market_trades(condition_id, limit=500)
+                # Paginate trades for this market
+                trades: List[Dict[str, Any]] = []
+                offset = 0
+                page = 500
+                while len(trades) < max_trades:
+                    resp = await client.client.get(
+                        f"{client.data_url}/trades",
+                        params={"market": condition_id, "limit": page, "offset": offset},
+                    )
+                    resp.raise_for_status()
+                    batch = resp.json() or []
+                    if not batch:
+                        break
+                    trades.extend(batch)
+                    if len(batch) < page:
+                        break
+                    offset += page
                 result.total_trades = len(trades)
 
                 if not trades:
@@ -236,11 +278,13 @@ class Backtester:
                     trade["market_question"] = market_data["question"]
                     trade["market_slug"] = market_data["slug"]
 
-                    # Calculate notional
+                    # Calculate notional — normalize price to cents (0-100) so the detector
+                    # sees consistent values. Data API returns price as 0-1 fraction.
                     shares = float(trade.get("size", 0) or trade.get("amount", 0) or 0)
                     price = float(trade.get("price", 50) or 50)
                     if price <= 1:
                         price = price * 100
+                    trade["price"] = price
                     trade["notional_usd"] = trade.get("usdcSize") or (shares * price / 100)
                     if isinstance(trade["notional_usd"], str):
                         trade["notional_usd"] = float(trade["notional_usd"])
