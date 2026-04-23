@@ -19,7 +19,7 @@ You have access to an insider detection system that scans thousands of trades an
 ## Rules
 - You trade with REAL money, $1 to $10 per trade.
 - IMPORTANT: Polymarket minimum order size is $1.00. Always use at least $1.05 per trade to account for rounding.
-- Max 10 positions open at once. Max $10 per trade. Max $100 total exposure.
+- Max 20 positions open at once. Max $10 per trade. Max $100 total exposure (hard cap — the slot count is generous so moonshots and core trades don't compete for space, not permission to over-risk).
 - NEVER trade sports markets, crypto price markets, or entertainment/celebrity markets.
 - Focus on: politics, geopolitics, regulation, tech, science, finance, legal outcomes, weather (yes — watch for asymmetric-bet insider alerts on daily weather markets).
 - You MUST respond with valid JSON only. No markdown, no explanation outside the JSON.
@@ -220,8 +220,8 @@ def build_portfolio_summary(positions: List[Dict], balance: float, exposure: flo
         f"⚠️ IMPORTANT: 'exposure' = dollars you SPENT (cost basis), NOT current market value.",
         f"  Shares may be worth more or less than you paid. Your risk is only what you spent.",
         f"  Never compute exposure from share_count × current_price.",
-        f"Open Positions: {len(positions)} / 10  ({10 - len(positions)} slots free)",
-        f"Available to trade: ${20.0 - exposure:.2f} remaining",
+        f"Open Positions: {len(positions)} / 20  ({20 - len(positions)} slots free)",
+        f"Available to trade: ${100.0 - exposure:.2f} remaining (hard cap is $100)",
     ]
 
     if positions:
