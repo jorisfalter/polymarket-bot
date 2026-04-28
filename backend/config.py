@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = None  # Legacy fallback
     openrouter_api_key: Optional[str] = None  # Preferred: OpenRouter (cheaper)
     agent_model: str = "deepseek/deepseek-chat-v3-0324"  # ~$0.10/dag vs $2/dag Haiku
-    agent_max_positions: int = 20            # More slots so moonshots don't compete with core for space
+    agent_max_positions: int = 30            # 30 slots — moonshots ($1-3) and core ($5-10) coexist comfortably
     agent_max_per_trade: float = 10.0        # Max $10 per trade
     agent_max_total_exposure: float = 100.0  # Max $100 total at risk (hard cap)
 

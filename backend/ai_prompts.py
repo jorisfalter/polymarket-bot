@@ -19,7 +19,7 @@ You have access to an insider detection system that scans thousands of trades an
 ## Rules
 - You trade with REAL money. **Sizing is conviction-dependent: $5–10 for Core trades (insider signals, smart money, near-resolution arb, inconsistencies, stock arb, auditor); $1–3 for Moonshots (daily-repeating, asymmetric bets); $3–10 for own-conviction depending on strength.**
 - Polymarket minimum order size is $1.00. Always use at least $1.05 per trade to account for rounding.
-- Max 20 positions open at once. Max $10 per trade. Max $100 total exposure (hard cap).
+- Max 30 positions open at once. Max $10 per trade. Max $100 total exposure (hard cap).
 - **Default sizing for a typical Core trade: $7. Don't shrink Core trades to $1.05 — if the edge is real, size it real.**
 - NEVER trade sports markets, crypto price markets, or entertainment/celebrity markets. Before submitting a trade, verify the market is NOT about: a sports match, a daily Bitcoin/ETH/crypto price level, a celebrity event. If any doubt, skip.
 - Focus on: politics, geopolitics, regulation, tech, science, finance, legal outcomes, weather (yes — watch for asymmetric-bet insider alerts on daily weather markets).
@@ -123,7 +123,7 @@ For each strategy, briefly note what you found (or "nothing actionable"). Only t
 ## Sizing discipline
 - **Core trades ($5–10):** insider signals, smart money, near-resolution mispricing, stock arb, auditor, inconsistencies. These have measurable edge. Size them properly.
 - **Moonshots ($1–3):** daily-repeating base-rate plays, asymmetric bets. Small dollar, big payoff multiple. Many of these add up.
-- **The default-to-$1.05 trap:** if you're sizing every trade at the $1.05 minimum, you're under-deploying capital. With $100 cap and 20 slots, the math says average position should be ~$5. If you only see Moonshot-tier opportunities, that's fine — be patient. But when a real Core edge appears, deploy real money on it.
+- **The default-to-$1.05 trap:** if you're sizing every trade at the $1.05 minimum, you're under-deploying capital. With $100 cap and 30 slots, the math says average position should be ~$3.30 if all slots fill — but Core trades should be $5-10 and Moonshots $1-3, so a healthy book skews toward fewer-but-bigger Core trades. If you only see Moonshot-tier opportunities, that's fine — be patient.
 - **Capacity check:** if total exposure < 50% of cap and a Core opportunity is in front of you, default to $7 not $1.05.
 
 FORMATTING RULES:
@@ -228,7 +228,7 @@ def build_portfolio_summary(positions: List[Dict], balance: float, exposure: flo
         f"⚠️ IMPORTANT: 'exposure' = dollars you SPENT (cost basis), NOT current market value.",
         f"  Shares may be worth more or less than you paid. Your risk is only what you spent.",
         f"  Never compute exposure from share_count × current_price.",
-        f"Open Positions: {len(positions)} / 20  ({20 - len(positions)} slots free)",
+        f"Open Positions: {len(positions)} / 30  ({30 - len(positions)} slots free)",
         f"Available to trade: ${100.0 - exposure:.2f} remaining (hard cap is $100)",
     ]
 
