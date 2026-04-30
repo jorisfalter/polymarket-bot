@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playbook | Polymarket</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=15">
+    <script src="/static/theme.js?v=1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        .playbook-container { max-width: 900px; margin: 0 auto; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 30px 40px; }
+        .playbook-container h1 { font-size: 28px; color: var(--text-primary); margin-bottom: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
+        .playbook-container h2 { font-size: 22px; color: var(--accent-primary); margin: 28px 0 12px 0; }
+        .playbook-container h3 { font-size: 16px; color: var(--accent-secondary); margin: 20px 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+        .playbook-container p { font-size: 14px; line-height: 1.7; color: var(--text-primary); margin: 10px 0; }
+        .playbook-container li { font-size: 14px; line-height: 1.7; color: var(--text-primary); margin: 6px 0; }
+        .playbook-container ul, .playbook-container ol { padding-left: 24px; }
+        .playbook-container code { background: var(--bg-tertiary); padding: 2px 6px; border-radius: 3px; font-family: var(--font-mono); font-size: 12px; color: var(--accent-warning); }
+        .playbook-container pre { background: var(--bg-tertiary); padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 12px; line-height: 1.5; }
+        .playbook-container pre code { background: transparent; padding: 0; color: var(--text-primary); }
+        .playbook-container hr { border: none; border-top: 1px solid var(--border-color); margin: 24px 0; }
+        .playbook-container strong { color: var(--accent-primary); }
+        .playbook-container blockquote { border-left: 3px solid var(--accent-secondary); padding-left: 16px; margin: 12px 0; color: var(--text-secondary); font-style: italic; }
+        .playbook-container table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+        .playbook-container th, .playbook-container td { border: 1px solid var(--border-color); padding: 8px 12px; text-align: left; }
+        .playbook-container th { background: var(--bg-tertiary); color: var(--accent-secondary); font-weight: 600; }
+        .toc { position: sticky; top: 20px; max-width: 240px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; font-size: 12px; }
+        .toc h4 { font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; letter-spacing: 0.5px; }
+        .toc ul { list-style: none; padding: 0; }
+        .toc a { color: var(--text-secondary); text-decoration: none; padding: 4px 0; display: block; line-height: 1.4; }
+        .toc a:hover { color: var(--accent-primary); }
+        .layout { display: grid; grid-template-columns: 240px 1fr; gap: 24px; align-items: start; }
+        @media (max-width: 1024px) { .layout { grid-template-columns: 1fr; } .toc { position: static; max-width: none; } }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">📖</span>
+                    <span class="logo-text">PLAY<span class="logo-highlight">BOOK</span></span>
+                </div>
+                <span class="tagline">Trading strategies reference</span>
+            </div>
+            <div class="header-right">
+                <nav class="main-nav">
+                    <a href="/agent" class="nav-link"><span class="nav-icon">🧠</span><span class="nav-text">Dashboard</span></a>
+                    <a href="/research" class="nav-link"><span class="nav-icon">📚</span><span class="nav-text">Research</span></a>
+                    <a href="/playbook" class="nav-link active"><span class="nav-icon">📖</span><span class="nav-text">Playbook</span></a>
+                    <a href="/" class="nav-link"><span class="nav-icon">🔍</span><span class="nav-text">Detection</span></a>
+                    <a href="/strategy" class="nav-link"><span class="nav-icon">🤖</span><span class="nav-text">Engine</span></a>
+                </nav>
+                <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()">🌙 Dark</button>
+            </div>
+        </header>
+
+        <div class="main-content single-panel">
+            <div class="layout">
+                <aside class="toc" id="toc">
+                    <h4>Table of contents</h4>
+                    <ul id="toc-list"><li>Loading…</li></ul>
+                </aside>
+                <article class="playbook-container" id="playbook"><p>Loading playbook…</p></article>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadPlaybook() {
+            try {
+                const res = await fetch('/api/playbook');
+                const data = await res.json();
+                const md = data.content || '# Empty';
+                const html = marked.parse(md);
+                document.getElementById('playbook').innerHTML = html;
+
+                // Build TOC from h1/h2 headings
+                const article = document.getElementById('playbook');
+                const headings = article.querySelectorAll('h1, h2');
+                const tocList = document.getElementById('toc-list');
+                tocList.innerHTML = Array.from(headings).map((h, i) => {
+                    const id = 'sec-' + i;
+                    h.id = id;
+                    const indent = h.tagName === 'H2' ? 'padding-left: 12px;' : '';
+                    return `<li style="${indent}"><a href="#${id}">${h.textContent}</a></li>`;
+                }).join('');
+            } catch (e) {
+                document.getElementById('playbook').innerHTML = '<p>Failed to load: ' + e.message + '</p>';
+            }
+        }
+        loadPlaybook();
+    </script>
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research | Polymarket</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=15">
+    <script src="/static/theme.js?v=1"></script>
+    <style>
+        .research-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 1024px) { .research-grid { grid-template-columns: 1fr; } }
+        .panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; }
+        .panel h2 { font-size: 16px; margin: 0 0 14px 0; color: var(--text-primary); }
+        .panel h2 .count { font-size: 11px; background: rgba(0,212,255,0.15); color: var(--accent-secondary); padding: 2px 8px; border-radius: 4px; margin-left: 8px; font-weight: 500; }
+
+        .newsletter-item { padding: 14px 0; border-bottom: 1px solid var(--border-color); }
+        .newsletter-item:last-child { border-bottom: none; }
+        .newsletter-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+        .newsletter-source { color: var(--accent-secondary); font-weight: 600; text-transform: uppercase; }
+        .newsletter-subject { font-size: 14px; color: var(--text-primary); font-weight: 600; margin-bottom: 6px; line-height: 1.4; }
+        .newsletter-body { font-size: 13px; color: var(--text-secondary); line-height: 1.5; max-height: 200px; overflow: hidden; position: relative; }
+        .newsletter-body.expanded { max-height: none; }
+        .newsletter-body::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 40px; background: linear-gradient(transparent, var(--bg-secondary)); pointer-events: none; }
+        .newsletter-body.expanded::after { display: none; }
+        .expand-btn { background: transparent; border: none; color: var(--accent-primary); font-size: 11px; cursor: pointer; padding: 4px 0; margin-top: 4px; font-family: inherit; }
+
+        .idea-form { display: grid; gap: 10px; margin-bottom: 16px; }
+        .idea-form input, .idea-form textarea { background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 10px 12px; border-radius: 6px; font-family: inherit; font-size: 13px; resize: vertical; }
+        .idea-form input:focus, .idea-form textarea:focus { outline: none; border-color: var(--accent-primary); }
+        .idea-form textarea { min-height: 100px; font-size: 13px; line-height: 1.5; }
+        .idea-form button { background: var(--accent-primary); color: var(--bg-primary); border: none; padding: 10px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; font-family: inherit; }
+        .idea-form button:hover { opacity: 0.9; }
+
+        .idea-item { padding: 12px 0; border-bottom: 1px solid var(--border-color); }
+        .idea-item:last-child { border-bottom: none; }
+        .idea-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+        .idea-title { font-size: 14px; color: var(--text-primary); font-weight: 600; margin-bottom: 4px; }
+        .idea-body { font-size: 12px; color: var(--text-secondary); line-height: 1.5; max-height: 80px; overflow: hidden; }
+        .idea-body.expanded { max-height: none; }
+        .idea-tag { display: inline-block; font-size: 10px; padding: 1px 6px; background: rgba(170,102,255,0.15); color: var(--accent-purple); border-radius: 3px; margin-right: 4px; }
+        .delete-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 0 4px; }
+        .delete-btn:hover { color: var(--accent-danger); }
+
+        .empty { color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px; font-style: italic; }
+        .gmail-status { font-size: 11px; padding: 8px 12px; background: var(--bg-tertiary); border-radius: 6px; color: var(--text-secondary); margin-bottom: 16px; }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">📚</span>
+                    <span class="logo-text">RESEARCH<span class="logo-highlight">FEED</span></span>
+                </div>
+                <span class="tagline">Newsletter intel + manual ideas inbox</span>
+            </div>
+            <div class="header-right">
+                <nav class="main-nav">
+                    <a href="/agent" class="nav-link"><span class="nav-icon">🧠</span><span class="nav-text">Dashboard</span></a>
+                    <a href="/research" class="nav-link active"><span class="nav-icon">📚</span><span class="nav-text">Research</span></a>
+                    <a href="/playbook" class="nav-link"><span class="nav-icon">📖</span><span class="nav-text">Playbook</span></a>
+                    <a href="/" class="nav-link"><span class="nav-icon">🔍</span><span class="nav-text">Detection</span></a>
+                    <a href="/strategy" class="nav-link"><span class="nav-icon">🤖</span><span class="nav-text">Engine</span></a>
+                </nav>
+                <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()">🌙 Dark</button>
+            </div>
+        </header>
+
+        <div class="main-content single-panel">
+            <div class="research-grid">
+                <!-- Newsletter feed -->
+                <div class="panel">
+                    <h2>📧 Newsletter Intel <span class="count" id="newsletter-count">0</span></h2>
+                    <div class="gmail-status" id="gmail-status">Loading...</div>
+                    <div id="newsletters"><div class="empty">Loading newsletters...</div></div>
+                </div>
+
+                <!-- Manual ideas inbox -->
+                <div class="panel">
+                    <h2>💡 Ideas Inbox <span class="count" id="ideas-count">0</span></h2>
+                    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">Paste a Matt Levine excerpt, a tweet, or your own thesis. The agent picks it up next cycle and considers it as Strategy 7 (Own Conviction).</p>
+                    <div class="idea-form">
+                        <input type="text" id="idea-title" placeholder="Title (e.g. 'Avis short squeeze Section 16 angle')" maxlength="200">
+                        <input type="text" id="idea-source" placeholder="Source (optional, e.g. 'Matt Levine 2026-04-30' or 'manual')">
+                        <textarea id="idea-body" placeholder="Paste content here..." maxlength="20000"></textarea>
+                        <button onclick="addIdea()">Add to inbox</button>
+                    </div>
+                    <div id="ideas"><div class="empty">No ideas yet.</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function loadNewsletters() {
+            try {
+                const res = await fetch('/api/intel/newsletters');
+                const items = await res.json();
+                renderNewsletters(items);
+                document.getElementById('gmail-status').textContent = items.length
+                    ? `${items.length} newsletter(s) from last 2 days`
+                    : 'No newsletters found. Set GMAIL_ADDRESS + GMAIL_APP_PASSWORD in .env on the VPS.';
+            } catch (e) {
+                document.getElementById('gmail-status').textContent = 'Newsletter fetch failed: ' + e.message;
+            }
+        }
+
+        function renderNewsletters(items) {
+            document.getElementById('newsletter-count').textContent = items.length;
+            const el = document.getElementById('newsletters');
+            if (!items.length) {
+                el.innerHTML = '<div class="empty">No newsletter emails captured.</div>';
+                return;
+            }
+            el.innerHTML = items.map((it, i) => {
+                const body = escapeHtml(it.body || it.preview || '');
+                return `<div class="newsletter-item">
+                    <div class="newsletter-meta">
+                        <span class="newsletter-source">${escapeHtml(it.source || '')}</span>
+                        <span>${escapeHtml(it.date || '')}</span>
+                    </div>
+                    <div class="newsletter-subject">${escapeHtml(it.subject || '')}</div>
+                    <div class="newsletter-body" id="nl-body-${i}">${body}</div>
+                    <button class="expand-btn" onclick="toggleExpand('nl-body-${i}', this)">▾ Show full</button>
+                </div>`;
+            }).join('');
+        }
+
+        function toggleExpand(id, btn) {
+            const el = document.getElementById(id);
+            const expanded = el.classList.toggle('expanded');
+            btn.textContent = expanded ? '▴ Collapse' : '▾ Show full';
+        }
+
+        async function loadIdeas() {
+            try {
+                const res = await fetch('/api/research/ideas');
+                const items = await res.json();
+                renderIdeas(items);
+            } catch (e) { console.error(e); }
+        }
+
+        function renderIdeas(items) {
+            document.getElementById('ideas-count').textContent = items.length;
+            const el = document.getElementById('ideas');
+            if (!items.length) {
+                el.innerHTML = '<div class="empty">No ideas yet. Add one above.</div>';
+                return;
+            }
+            el.innerHTML = items.map((it, i) => {
+                const ts = new Date(it.timestamp.endsWith('Z') ? it.timestamp : it.timestamp + 'Z').toLocaleString('en-GB');
+                const tags = (it.tags || []).map(t => `<span class="idea-tag">${escapeHtml(t)}</span>`).join('');
+                return `<div class="idea-item">
+                    <div class="idea-meta">
+                        <span>${escapeHtml(it.source || 'manual')} · ${ts}</span>
+                        <button class="delete-btn" onclick="deleteIdea('${encodeURIComponent(it.timestamp)}')">×</button>
+                    </div>
+                    <div class="idea-title">${escapeHtml(it.title || '')}</div>
+                    <div>${tags}</div>
+                    <div class="idea-body" id="idea-body-${i}">${escapeHtml(it.body || '')}</div>
+                    <button class="expand-btn" onclick="toggleExpand('idea-body-${i}', this)">▾ Show full</button>
+                </div>`;
+            }).join('');
+        }
+
+        async function addIdea() {
+            const title = document.getElementById('idea-title').value.trim();
+            const source = document.getElementById('idea-source').value.trim();
+            const body = document.getElementById('idea-body').value.trim();
+            if (!title || !body) { alert('Title and body required.'); return; }
+            await fetch('/api/research/ideas', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, source, body })
+            });
+            document.getElementById('idea-title').value = '';
+            document.getElementById('idea-source').value = '';
+            document.getElementById('idea-body').value = '';
+            loadIdeas();
+        }
+
+        async function deleteIdea(ts) {
+            if (!confirm('Delete this idea?')) return;
+            await fetch('/api/research/ideas/' + ts, { method: 'DELETE' });
+            loadIdeas();
+        }
+
+        loadNewsletters();
+        loadIdeas();
+        setInterval(loadNewsletters, 60000);
+    </script>
+</body>
+</html>
