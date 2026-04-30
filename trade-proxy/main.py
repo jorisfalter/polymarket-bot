@@ -59,19 +59,33 @@ def verify_auth(authorization: str = Header(None)):
         raise HTTPException(401, "Unauthorized")
 
 
-# Cache neg-risk lookups so we don't hit Gamma on every order.
+# Cache neg-risk lookups per token (immutable so safe to cache forever)
 _neg_risk_cache: dict = {}
 
 
 def is_neg_risk(token_id: str) -> bool:
     """Polymarket has two Exchange contracts: regular and Neg-Risk.
-    Multi-outcome events (Will-X-or-Y-or-Z, election outcomes, etc.) use
-    Neg-Risk; binary YES/NO markets use regular. Submitting an order to
-    the wrong contract → order_version_mismatch.
-
-    Best signal: Gamma API's `negRisk` field per market."""
+    Multi-outcome events use Neg-Risk; binary YES/NO markets use regular.
+    Authoritative source is the CLOB itself via client.get_neg_risk()."""
     if token_id in _neg_risk_cache:
         return _neg_risk_cache[token_id]
+    try:
+        client = get_client()
+        result = bool(client.get_neg_risk(token_id))
+    except Exception as e:
+        logger.warning(f"CLOB neg_risk lookup failed for {token_id[:12]}: {e}")
+        result = False
+    _neg_risk_cache[token_id] = result
+    logger.info(f"neg_risk[{token_id[:12]}] = {result}")
+    return result
+
+
+def check_market_tradeable(token_id: str) -> tuple:
+    """Pre-flight check: is the market actually tradeable right now?
+    Returns (ok, reason). False reasons include: disputed UMA resolution,
+    closed/inactive market, archived. Polymarket's CLOB rejects orders
+    on these markets with confusing error codes (e.g. order_version_mismatch),
+    so checking up front gives us a clean diagnostic."""
     import httpx
     try:
         r = httpx.get(
@@ -81,12 +95,22 @@ def is_neg_risk(token_id: str) -> bool:
         )
         r.raise_for_status()
         markets = r.json() or []
-        result = bool(markets[0].get("negRisk")) if markets else False
+        if not markets:
+            return True, "no metadata, proceeding"
+        m = markets[0]
+        if m.get("closed"):
+            return False, "market closed"
+        if m.get("archived"):
+            return False, "market archived"
+        if not m.get("active", True):
+            return False, "market inactive"
+        uma_status = (m.get("umaResolutionStatus") or "").lower()
+        if uma_status in ("disputed", "challenged"):
+            return False, f"UMA dispute in progress ({uma_status})"
+        return True, "ok"
     except Exception as e:
-        logger.warning(f"neg_risk lookup failed for {token_id[:12]}: {e}")
-        result = False
-    _neg_risk_cache[token_id] = result
-    return result
+        logger.debug(f"tradeable check failed (proceeding anyway): {e}")
+        return True, "metadata unreachable"
 
 
 class BuyRequest(BaseModel):
@@ -127,13 +151,18 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
         from py_clob_client.clob_types import MarketOrderArgs, OrderType, PartialCreateOrderOptions
         from py_clob_client.order_builder.constants import BUY
 
-        # Get the midpoint price for reporting
+        # Pre-flight: skip clearly untradeable markets so callers see a
+        # useful error rather than Polymarket's confusing version_mismatch.
+        ok, reason = check_market_tradeable(req.token_id)
+        if not ok:
+            logger.warning(f"Buy refused: {reason} ({req.token_id[:12]})")
+            return {"success": False, "error": f"market not tradeable: {reason}"}
+
         try:
             midpoint = float(client.get_midpoint(req.token_id))
         except Exception:
             midpoint = 0
 
-        # Determine which Exchange contract to sign for
         neg_risk = is_neg_risk(req.token_id)
         options = PartialCreateOrderOptions(neg_risk=neg_risk)
 
@@ -144,6 +173,7 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
         )
         signed_order = client.create_market_order(order_args, options)
         response = client.post_order(signed_order, OrderType.FOK)
+        logger.info(f"Buy response: success={response.get('success') if response else 'no-response'} full={response}")
 
         if response and response.get("success"):
             order_id = response.get("orderID") or response.get("order_id")
@@ -156,12 +186,19 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
                 "neg_risk": neg_risk,
             }
         else:
+            # Surface the FULL response so we can diagnose ambiguous errors
             error = response.get("errorMsg") or response.get("error") or "Unknown"
-            return {"success": False, "error": error, "price": midpoint, "neg_risk": neg_risk}
+            return {
+                "success": False,
+                "error": error,
+                "price": midpoint,
+                "neg_risk": neg_risk,
+                "full_response": response,
+            }
 
     except Exception as e:
         logger.error(f"Buy error: {e}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": str(e), "exception_type": type(e).__name__}
 
 
 @app.post("/sell")
@@ -172,6 +209,11 @@ async def sell(req: SellRequest, authorization: str = Header(None)):
     try:
         from py_clob_client.clob_types import MarketOrderArgs, OrderType, PartialCreateOrderOptions
         from py_clob_client.order_builder.constants import SELL
+
+        ok, reason = check_market_tradeable(req.token_id)
+        if not ok:
+            logger.warning(f"Sell refused: {reason} ({req.token_id[:12]})")
+            return {"success": False, "error": f"market not tradeable: {reason}"}
 
         try:
             midpoint = float(client.get_midpoint(req.token_id))
