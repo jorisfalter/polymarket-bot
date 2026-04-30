@@ -174,6 +174,24 @@ async def sell(req: SellRequest, authorization: str = Header(None)):
         return {"success": False, "error": str(e)}
 
 
+@app.get("/reddit/{subreddit}/{sort}")
+async def reddit_proxy(subreddit: str, sort: str, limit: int = 50, authorization: str = Header(None)):
+    """Reddit blocks Hetzner / data-center IPs. Proxy through Tokyo."""
+    verify_auth(authorization)
+    if sort not in ("hot", "new", "top", "rising"):
+        raise HTTPException(400, "bad sort")
+    import httpx
+    headers = {"User-Agent": "polymarket-bot/1.0 (proxy; research@jorisfalter.com)"}
+    url = f"https://www.reddit.com/r/{subreddit}/{sort}.json"
+    try:
+        async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+            r = await client.get(url, params={"limit": limit})
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        return {"error": str(e), "data": {"children": []}}
+
+
 @app.get("/balance")
 async def balance(authorization: str = Header(None)):
     verify_auth(authorization)

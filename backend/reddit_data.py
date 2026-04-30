@@ -74,16 +74,26 @@ def _extract_tickers(text: str) -> List[str]:
 
 async def fetch_subreddit_posts(subreddit: str = "wallstreetbets", sort: str = "hot",
                                   limit: int = 50) -> List[Dict]:
-    """Pull hot/new/top posts from a subreddit's JSON endpoint."""
+    """Pull hot/new/top posts from a subreddit's JSON endpoint.
+    Reddit blocks Hetzner / data-center IPs. If TRADE_PROXY_URL is set we
+    route through the Tokyo Fly.io proxy."""
     cache_key = f"{subreddit}:{sort}:{limit}"
     cached = _cache.get(cache_key)
     if cached and datetime.utcnow() - cached["timestamp"] < _cache_ttl:
         return cached["posts"]
 
-    url = f"{REDDIT_BASE}/r/{subreddit}/{sort}.json"
+    from .config import settings
+    use_proxy = bool(settings.trade_proxy_url)
+    if use_proxy:
+        url = f"{settings.trade_proxy_url}/reddit/{subreddit}/{sort}"
+        headers = {"Authorization": f"Bearer {settings.trade_proxy_secret}"}
+    else:
+        url = f"{REDDIT_BASE}/r/{subreddit}/{sort}.json"
+        headers = {"User-Agent": REDDIT_UA}
+
     posts: List[Dict] = []
     try:
-        async with httpx.AsyncClient(timeout=20.0, headers={"User-Agent": REDDIT_UA}) as client:
+        async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
             r = await client.get(url, params={"limit": limit})
             r.raise_for_status()
             data = r.json() or {}

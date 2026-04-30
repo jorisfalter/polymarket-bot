@@ -145,7 +145,8 @@ async def fetch_rss_intel() -> List[Dict]:
 
 NEWSLETTER_SENDERS = [
     # Matt Levine — Money Stuff (Bloomberg)
-    "noreply@mail.bloombergbusiness.com",
+    "noreply@news.bloomberg.com",
+    "noreply@mail.bloombergbusiness.com",  # legacy
     # EventWaves
     "eventwaves@substack.com",
     # Stratechery (Ben Thompson) — sends via their own platform
