@@ -497,6 +497,12 @@ async def lifespan(app: FastAPI):
         minutes=30,  # Watch for new trades from starred politicians
         id='politician_alert_job'
     )
+    scheduler.add_job(
+        check_wsb_alerts,
+        'interval',
+        minutes=30,  # WSB buzz spikes + watchlist overlap
+        id='wsb_alert_job'
+    )
     scheduler.start()
 
     # Initial scan
@@ -1599,6 +1605,78 @@ async def remove_politician_watch(name: str = Query(...)):
     current = [n for n in get_politician_watchlist() if n.strip().lower() != name.strip().lower()]
     set_politician_watchlist(current)
     return {"ok": True, "politicians": current}
+
+
+async def check_wsb_alerts():
+    """Scheduler job: detect WSB buzz spikes + watchlist overlaps,
+    send a single email with both signals."""
+    from .reddit_data import detect_buzz_spikes, cross_reference_watchlist
+    from .stocks_data import get_watchlist
+    from .email_alerts import send_email
+    try:
+        spikes = await detect_buzz_spikes()
+        watchlist = get_watchlist()
+        overlaps = await cross_reference_watchlist(watchlist)
+
+        if not spikes and not overlaps:
+            return
+
+        # Build email
+        sections = []
+        if spikes:
+            spike_rows = "\n".join(
+                f"<tr><td><b>${s['ticker']}</b></td>"
+                f"<td>{s['kind']}</td>"
+                f"<td>{s['buzz']:,}</td>"
+                f"<td>{s['prior_buzz']:,}</td>"
+                f"<td>{s['multiple'] or 'new'}</td>"
+                f"<td><a href='{s['posts'][0]['url']}'>{s['posts'][0]['title'][:70]}</a></td></tr>"
+                for s in spikes
+            )
+            sections.append(f"""
+            <h3>📈 WSB Buzz Spikes</h3>
+            <p style="font-size:12px;color:#888;">Tickers whose r/wallstreetbets buzz has jumped meaningfully since last check.</p>
+            <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:sans-serif;font-size:13px;">
+              <tr style="background:#f0f0f0;"><th>Ticker</th><th>Type</th><th>Buzz now</th><th>Prior</th><th>×</th><th>Top post</th></tr>
+              {spike_rows}
+            </table>
+            """)
+        if overlaps:
+            overlap_rows = "\n".join(
+                f"<tr><td><b>${t['ticker']}</b></td>"
+                f"<td>{t['buzz_score']:,}</td>"
+                f"<td><a href='{t['posts'][0]['url']}'>{t['posts'][0]['title'][:70]}</a></td></tr>"
+                for t in overlaps
+            )
+            sections.append(f"""
+            <h3>🎯 Watchlist × WSB overlap</h3>
+            <p style="font-size:12px;color:#888;">Tickers on your Squeeze watchlist that ALSO have WSB buzz right now — the strongest combo signal.</p>
+            <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:sans-serif;font-size:13px;">
+              <tr style="background:#f0f0f0;"><th>Ticker</th><th>Buzz</th><th>Top post</th></tr>
+              {overlap_rows}
+            </table>
+            """)
+
+        body = f"""
+        {''.join(sections)}
+        <p style="font-size:11px;color:#888;margin-top:20px;">From your /stocks dashboard. Spikes alert once per move (state resets each cycle).</p>
+        """
+        subject_parts = []
+        if spikes:
+            subject_parts.append(f"{len(spikes)} WSB spike(s): {', '.join(s['ticker'] for s in spikes[:3])}")
+        if overlaps:
+            subject_parts.append(f"{len(overlaps)} watchlist-WSB overlap")
+        send_email(subject="🦍 " + " · ".join(subject_parts), html_body=body)
+    except Exception as e:
+        logger.error(f"WSB alert check failed: {e}")
+
+
+@app.get("/api/stocks/wsb-watchlist-overlap")
+async def get_wsb_watchlist_overlap():
+    """Live cross-reference: which WSB-buzz tickers are on your stock watchlist."""
+    from .reddit_data import cross_reference_watchlist
+    from .stocks_data import get_watchlist
+    return await cross_reference_watchlist(get_watchlist())
 
 
 async def check_politician_alerts():

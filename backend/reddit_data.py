@@ -5,13 +5,20 @@ by total upvotes/comments mentioning them.
 
 Free public Reddit JSON API. Reddit asks for a real User-Agent identifying
 the script + author. No auth required for read-only access.
+
+Includes spike detection: previous buzz scores per ticker are persisted to
+disk so we can detect when a ticker explodes (typical squeeze setup).
 """
+import json
 import re
 from collections import defaultdict
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional, Set
 import httpx
 from loguru import logger
+
+WSB_STATE_PATH = Path(__file__).parent.parent / "data" / "wsb_buzz_state.json"
 
 REDDIT_UA = "polymarket-bot/1.0 (research; joris@jorisfalter.com)"
 REDDIT_BASE = "https://www.reddit.com"
@@ -171,3 +178,79 @@ async def _gather_two(subreddit: str):
         fetch_subreddit_posts(subreddit, "hot", 50),
         fetch_subreddit_posts(subreddit, "new", 50),
     )
+
+
+def _load_wsb_state() -> Dict:
+    if not WSB_STATE_PATH.exists():
+        return {}
+    try:
+        return json.loads(WSB_STATE_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _save_wsb_state(state: Dict):
+    WSB_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    WSB_STATE_PATH.write_text(json.dumps(state, indent=2))
+
+
+async def detect_buzz_spikes(
+    spike_multiplier: float = 3.0,
+    spike_min_buzz: int = 3000,
+    new_min_buzz: int = 5000,
+) -> List[Dict]:
+    """Detect tickers whose buzz has spiked vs the last observation.
+
+    A spike fires when:
+    - The ticker was previously seen with buzz > 100 AND current buzz ≥ multiplier × prior, OR
+    - The ticker is brand-new in the buzz list AND current buzz ≥ new_min_buzz.
+
+    State is persisted to data/wsb_buzz_state.json so spikes only fire once per
+    move — the next observation overwrites the baseline.
+    """
+    pulse = await get_wsb_pulse()
+    current = {t["ticker"]: t["buzz_score"] for t in pulse.get("ticker_buzz", [])}
+    state = _load_wsb_state()
+    prior = state.get("buzz", {})
+
+    spikes: List[Dict] = []
+    for ticker, buzz in current.items():
+        prev = prior.get(ticker, 0)
+        if prev > 100 and buzz >= prev * spike_multiplier and buzz >= spike_min_buzz:
+            spikes.append({
+                "ticker": ticker,
+                "buzz": buzz,
+                "prior_buzz": prev,
+                "multiple": round(buzz / prev, 1),
+                "kind": "spike",
+                "posts": [t["posts"] for t in pulse["ticker_buzz"] if t["ticker"] == ticker][0][:2],
+            })
+        elif prev == 0 and buzz >= new_min_buzz:
+            spikes.append({
+                "ticker": ticker,
+                "buzz": buzz,
+                "prior_buzz": 0,
+                "multiple": None,
+                "kind": "new",
+                "posts": [t["posts"] for t in pulse["ticker_buzz"] if t["ticker"] == ticker][0][:2],
+            })
+
+    # Always update state to current (so we see fresh deltas next cycle)
+    state["buzz"] = current
+    state["last_check"] = datetime.utcnow().isoformat()
+    _save_wsb_state(state)
+    return spikes
+
+
+async def cross_reference_watchlist(stock_watchlist: List[str]) -> List[Dict]:
+    """Return WSB-buzz tickers that ALSO sit on the user's stock watchlist —
+    the strongest combo signal we have."""
+    if not stock_watchlist:
+        return []
+    watchlist_upper = {t.upper() for t in stock_watchlist}
+    pulse = await get_wsb_pulse()
+    overlaps = []
+    for t in pulse.get("ticker_buzz", []):
+        if t["ticker"] in watchlist_upper:
+            overlaps.append(t)
+    return overlaps

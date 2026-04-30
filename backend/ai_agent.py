@@ -842,6 +842,21 @@ class AITradingAgent:
             inconsistencies = _find_market_inconsistencies(markets)
             parts.append(build_inconsistency_summary(inconsistencies))
 
+        # WSB buzz — surface for cross-reference with Polymarket markets on the
+        # same names (e.g. NVDA earnings, TSLA delivery, MSTR price levels)
+        try:
+            from .reddit_data import get_wsb_pulse
+            wsb = await get_wsb_pulse()
+            top_buzz = wsb.get("ticker_buzz", [])[:10]
+            if top_buzz:
+                lines = ["## WSB Ticker Buzz (r/wallstreetbets)"]
+                lines.append("Retail-flow leading indicator. If a Polymarket market exists on a hot WSB ticker (earnings beat, price level, election outcome), the WSB momentum is a soft signal.")
+                for t in top_buzz:
+                    lines.append(f"- ${t['ticker']} | buzz {t['buzz_score']:,} | {t['posts'][0]['title'][:80]}")
+                parts.append("\n".join(lines))
+        except Exception as e:
+            logger.debug(f"WSB feed skipped: {e}")
+
         # Leaderboard (top traders) — annotate with cached specializations
         try:
             leaders = await tracker.fetch_leaderboard(order_by="pnl", limit=10)

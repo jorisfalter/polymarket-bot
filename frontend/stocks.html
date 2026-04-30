@@ -164,7 +164,9 @@
         function fmtMoney(v) { if (v == null) return '–'; if (v >= 1e9) return '$' + (v/1e9).toFixed(2) + 'B'; if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M'; if (v >= 1e3) return '$' + (v/1e3).toFixed(1) + 'K'; return '$' + v.toFixed(2); }
         function partyClass(p) { if (p === 'D') return 'dem'; if (p === 'R') return 'rep'; return ''; }
 
-        // Squeeze setups
+        // Squeeze setups (cross-referenced with WSB buzz)
+        let _wsbBuzzMap = {};
+
         async function loadSqueezes() {
             const r = await fetch('/api/stocks/squeeze-setups');
             const items = await r.json();
@@ -177,9 +179,12 @@
                 const tier = score >= 30 ? 'high' : score >= 15 ? 'med' : 'low';
                 const change = s.change_pct;
                 const polCount = s.politician_trades_30d || 0;
-                return `<div class="squeeze-row">
+                const wsbBuzz = _wsbBuzzMap[s.ticker];
+                const wsbBadge = wsbBuzz ? ` · 🦍 <b>WSB buzz ${wsbBuzz.toLocaleString()}</b>` : '';
+                const isOverlap = wsbBuzz && wsbBuzz >= 1000;
+                return `<div class="squeeze-row" ${isOverlap ? 'style="background:rgba(255,170,0,0.05);border-left:3px solid var(--accent-warning);"' : ''}>
                     <div class="ticker-block">
-                        <div class="t">${escapeHtml(s.ticker)}</div>
+                        <div class="t">${escapeHtml(s.ticker)}${isOverlap ? ' 🔥' : ''}</div>
                         <div class="p">$${(s.price || 0).toFixed(2)}${change != null ? ` <span class="${change >= 0 ? 'pnl-positive' : 'pnl-negative'}">${(change >= 0 ? '+' : '') + (change*100).toFixed(2)}%</span>` : ''}</div>
                     </div>
                     <div class="meta">
@@ -189,6 +194,7 @@
                             ${s.short_ratio_days_to_cover != null ? ` · DTC: ${s.short_ratio_days_to_cover.toFixed(1)}d` : ''}
                             ${s.market_cap ? ` · cap ${fmtMoney(s.market_cap)}` : ''}
                             ${polCount ? ` · 🏛️ ${polCount} pol trades 30d` : ''}
+                            ${wsbBadge}
                         </div>
                     </div>
                     <div class="score ${tier}">
@@ -383,6 +389,14 @@
             try {
                 const r = await fetch('/api/stocks/wsb');
                 const d = await r.json();
+
+                // Populate cross-reference map for squeeze panel
+                _wsbBuzzMap = {};
+                (d.ticker_buzz || []).forEach(t => { _wsbBuzzMap[t.ticker] = t.buzz_score; });
+                // Re-render squeezes with overlap highlighting
+                if (document.getElementById('squeeze-count').textContent !== '0') {
+                    loadSqueezes();
+                }
 
                 // Ticker buzz
                 const buzzEl = document.getElementById('wsb-buzz');
