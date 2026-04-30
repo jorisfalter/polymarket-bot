@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 COPY animation-showcase.html .
+COPY TRADING_STRATEGIES.md .
+COPY docs/ ./docs/
 
 # Expose port
 EXPOSE 8000
