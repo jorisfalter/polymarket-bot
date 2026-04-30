@@ -2759,3 +2759,59 @@ body::after {
     }
 }
 
+
+/* ===== Light theme override ===== */
+html[data-theme="light"] {
+    --bg-primary: #f6f7fb;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f0f1f7;
+    --bg-card: #ffffff;
+    --bg-hover: #ecedf3;
+
+    --accent-primary: #00a86b;
+    --accent-secondary: #0099cc;
+    --accent-warning: #cc8800;
+    --accent-danger: #cc2244;
+    --accent-purple: #7744cc;
+
+    --text-primary: #1a1a25;
+    --text-secondary: #555566;
+    --text-muted: #99aabb;
+
+    --severity-critical: #cc2244;
+    --severity-high: #cc5522;
+    --severity-medium: #cc8800;
+    --severity-low: #0099cc;
+
+    --border-color: #d8dae3;
+    --border-glow: rgba(0, 168, 107, 0.3);
+
+    --shadow-glow: 0 0 14px rgba(0, 168, 107, 0.1);
+    --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme="light"] body::before {
+    background:
+        radial-gradient(ellipse at 20% 20%, rgba(0, 168, 107, 0.04) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(0, 153, 204, 0.04) 0%, transparent 50%);
+}
+html[data-theme="light"] body::after {
+    opacity: 0.3;
+}
+
+/* Theme toggle button (placed in header) */
+.theme-toggle {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    margin-left: 12px;
+}
+.theme-toggle:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}

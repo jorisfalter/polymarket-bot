@@ -8,6 +8,7 @@ Run with: uvicorn backend.main:app --reload
 """
 import asyncio
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional
 from contextlib import asynccontextmanager
 import uuid
@@ -1330,6 +1331,76 @@ async def get_daily_summary_data():
     return generate_daily_summary()
 
 
+@app.get("/api/intel/newsletters")
+async def get_newsletters():
+    """Recent newsletter emails (Matt Levine, EventWaves, etc.) pulled from Gmail."""
+    from .intel_feeds import fetch_gmail_newsletters
+    items = await fetch_gmail_newsletters()
+    return items
+
+
+# Manual research ideas inbox — paste a Matt Levine excerpt or your own thesis,
+# the agent picks it up next cycle. File-backed so it survives restarts.
+import json as _json
+RESEARCH_IDEAS_PATH = Path(__file__).parent.parent / "data" / "research_ideas.jsonl"
+
+
+@app.get("/api/research/ideas")
+async def list_research_ideas(limit: int = Query(50, le=200)):
+    """List manually-added research ideas, most recent first."""
+    if not RESEARCH_IDEAS_PATH.exists():
+        return []
+    items = []
+    for line in RESEARCH_IDEAS_PATH.read_text().strip().split("\n"):
+        if line:
+            try:
+                items.append(_json.loads(line))
+            except _json.JSONDecodeError:
+                continue
+    items.reverse()
+    return items[:limit]
+
+
+@app.post("/api/research/ideas")
+async def add_research_idea(payload: Dict):
+    """Append a research idea. Body: {title, source, body, tags?}."""
+    title = (payload.get("title") or "").strip()[:200]
+    body = (payload.get("body") or "").strip()[:20000]
+    if not title or not body:
+        return {"ok": False, "error": "title and body required"}
+    entry = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "title": title,
+        "source": (payload.get("source") or "manual").strip()[:100],
+        "tags": payload.get("tags") or [],
+        "body": body,
+    }
+    RESEARCH_IDEAS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(RESEARCH_IDEAS_PATH, "a") as f:
+        f.write(_json.dumps(entry) + "\n")
+    return {"ok": True, "entry": entry}
+
+
+@app.delete("/api/research/ideas/{ts}")
+async def delete_research_idea(ts: str):
+    """Delete an idea by timestamp."""
+    if not RESEARCH_IDEAS_PATH.exists():
+        return {"ok": False}
+    lines = RESEARCH_IDEAS_PATH.read_text().strip().split("\n")
+    kept = []
+    for line in lines:
+        if not line:
+            continue
+        try:
+            e = _json.loads(line)
+            if e.get("timestamp") != ts:
+                kept.append(line)
+        except _json.JSONDecodeError:
+            kept.append(line)
+    RESEARCH_IDEAS_PATH.write_text("\n".join(kept) + ("\n" if kept else ""))
+    return {"ok": True}
+
+
 @app.get("/agent")
 async def serve_agent():
     return FileResponse(
@@ -1368,6 +1439,31 @@ async def serve_trades():
         "frontend/trades.html",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
     )
+
+
+@app.get("/research")
+async def serve_research():
+    return FileResponse(
+        "frontend/research.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
+@app.get("/playbook")
+async def serve_playbook():
+    return FileResponse(
+        "frontend/playbook.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
+@app.get("/api/playbook")
+async def get_playbook_content():
+    """Serve TRADING_STRATEGIES.md content for the playbook page."""
+    md_path = Path(__file__).parent.parent / "TRADING_STRATEGIES.md"
+    if not md_path.exists():
+        return {"content": "# Playbook not found"}
+    return {"content": md_path.read_text()}
 
 
 @app.get("/animations")

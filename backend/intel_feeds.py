@@ -188,15 +188,17 @@ async def fetch_gmail_newsletters() -> List[Dict]:
                     else:
                         body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
 
-                    # Strip to first 500 chars of substance
+                    # Matt Levine emails are long — trading ideas are mid-article.
+                    # Capture up to 8k chars; the agent prompt builder slices what it needs.
                     import re
-                    body = re.sub(r"\s+", " ", body).strip()[:500]
+                    body = re.sub(r"\s+", " ", body).strip()[:8000]
 
                     results.append({
                         "source": sender.split("@")[0],
-                        "subject": subject[:100],
-                        "preview": body[:400],
-                        "date": msg["Date"][:20] if msg["Date"] else "",
+                        "subject": subject[:200],
+                        "preview": body[:400],   # short preview for dashboard rows
+                        "body": body,             # full body for the agent prompt
+                        "date": msg["Date"][:32] if msg["Date"] else "",
                     })
             except Exception as e:
                 logger.debug(f"Gmail fetch error for {sender}: {e}")
@@ -230,14 +232,18 @@ async def fetch_all_intel() -> str:
                 lines.append(f"  {item['summary'][:150]}")
         parts.append("\n".join(lines))
 
-    # Gmail newsletters
+    # Gmail newsletters — pass through fuller bodies. Matt Levine has trading
+    # ideas (squeeze setups, regulatory plays, weird arbs) that we want the
+    # agent to reason about, not just glance at.
     newsletters = await fetch_gmail_newsletters()
     if newsletters:
-        lines = ["## Newsletter Intel (Gmail)"]
+        lines = ["## Newsletter Intel (Gmail) — Matt Levine, EventWaves, etc."]
+        lines.append("Skim each for: ticker mentions, 13D/13G filings, short squeeze candidates, regulatory plays, weird arbs. If a story is actionable on Polymarket, surface it under Strategy 7 (Own Conviction) or 9 (Asymmetric Bet).")
         for item in newsletters:
-            lines.append(f"- **{item['source']}**: {item['subject']}")
-            if item.get("preview"):
-                lines.append(f"  {item['preview'][:300]}")
+            lines.append(f"\n### {item['source']} — {item['subject']}")
+            lines.append(f"_{item.get('date','')}_")
+            body = item.get("body") or item.get("preview", "")
+            lines.append(body[:3500])
         parts.append("\n".join(lines))
 
     if not parts:
