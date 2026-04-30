@@ -133,6 +133,10 @@ class Settings(BaseSettings):
     airtable_pat: Optional[str] = None                    # Personal Access Token
     airtable_base_id: Optional[str] = None                # Base ID (appXXXXX)
 
+    # Finnhub for congressional trading data (free tier: 60 calls/min)
+    # Sign up: https://finnhub.io/register → grab API key
+    finnhub_api_key: Optional[str] = None
+
     # Database
     database_url: str = "sqlite+aiosqlite:///./insider_detector.db"
     

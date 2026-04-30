@@ -12,10 +12,11 @@ from typing import Dict, List, Optional
 import httpx
 from loguru import logger
 
-# Quiver's public live endpoint is the most reliable free feed for STOCK Act
-# disclosures. Returns recent congressional trades with ExcessReturn vs SPY
-# already calculated.
+# Quiver's public live endpoint flipped to auth-required in 2026, so we now
+# use Finnhub which has a free tier (60 calls/min) for congressional trading.
+# Set FINNHUB_API_KEY in .env to enable.
 QUIVER_CONGRESS_URL = "https://api.quiverquant.com/beta/live/congresstrading"
+FINNHUB_BASE = "https://finnhub.io/api/v1"
 
 WATCHLIST_PATH = Path(__file__).parent.parent / "data" / "stocks_watchlist.json"
 
@@ -25,9 +26,10 @@ _pol_cache_ttl = timedelta(hours=12)
 
 
 async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
-    """Fetch recent congressional disclosures from Quiver Quantitative's public
-    live endpoint. Includes ExcessReturn vs SPY which lets us rank by who's
-    actually outperforming."""
+    """Fetch congressional disclosures. Tries Finnhub (free tier, 60/min, needs
+    API key) first; falls back to Quiver if accessible. Returns empty list if
+    nothing works — UI shows a configure-API-key message."""
+    from .config import settings
     now = datetime.utcnow()
     if (
         _pol_cache["timestamp"]
@@ -37,33 +39,83 @@ async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
         return _filter_recent(_pol_cache["trades"], days_back)
 
     trades: List[Dict] = []
-    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(QUIVER_CONGRESS_URL, headers=headers)
-            r.raise_for_status()
-            items = r.json() or []
-            for it in items:
-                trades.append(_normalize_quiver(it))
-        trades.sort(key=lambda x: x.get("transaction_date", ""), reverse=True)
-        _pol_cache["trades"] = trades
-        _pol_cache["timestamp"] = now
-        logger.info(f"Politician trades cached: {len(trades)} total")
-    except Exception as e:
-        logger.error(f"Politician trades fetch error: {e}")
 
+    if settings.finnhub_api_key:
+        trades = await _fetch_finnhub_congress(settings.finnhub_api_key, days_back=180)
+    if not trades:
+        # Last-ditch try at Quiver (works only if they re-open public access)
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r = await client.get(QUIVER_CONGRESS_URL, headers={"User-Agent": "Mozilla/5.0"})
+                if r.status_code == 200:
+                    items = r.json() or []
+                    if isinstance(items, list):
+                        for it in items:
+                            trades.append(_normalize_quiver(it))
+        except Exception as e:
+            logger.debug(f"Quiver fallback failed (expected): {e}")
+
+    trades.sort(key=lambda x: x.get("transaction_date", ""), reverse=True)
+    _pol_cache["trades"] = trades
+    _pol_cache["timestamp"] = now
+    logger.info(f"Politician trades cached: {len(trades)} total")
     return _filter_recent(trades, days_back)
 
 
+async def _fetch_finnhub_congress(api_key: str, days_back: int = 180) -> List[Dict]:
+    """Fetch from Finnhub. Their endpoint is per-symbol — but they also have an
+    overall feed under stock/congressional-trading?from=...&to=...&symbol=
+    Without symbol it returns recent across all members. Free tier handles this."""
+    from_dt = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    to_dt = datetime.utcnow().strftime("%Y-%m-%d")
+    out: List[Dict] = []
+    headers = {"X-Finnhub-Token": api_key}
+    try:
+        async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
+            r = await client.get(
+                f"{FINNHUB_BASE}/stock/congressional-trading",
+                params={"from": from_dt, "to": to_dt},
+            )
+            r.raise_for_status()
+            data = r.json() or {}
+        items = data.get("data") or []
+        for it in items:
+            out.append(_normalize_finnhub(it))
+    except Exception as e:
+        logger.warning(f"Finnhub congress fetch failed: {e}")
+    return out
+
+
+def _normalize_finnhub(item: Dict) -> Dict:
+    """Finnhub shape → common shape."""
+    raw_type = (item.get("transactionType") or "").lower()
+    type_norm = "purchase" if "purchase" in raw_type else "sale" if "sale" in raw_type else raw_type
+    return {
+        "chamber": "?",  # Finnhub doesn't always include chamber
+        "representative": item.get("name") or "?",
+        "party": "",
+        "ticker": (item.get("symbol") or "").upper(),
+        "asset": item.get("assetName") or "",
+        "type": type_norm,
+        "amount": item.get("ownerType") or "",
+        "amount_usd": float(item.get("amountFrom") or 0),
+        "amount_to_usd": float(item.get("amountTo") or 0),
+        "transaction_date": item.get("transactionDate") or "",
+        "disclosure_date": item.get("filingDate") or "",
+        "excess_return": None,
+        "price_change": None,
+    }
+
+
 def _normalize_quiver(item: Dict) -> Dict:
-    """Quiver's live shape → our common shape."""
+    """Quiver's live shape → our common shape (kept for fallback)."""
     return {
         "chamber": item.get("House") or "?",
         "representative": item.get("Representative") or "?",
         "party": item.get("Party") or "",
         "ticker": (item.get("Ticker") or "").upper(),
         "asset": item.get("Description") or "",
-        "type": (item.get("Transaction") or "").lower(),  # purchase / sale
+        "type": (item.get("Transaction") or "").lower(),
         "amount": item.get("Range") or "",
         "amount_usd": float(item.get("Amount") or 0),
         "transaction_date": item.get("TransactionDate") or "",
@@ -148,7 +200,7 @@ def set_watchlist(tickers: List[str]):
     WATCHLIST_PATH.write_text(json.dumps({"tickers": seen}, indent=2))
 
 
-async def top_politicians_by_alpha(min_trades: int = 5) -> List[Dict]:
+async def top_politicians_by_alpha(min_trades: int = 2) -> List[Dict]:
     """Aggregate the politician trade feed by representative and rank by mean
     excess return. The Pelosi-tracker move: who's actually outperforming?"""
     trades = await fetch_politician_trades(days_back=180)

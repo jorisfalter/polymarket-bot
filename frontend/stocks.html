@@ -205,10 +205,16 @@
 
         // Top politicians
         async function loadTopPoliticians() {
-            const r = await fetch('/api/stocks/top-politicians?min_trades=5');
+            const r = await fetch('/api/stocks/top-politicians?min_trades=2');
             const items = await r.json();
             const el = document.getElementById('top-politicians-list');
-            if (!items.length) { el.innerHTML = '<div class="empty">No data.</div>'; return; }
+            if (!items.length) {
+                el.innerHTML = `<div class="empty" style="text-align:left;line-height:1.6;">
+                    No politician data available.<br>
+                    <span style="font-size:11px;color:var(--text-muted);">Quiver dropped public access in 2026. Set <code>FINNHUB_API_KEY</code> in <code>.env</code> on the VPS — free tier at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent-secondary);">finnhub.io/register</a>.</span>
+                </div>`;
+                return;
+            }
             const top = items.slice(0, 12);
             el.innerHTML = `<table class="tbl">
                 <tr><th>Representative</th><th class="num">Avg α</th><th class="num">Beats SPY</th><th class="num">Trades</th></tr>
@@ -241,7 +247,17 @@
             });
             const el = document.getElementById('trades-list');
             document.getElementById('trades-count').textContent = trades.length;
-            if (!trades.length) { el.innerHTML = '<div class="empty">No trades match filters.</div>'; return; }
+            if (!trades.length) {
+                if (!_allTrades.length) {
+                    el.innerHTML = `<div class="empty" style="text-align:left;line-height:1.6;">
+                        No politician feed available.<br>
+                        <span style="font-size:11px;color:var(--text-muted);">Quiver Quantitative dropped public access in 2026. Set <code>FINNHUB_API_KEY</code> in <code>.env</code> (free tier 60 calls/min, sign up at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent-secondary);">finnhub.io/register</a>).</span>
+                    </div>`;
+                } else {
+                    el.innerHTML = '<div class="empty">No trades match filters.</div>';
+                }
+                return;
+            }
             const top = trades.slice(0, 100);
             el.innerHTML = `<table class="tbl">
                 <tr><th>Tx Date</th><th>Representative</th><th>Ticker</th><th>Type</th><th>Range</th><th class="num">α vs SPY</th></tr>
@@ -268,13 +284,22 @@
                 if (!items.length) { el.innerHTML = '<div class="empty">No filings.</div>'; return; }
                 el.innerHTML = `<table class="tbl">
                     <tr><th>Date</th><th>Ticker</th><th>Issuer</th><th>Filer</th></tr>
-                    ${items.map(e => `<tr>
-                        <td><span style="font-family:var(--font-mono);font-size:11px;">${escapeHtml(e.file_date || '')}</span></td>
-                        <td><span class="ticker">${escapeHtml(e.ticker || '–')}</span></td>
-                        <td>${e.link ? `<a href="${escapeHtml(e.link)}" target="_blank" style="color:var(--text-primary);text-decoration:none;">${escapeHtml((e.issuer || '?').substring(0, 35))}</a>` : escapeHtml((e.issuer || '?').substring(0, 35))}</td>
-                        <td style="font-size:11px;color:var(--text-secondary);">${escapeHtml((e.reporter || '').substring(0, 30))}</td>
-                    </tr>`).join('')}
-                </table>`;
+                    ${items.map(e => {
+                        const issuerLabel = (e.issuer && e.issuer !== '?') ? e.issuer.substring(0, 35) : 'view filing';
+                        const issuerCell = e.link
+                            ? `<a href="${escapeHtml(e.link)}" target="_blank" rel="noopener" style="color:var(--text-primary);text-decoration:underline;text-decoration-color:var(--border-color);">${escapeHtml(issuerLabel)}</a>`
+                            : escapeHtml(issuerLabel);
+                        return `<tr>
+                            <td><span style="font-family:var(--font-mono);font-size:11px;">${escapeHtml(e.file_date || '')}</span></td>
+                            <td><span class="ticker">${escapeHtml(e.ticker || '–')}</span></td>
+                            <td>${issuerCell}</td>
+                            <td style="font-size:11px;color:var(--text-secondary);">${escapeHtml((e.reporter || '').substring(0, 30))}</td>
+                        </tr>`;
+                    }).join('')}
+                </table>
+                <div style="margin-top:10px;font-size:11px;color:var(--text-muted);line-height:1.4;">
+                    Click "view filing" / company name to open the Form 4 detail (purchase vs sale + share count visible there).
+                </div>`;
             } catch (e) { console.error('form4', e); }
         }
 
@@ -287,14 +312,27 @@
                 if (!items.length) { el.innerHTML = '<div class="empty">No filings.</div>'; return; }
                 el.innerHTML = `<table class="tbl">
                     <tr><th>Date</th><th>Form</th><th>Ticker</th><th>Subject</th><th>Filer</th></tr>
-                    ${items.map(e => `<tr>
-                        <td><span style="font-family:var(--font-mono);font-size:11px;">${escapeHtml(e.file_date || '')}</span></td>
-                        <td><span class="pill ${e.is_amendment ? 'exchange' : (e.form || '').includes('13D') ? 'sale' : 'purchase'}">${escapeHtml(e.form || '?')}</span></td>
-                        <td><span class="ticker">${escapeHtml(e.ticker || '–')}</span></td>
-                        <td>${e.link ? `<a href="${escapeHtml(e.link)}" target="_blank" style="color:var(--text-primary);text-decoration:none;">${escapeHtml((e.subject || '?').substring(0, 30))}</a>` : escapeHtml((e.subject || '?').substring(0, 30))}</td>
-                        <td style="font-size:11px;">${escapeHtml((e.filer || '').substring(0, 30))}${e.activist ? ` <span class="pill exchange">★ ${escapeHtml(e.activist)}</span>` : ''}</td>
-                    </tr>`).join('')}
-                </table>`;
+                    ${items.map(e => {
+                        // Subject column: prefer the named company; if "?" or missing, use filer.
+                        // Always link if we have a SEC URL.
+                        const subjectLabel = (e.subject && e.subject !== '?')
+                            ? e.subject.substring(0, 30)
+                            : (e.filer ? '(see filer →)' : 'view filing');
+                        const subjectCell = e.link
+                            ? `<a href="${escapeHtml(e.link)}" target="_blank" rel="noopener" style="color:var(--text-primary);text-decoration:underline;text-decoration-color:var(--border-color);">${escapeHtml(subjectLabel)}</a>`
+                            : escapeHtml(subjectLabel);
+                        return `<tr>
+                            <td><span style="font-family:var(--font-mono);font-size:11px;">${escapeHtml(e.file_date || '')}</span></td>
+                            <td><span class="pill ${e.is_amendment ? 'exchange' : (e.form || '').includes('13D') ? 'sale' : 'purchase'}">${escapeHtml(e.form || '?')}</span></td>
+                            <td><span class="ticker">${escapeHtml(e.ticker || '–')}</span></td>
+                            <td>${subjectCell}</td>
+                            <td style="font-size:11px;">${escapeHtml((e.filer || '').substring(0, 30))}${e.activist ? ` <span class="pill exchange">★ ${escapeHtml(e.activist)}</span>` : ''}</td>
+                        </tr>`;
+                    }).join('')}
+                </table>
+                <div style="margin-top:10px;font-size:11px;color:var(--text-muted);line-height:1.4;">
+                    Click any subject to open the SEC filing. SEC sometimes lists the filer first instead of the issuer — when the subject column shows <i>(see filer →)</i>, the link opens the filing where the actual subject company is named.
+                </div>`;
             } catch (e) { console.error('sc13', e); }
         }
 

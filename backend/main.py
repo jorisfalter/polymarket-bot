@@ -1534,7 +1534,7 @@ async def get_ticker_details(ticker: str):
 
 
 @app.get("/api/stocks/top-politicians")
-async def get_top_politicians(min_trades: int = Query(5, le=50)):
+async def get_top_politicians(min_trades: int = Query(2, le=50)):
     """Politicians ranked by mean excess return vs SPY."""
     from .stocks_data import top_politicians_by_alpha
     return await top_politicians_by_alpha(min_trades=min_trades)
