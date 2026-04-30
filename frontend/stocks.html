@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stocks | AI Trading</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=16">
+    <script src="/static/theme.js?v=2"></script>
+    <style>
+        .board-tabs { display: flex; gap: 4px; padding: 4px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 20px; }
+        .board-tab { flex: 1; text-align: center; padding: 10px 16px; border-radius: 6px; color: var(--text-secondary); text-decoration: none; font-weight: 600; font-size: 14px; transition: all 0.15s; }
+        .board-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+        .board-tab.active { background: var(--accent-primary); color: var(--bg-primary); }
+
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 1024px) { .grid-2 { grid-template-columns: 1fr; } }
+
+        .panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; }
+        .panel h3 { font-size: 14px; text-transform: uppercase; color: var(--text-secondary); margin: 0 0 14px 0; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center; }
+        .panel h3 .count { font-size: 11px; background: rgba(0,212,255,0.15); color: var(--accent-secondary); padding: 2px 8px; border-radius: 4px; }
+        .panel .sub { font-size: 11px; color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+        /* Watchlist control */
+        .watch-form { display: flex; gap: 8px; margin-bottom: 12px; }
+        .watch-form input { flex: 1; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 8px 12px; border-radius: 6px; font-family: inherit; font-size: 13px; text-transform: uppercase; }
+        .watch-form button { background: var(--accent-primary); color: var(--bg-primary); border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; }
+
+        /* Tables */
+        table.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+        table.tbl th { text-align: left; font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 6px 8px; border-bottom: 1px solid var(--border-color); font-weight: 600; letter-spacing: 0.4px; }
+        table.tbl td { padding: 8px; border-bottom: 1px solid var(--border-color); color: var(--text-primary); }
+        table.tbl tr:last-child td { border-bottom: none; }
+        table.tbl .num { font-family: var(--font-mono); text-align: right; }
+        table.tbl .ticker { font-family: var(--font-mono); font-weight: 600; color: var(--accent-secondary); }
+        table.tbl tr:hover td { background: var(--bg-tertiary); }
+
+        .pill { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 3px; font-weight: 600; text-transform: uppercase; }
+        .pill.purchase, .pill.buy { background: rgba(0,255,136,0.15); color: var(--accent-primary); }
+        .pill.sale, .pill.sell { background: rgba(255,51,102,0.15); color: var(--accent-danger); }
+        .pill.exchange { background: rgba(170,102,255,0.15); color: var(--accent-purple); }
+        .pill.dem { background: rgba(0,153,204,0.15); color: #36a; }
+        .pill.rep { background: rgba(204,51,68,0.15); color: var(--accent-danger); }
+
+        .pnl-positive { color: var(--accent-primary); }
+        .pnl-negative { color: var(--accent-danger); }
+        .empty { color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px; font-style: italic; }
+        .delete-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; }
+        .delete-btn:hover { color: var(--accent-danger); }
+        .squeeze-row { padding: 12px 0; border-bottom: 1px solid var(--border-color); display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; align-items: center; }
+        .squeeze-row:last-child { border-bottom: none; }
+        .squeeze-row .ticker-block { font-family: var(--font-mono); }
+        .squeeze-row .ticker-block .t { font-size: 14px; font-weight: 700; color: var(--accent-secondary); }
+        .squeeze-row .ticker-block .p { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .squeeze-row .meta { font-size: 12px; color: var(--text-primary); line-height: 1.4; }
+        .squeeze-row .meta .name { font-weight: 600; }
+        .squeeze-row .meta .stats { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+        .squeeze-row .score { text-align: right; }
+        .squeeze-row .score .v { font-family: var(--font-mono); font-size: 16px; font-weight: 600; }
+        .squeeze-row .score.high .v { color: var(--accent-danger); }
+        .squeeze-row .score.med .v { color: var(--accent-warning); }
+        .squeeze-row .score.low .v { color: var(--text-secondary); }
+        .squeeze-row .score .label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; }
+        .filter-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+        .filter-bar input, .filter-bar select { background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 5px 10px; border-radius: 4px; font-size: 12px; font-family: inherit; }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">📈</span>
+                    <span class="logo-text">STOCKS<span class="logo-highlight">BOARD</span></span>
+                </div>
+                <span class="tagline">Squeeze setups · Politician trades · Manual execution</span>
+            </div>
+            <div class="header-right">
+                <nav class="main-nav">
+                    <a href="/agent" class="nav-link"><span class="nav-icon">🎯</span><span class="nav-text">Polymarket</span></a>
+                    <a href="/stocks" class="nav-link active"><span class="nav-icon">📈</span><span class="nav-text">Stocks</span></a>
+                    <a href="/crypto" class="nav-link"><span class="nav-icon">₿</span><span class="nav-text">Crypto</span></a>
+                </nav>
+                <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()">🌙 Dark</button>
+            </div>
+        </header>
+
+        <div class="main-content single-panel">
+            <!-- Top: watchlist + squeeze setups (combined) -->
+            <div class="grid-2">
+                <div class="panel">
+                    <h3>🐍 Squeeze Setups <span class="count" id="squeeze-count">0</span></h3>
+                    <div class="watch-form">
+                        <input id="ticker-input" placeholder="Ticker (e.g. CAR, GME)" maxlength="10">
+                        <button onclick="addTicker()">+ Watch</button>
+                    </div>
+                    <div id="squeeze-list"><div class="empty">Add a ticker to start watching.</div></div>
+                </div>
+
+                <div class="panel">
+                    <h3>🏛️ Top Politicians (180d) <span class="sub">by avg excess return vs SPY</span></h3>
+                    <div id="top-politicians-list"><div class="empty">Loading…</div></div>
+                </div>
+            </div>
+
+            <!-- Politician trades feed -->
+            <div class="panel" style="margin-top: 20px;">
+                <h3>🏛️ Recent Politician Trades <span class="count" id="trades-count">0</span></h3>
+                <div class="filter-bar">
+                    <input id="filter-rep" placeholder="Filter by representative…" oninput="renderTrades()">
+                    <input id="filter-ticker" placeholder="Filter by ticker…" oninput="renderTrades()">
+                    <select id="filter-type" onchange="renderTrades()">
+                        <option value="">All types</option>
+                        <option value="purchase">Purchases only</option>
+                        <option value="sale">Sales only</option>
+                    </select>
+                    <select id="filter-days" onchange="loadTrades()">
+                        <option value="14">Last 14 days</option>
+                        <option value="30" selected>Last 30 days</option>
+                        <option value="60">Last 60 days</option>
+                        <option value="90">Last 90 days</option>
+                    </select>
+                </div>
+                <div id="trades-list"><div class="empty">Loading…</div></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let _allTrades = [];
+
+        function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+        function fmtPct(v) { if (v == null) return '–'; return (v * 100).toFixed(1) + '%'; }
+        function fmtMoney(v) { if (v == null) return '–'; if (v >= 1e9) return '$' + (v/1e9).toFixed(2) + 'B'; if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M'; if (v >= 1e3) return '$' + (v/1e3).toFixed(1) + 'K'; return '$' + v.toFixed(2); }
+        function partyClass(p) { if (p === 'D') return 'dem'; if (p === 'R') return 'rep'; return ''; }
+
+        // Squeeze setups
+        async function loadSqueezes() {
+            const r = await fetch('/api/stocks/squeeze-setups');
+            const items = await r.json();
+            const el = document.getElementById('squeeze-list');
+            document.getElementById('squeeze-count').textContent = items.length;
+            if (!items.length) { el.innerHTML = '<div class="empty">Add tickers (above) to see live data here.</div>'; return; }
+            el.innerHTML = items.map(s => {
+                const si = s.short_interest_pct_float;
+                const score = s.squeeze_score || 0;
+                const tier = score >= 30 ? 'high' : score >= 15 ? 'med' : 'low';
+                const change = s.change_pct;
+                const polCount = s.politician_trades_30d || 0;
+                return `<div class="squeeze-row">
+                    <div class="ticker-block">
+                        <div class="t">${escapeHtml(s.ticker)}</div>
+                        <div class="p">$${(s.price || 0).toFixed(2)}${change != null ? ` <span class="${change >= 0 ? 'pnl-positive' : 'pnl-negative'}">${(change >= 0 ? '+' : '') + (change*100).toFixed(2)}%</span>` : ''}</div>
+                    </div>
+                    <div class="meta">
+                        <div class="name">${escapeHtml(s.name || '?').substring(0, 50)}</div>
+                        <div class="stats">
+                            SI: <b>${si != null ? fmtPct(si) : '–'}</b>
+                            ${s.short_ratio_days_to_cover != null ? ` · DTC: ${s.short_ratio_days_to_cover.toFixed(1)}d` : ''}
+                            ${s.market_cap ? ` · cap ${fmtMoney(s.market_cap)}` : ''}
+                            ${polCount ? ` · 🏛️ ${polCount} pol trades 30d` : ''}
+                        </div>
+                    </div>
+                    <div class="score ${tier}">
+                        <div class="v">${score}</div>
+                        <div class="label">score</div>
+                        <button class="delete-btn" onclick="removeTicker('${s.ticker}')">×</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        async function addTicker() {
+            const inp = document.getElementById('ticker-input');
+            const ticker = inp.value.trim().toUpperCase();
+            if (!ticker) return;
+            await fetch('/api/stocks/watchlist', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker}) });
+            inp.value = '';
+            loadSqueezes();
+        }
+
+        async function removeTicker(t) {
+            if (!confirm(`Stop watching ${t}?`)) return;
+            await fetch('/api/stocks/watchlist/' + t, { method: 'DELETE' });
+            loadSqueezes();
+        }
+
+        // Top politicians
+        async function loadTopPoliticians() {
+            const r = await fetch('/api/stocks/top-politicians?min_trades=5');
+            const items = await r.json();
+            const el = document.getElementById('top-politicians-list');
+            if (!items.length) { el.innerHTML = '<div class="empty">No data.</div>'; return; }
+            const top = items.slice(0, 12);
+            el.innerHTML = `<table class="tbl">
+                <tr><th>Representative</th><th class="num">Avg α</th><th class="num">Beats SPY</th><th class="num">Trades</th></tr>
+                ${top.map(p => `<tr>
+                    <td>${escapeHtml(p.representative)} <span class="pill ${partyClass(p.party)}">${escapeHtml(p.party || '?')}</span></td>
+                    <td class="num ${p.avg_excess_return >= 0 ? 'pnl-positive' : 'pnl-negative'}">${(p.avg_excess_return >= 0 ? '+' : '') + p.avg_excess_return.toFixed(1)}%</td>
+                    <td class="num">${(p.beats_spy_pct * 100).toFixed(0)}%</td>
+                    <td class="num">${p.trades}</td>
+                </tr>`).join('')}
+            </table>`;
+        }
+
+        // Trades feed
+        async function loadTrades() {
+            const days = document.getElementById('filter-days').value;
+            const r = await fetch('/api/stocks/politician-trades?days=' + days);
+            _allTrades = await r.json();
+            renderTrades();
+        }
+
+        function renderTrades() {
+            const repFilter = document.getElementById('filter-rep').value.toLowerCase();
+            const tickerFilter = document.getElementById('filter-ticker').value.toUpperCase();
+            const typeFilter = document.getElementById('filter-type').value;
+            let trades = _allTrades.filter(t => {
+                if (repFilter && !(t.representative || '').toLowerCase().includes(repFilter)) return false;
+                if (tickerFilter && !(t.ticker || '').includes(tickerFilter)) return false;
+                if (typeFilter && t.type !== typeFilter) return false;
+                return true;
+            });
+            const el = document.getElementById('trades-list');
+            document.getElementById('trades-count').textContent = trades.length;
+            if (!trades.length) { el.innerHTML = '<div class="empty">No trades match filters.</div>'; return; }
+            const top = trades.slice(0, 100);
+            el.innerHTML = `<table class="tbl">
+                <tr><th>Tx Date</th><th>Representative</th><th>Ticker</th><th>Type</th><th>Range</th><th class="num">α vs SPY</th></tr>
+                ${top.map(t => {
+                    const er = t.excess_return;
+                    return `<tr>
+                        <td><span style="font-family:var(--font-mono);font-size:11px;">${escapeHtml(t.transaction_date || '')}</span></td>
+                        <td>${escapeHtml(t.representative)} ${t.party ? `<span class="pill ${partyClass(t.party)}">${escapeHtml(t.party)}</span>` : ''}</td>
+                        <td><span class="ticker">${escapeHtml(t.ticker || '–')}</span></td>
+                        <td><span class="pill ${t.type}">${escapeHtml(t.type || '?')}</span></td>
+                        <td style="font-size:11px;">${escapeHtml(t.amount || '')}</td>
+                        <td class="num ${er > 0 ? 'pnl-positive' : er < 0 ? 'pnl-negative' : ''}">${er != null ? (er >= 0 ? '+' : '') + er.toFixed(1) + '%' : '–'}</td>
+                    </tr>`;
+                }).join('')}
+            </table>${trades.length > 100 ? `<div style="text-align:center;color:var(--text-muted);font-size:11px;padding-top:10px;">Showing 100 of ${trades.length}.</div>` : ''}`;
+        }
+
+        document.getElementById('ticker-input').addEventListener('keydown', e => { if (e.key === 'Enter') addTicker(); });
+
+        loadSqueezes();
+        loadTopPoliticians();
+        loadTrades();
+        setInterval(loadSqueezes, 120000);  // 2 min
+        setInterval(loadTrades, 600000);    // 10 min
+    </script>
+</body>
+</html>

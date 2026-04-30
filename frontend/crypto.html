@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto | AI Trading</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=16">
+    <script src="/static/theme.js?v=2"></script>
+    <style>
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 1024px) { .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+
+        .panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; }
+        .panel h3 { font-size: 14px; text-transform: uppercase; color: var(--text-secondary); margin: 0 0 14px 0; letter-spacing: 0.5px; }
+        .panel .sub { font-size: 11px; color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+        .scoreboard { background: linear-gradient(135deg, rgba(255,170,0,0.06), rgba(0,212,255,0.06)); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .scoreboard .row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        @media (max-width: 768px) { .scoreboard .row { grid-template-columns: repeat(2, 1fr); } }
+        .scoreboard .stat { text-align: center; }
+        .scoreboard .stat .value { font-family: var(--font-mono); font-size: 22px; font-weight: 600; color: var(--text-primary); }
+        .scoreboard .stat .label { font-size: 10px; text-transform: uppercase; color: var(--text-secondary); margin-top: 4px; letter-spacing: 0.5px; }
+        .pnl-positive { color: var(--accent-primary); }
+        .pnl-negative { color: var(--accent-danger); }
+        .pnl-neutral { color: var(--accent-secondary); }
+
+        table.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+        table.tbl th { text-align: left; font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 6px 8px; border-bottom: 1px solid var(--border-color); font-weight: 600; letter-spacing: 0.4px; }
+        table.tbl td { padding: 8px; border-bottom: 1px solid var(--border-color); color: var(--text-primary); }
+        table.tbl tr:last-child td { border-bottom: none; }
+        table.tbl .num { font-family: var(--font-mono); text-align: right; }
+        table.tbl tr:hover td { background: var(--bg-tertiary); }
+
+        .funding-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; font-size: 11px; }
+        .funding-asset { padding: 12px; background: var(--bg-tertiary); border-radius: 6px; text-align: center; }
+        .funding-asset .asset { font-family: var(--font-mono); font-weight: 700; font-size: 14px; color: var(--accent-secondary); }
+        .funding-asset .rate { font-family: var(--font-mono); font-size: 14px; margin-top: 4px; }
+        .funding-asset .label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; }
+
+        .signal-banner { background: var(--bg-tertiary); border-left: 3px solid var(--accent-warning); padding: 10px 14px; margin-bottom: 14px; font-size: 12px; color: var(--text-primary); border-radius: 0 6px 6px 0; line-height: 1.5; }
+        .signal-banner.bullish { border-left-color: var(--accent-primary); }
+        .signal-banner.bearish { border-left-color: var(--accent-danger); }
+        .signal-banner b { color: var(--accent-secondary); }
+        .empty { color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px; font-style: italic; }
+        .updated { font-size: 10px; color: var(--text-muted); float: right; font-family: var(--font-mono); }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">₿</span>
+                    <span class="logo-text">CRYPTO<span class="logo-highlight">BOARD</span></span>
+                </div>
+                <span class="tagline">Funding · Basis · Cross-exchange — manual execution</span>
+            </div>
+            <div class="header-right">
+                <nav class="main-nav">
+                    <a href="/agent" class="nav-link"><span class="nav-icon">🎯</span><span class="nav-text">Polymarket</span></a>
+                    <a href="/stocks" class="nav-link"><span class="nav-icon">📈</span><span class="nav-text">Stocks</span></a>
+                    <a href="/crypto" class="nav-link active"><span class="nav-icon">₿</span><span class="nav-text">Crypto</span></a>
+                </nav>
+                <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()">🌙 Dark</button>
+            </div>
+        </header>
+
+        <div class="main-content single-panel">
+            <!-- BTC summary -->
+            <div class="scoreboard">
+                <div class="row">
+                    <div class="stat"><div class="value" id="btc-spot">--</div><div class="label">BTC Spot</div></div>
+                    <div class="stat"><div class="value" id="btc-perp">--</div><div class="label">BTC Perp (mark)</div></div>
+                    <div class="stat"><div class="value" id="btc-basis">--</div><div class="label">Basis</div></div>
+                    <div class="stat"><div class="value" id="cross-spread">--</div><div class="label">Cross-exchange Δ</div></div>
+                </div>
+            </div>
+
+            <!-- Auto-detected signals -->
+            <div id="signals-area"></div>
+
+            <!-- Per-asset funding cards -->
+            <div class="panel" style="margin-bottom: 20px;">
+                <h3>💸 Funding Rates <span class="sub">— annualized, by exchange</span><span class="updated" id="funding-updated"></span></h3>
+                <div id="funding-content"><div class="empty">Loading…</div></div>
+            </div>
+
+            <!-- Cross-exchange spread + perp/spot basis -->
+            <div class="grid-2">
+                <div class="panel">
+                    <h3>🔁 Cross-exchange BTC <span class="sub">— price across venues</span></h3>
+                    <div id="spread-content"><div class="empty">Loading…</div></div>
+                </div>
+                <div class="panel">
+                    <h3>📊 Perp vs Spot Basis <span class="sub">— BTC</span></h3>
+                    <div id="basis-content"><div class="empty">Loading…</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function fmt(n, opts={}) {
+            if (n == null || isNaN(n)) return '–';
+            const sign = (opts.sign && n >= 0) ? '+' : '';
+            return sign + Number(n).toLocaleString('en-US', { maximumFractionDigits: opts.dp ?? 2, minimumFractionDigits: opts.dp ?? 2 });
+        }
+        function fmtMoney(n, dp=2) { if (n == null) return '–'; return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: dp }); }
+        function fmtPct(n, dp=3) { if (n == null) return '–'; return Number(n).toFixed(dp) + '%'; }
+        function pnlClass(n) { if (n == null) return ''; return n > 0 ? 'pnl-positive' : n < 0 ? 'pnl-negative' : ''; }
+        function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+        function renderHeadline(data) {
+            const basis = data.btc_basis || {};
+            const spot = basis.spot;
+            const perp = basis.perp;
+            const basisPct = basis.basis_pct;
+
+            document.getElementById('btc-spot').textContent = spot ? fmtMoney(spot, 0) : '--';
+            document.getElementById('btc-perp').textContent = perp ? fmtMoney(perp, 0) : '--';
+            const basisEl = document.getElementById('btc-basis');
+            basisEl.textContent = basisPct != null ? fmtPct(basisPct) : '--';
+            basisEl.className = 'value ' + pnlClass(basisPct);
+
+            const sp = data.exchange_spread || [];
+            if (sp.length >= 2) {
+                const prices = sp.map(q => q.price).filter(p => p > 0);
+                const max = Math.max(...prices);
+                const min = Math.min(...prices);
+                const spread = ((max - min) / min) * 100;
+                const el = document.getElementById('cross-spread');
+                el.textContent = fmtPct(spread);
+                el.className = 'value ' + (spread > 0.1 ? 'pnl-positive' : 'pnl-neutral');
+            }
+        }
+
+        function renderFunding(rows) {
+            // Group by exchange, show per asset
+            const byExchange = {};
+            for (const r of rows) {
+                if (!byExchange[r.exchange]) byExchange[r.exchange] = {};
+                byExchange[r.exchange][r.asset] = r;
+            }
+            const exchanges = Object.keys(byExchange).sort();
+            const assets = ['BTC', 'ETH', 'SOL'];
+            let html = `<table class="tbl">
+                <tr><th>Exchange</th>${assets.map(a => `<th class="num">${a} (annualized)</th>`).join('')}</tr>
+                ${exchanges.map(ex => `<tr>
+                    <td><b>${escapeHtml(ex)}</b></td>
+                    ${assets.map(a => {
+                        const r = byExchange[ex][a];
+                        if (!r) return '<td class="num">–</td>';
+                        const v = r.annualized_pct;
+                        return `<td class="num ${pnlClass(v)}">${fmt(v, {sign: true})}%</td>`;
+                    }).join('')}
+                </tr>`).join('')}
+            </table>`;
+            document.getElementById('funding-content').innerHTML = html;
+            document.getElementById('funding-updated').textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function renderSpread(rows) {
+            if (!rows.length) { document.getElementById('spread-content').innerHTML = '<div class="empty">No data.</div>'; return; }
+            rows.sort((a, b) => b.price - a.price);
+            document.getElementById('spread-content').innerHTML = `<table class="tbl">
+                <tr><th>Exchange</th><th>Pair</th><th class="num">Price</th><th class="num">vs Mid</th></tr>
+                ${rows.map(r => `<tr>
+                    <td><b>${escapeHtml(r.exchange)}</b></td>
+                    <td style="font-family:var(--font-mono);font-size:10px;">${escapeHtml(r.pair)}</td>
+                    <td class="num">${fmtMoney(r.price, 2)}</td>
+                    <td class="num ${pnlClass(r.spread_pct)}">${fmt(r.spread_pct, {sign: true, dp: 3})}%</td>
+                </tr>`).join('')}
+            </table>`;
+        }
+
+        function renderBasis(b) {
+            if (!b || b.spot == null || b.perp == null) {
+                document.getElementById('basis-content').innerHTML = '<div class="empty">No data.</div>'; return;
+            }
+            const diff = b.perp - b.spot;
+            document.getElementById('basis-content').innerHTML = `<table class="tbl">
+                <tr><td>Spot (Binance)</td><td class="num">${fmtMoney(b.spot, 2)}</td></tr>
+                <tr><td>Perp mark</td><td class="num">${fmtMoney(b.perp, 2)}</td></tr>
+                <tr><td>Diff</td><td class="num ${pnlClass(diff)}">${fmt(diff, {sign:true, dp:2})}</td></tr>
+                <tr><td>Basis %</td><td class="num ${pnlClass(b.basis_pct)}"><b>${fmt(b.basis_pct, {sign:true, dp:3})}%</b></td></tr>
+            </table>
+            <div style="margin-top:10px;font-size:11px;color:var(--text-secondary);line-height:1.5;">
+                ${b.basis_pct > 0.1 ? 'Perp <b>over spot</b> — longs paying shorts. Cash-and-carry: long spot + short perp captures the funding spread.' : b.basis_pct < -0.1 ? 'Perp <b>under spot</b> — shorts paying longs. Inverse carry: short spot + long perp.' : 'Spot and perp tightly aligned. No clean basis trade right now.'}
+            </div>`;
+        }
+
+        function renderSignals(data) {
+            const signals = [];
+            const funding = data.funding_rates || [];
+            const basis = data.btc_basis || {};
+            const spread = data.exchange_spread || [];
+
+            // Extreme funding rate signal
+            for (const r of funding) {
+                const ann = r.annualized_pct;
+                if (ann > 30) signals.push({ kind: 'bullish', text: `🔥 ${r.exchange} ${r.asset} funding at <b>${ann.toFixed(1)}% annualized</b> — longs are paying massively. Pay attention to short-side opportunities.` });
+                else if (ann < -15) signals.push({ kind: 'bearish', text: `❄️ ${r.exchange} ${r.asset} funding at <b>${ann.toFixed(1)}% annualized</b> — shorts paying longs. Long-side carry trade visible.` });
+            }
+            // Cross-exchange arb signal
+            if (spread.length >= 2) {
+                const prices = spread.map(q => q.price).filter(p => p > 0);
+                const max = Math.max(...prices), min = Math.min(...prices);
+                const spreadPct = ((max - min) / min) * 100;
+                if (spreadPct > 0.15) {
+                    const hi = spread.find(q => q.price === max);
+                    const lo = spread.find(q => q.price === min);
+                    signals.push({ kind: 'bullish', text: `↔️ BTC spreads <b>${spreadPct.toFixed(2)}%</b> between ${lo.exchange} ($${lo.price.toFixed(2)}) and ${hi.exchange} ($${hi.price.toFixed(2)}). Above noise — possible cross-exchange arb if you can move USDT fast.` });
+                }
+            }
+            // Basis signal
+            if (basis.basis_pct != null && Math.abs(basis.basis_pct) > 0.2) {
+                signals.push({ kind: basis.basis_pct > 0 ? 'bullish' : 'bearish',
+                    text: `📊 BTC perp vs spot basis at <b>${basis.basis_pct.toFixed(3)}%</b>. ${basis.basis_pct > 0 ? 'Perp premium — cash-and-carry setup.' : 'Perp discount — inverse carry.'}` });
+            }
+
+            const el = document.getElementById('signals-area');
+            if (!signals.length) { el.innerHTML = ''; return; }
+            el.innerHTML = signals.map(s => `<div class="signal-banner ${s.kind}">${s.text}</div>`).join('');
+        }
+
+        async function loadAll() {
+            try {
+                const r = await fetch('/api/btc/all');
+                const data = await r.json();
+                renderHeadline(data);
+                renderFunding(data.funding_rates || []);
+                renderSpread(data.exchange_spread || []);
+                renderBasis(data.btc_basis);
+                renderSignals(data);
+            } catch (e) {
+                console.error('Crypto load failed:', e);
+            }
+        }
+        loadAll();
+        setInterval(loadAll, 60000);  // 1 min
+    </script>
+</body>
+</html>

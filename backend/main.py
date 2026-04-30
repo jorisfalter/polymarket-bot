@@ -1465,10 +1465,19 @@ async def serve_stocks():
     )
 
 
-@app.get("/btc")
-async def serve_btc():
+@app.get("/crypto")
+async def serve_crypto():
     return FileResponse(
-        "frontend/btc.html",
+        "frontend/crypto.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
+@app.get("/btc")
+async def serve_btc_redirect():
+    # Old route — keep for muscle memory.
+    return FileResponse(
+        "frontend/crypto.html",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
     )
 
@@ -1522,6 +1531,13 @@ async def get_ticker_details(ticker: str):
     if not stats:
         return {"ok": False, "error": "ticker not found"}
     return stats
+
+
+@app.get("/api/stocks/top-politicians")
+async def get_top_politicians(min_trades: int = Query(5, le=50)):
+    """Politicians ranked by mean excess return vs SPY."""
+    from .stocks_data import top_politicians_by_alpha
+    return await top_politicians_by_alpha(min_trades=min_trades)
 
 
 @app.get("/api/btc/all")

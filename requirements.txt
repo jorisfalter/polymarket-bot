@@ -35,6 +35,9 @@ py-clob-client>=0.17.0
 anthropic>=0.39.0
 openai>=1.30.0
 
+# Stocks data (for /stocks dashboard)
+yfinance>=0.2.40
+
 # Integrations
 tweepy>=4.14.0
 python-telegram-bot>=21.0

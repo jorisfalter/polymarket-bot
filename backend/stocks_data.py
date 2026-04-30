@@ -12,13 +12,10 @@ from typing import Dict, List, Optional
 import httpx
 from loguru import logger
 
-# House + Senate Stock Watcher publish raw disclosures to public S3 buckets.
-# These are reliable mirrors of the STOCK Act periodic transaction reports.
-HOUSE_TRADES_URL = "https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json"
-SENATE_TRADES_URL = "https://senate-stock-watcher-data.s3-us-west-2.amazonaws.com/aggregate/all_transactions.json"
-
-# Yahoo's unofficial quote summary endpoint. Returns short interest + key stats.
-YAHOO_QUOTE_URL = "https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
+# Quiver's public live endpoint is the most reliable free feed for STOCK Act
+# disclosures. Returns recent congressional trades with ExcessReturn vs SPY
+# already calculated.
+QUIVER_CONGRESS_URL = "https://api.quiverquant.com/beta/live/congresstrading"
 
 WATCHLIST_PATH = Path(__file__).parent.parent / "data" / "stocks_watchlist.json"
 
@@ -28,7 +25,9 @@ _pol_cache_ttl = timedelta(hours=12)
 
 
 async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
-    """Fetch House + Senate disclosed trades from the last N days."""
+    """Fetch recent congressional disclosures from Quiver Quantitative's public
+    live endpoint. Includes ExcessReturn vs SPY which lets us rank by who's
+    actually outperforming."""
     now = datetime.utcnow()
     if (
         _pol_cache["timestamp"]
@@ -38,18 +37,14 @@ async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
         return _filter_recent(_pol_cache["trades"], days_back)
 
     trades: List[Dict] = []
+    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            for url, chamber in [(HOUSE_TRADES_URL, "House"), (SENATE_TRADES_URL, "Senate")]:
-                try:
-                    r = await client.get(url)
-                    r.raise_for_status()
-                    items = r.json() or []
-                    for it in items:
-                        trades.append(_normalize_trade(it, chamber))
-                except Exception as e:
-                    logger.warning(f"Politician trades fetch failed for {chamber}: {e}")
-        # Sort by transaction_date desc
+            r = await client.get(QUIVER_CONGRESS_URL, headers=headers)
+            r.raise_for_status()
+            items = r.json() or []
+            for it in items:
+                trades.append(_normalize_quiver(it))
         trades.sort(key=lambda x: x.get("transaction_date", ""), reverse=True)
         _pol_cache["trades"] = trades
         _pol_cache["timestamp"] = now
@@ -60,18 +55,21 @@ async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
     return _filter_recent(trades, days_back)
 
 
-def _normalize_trade(item: Dict, chamber: str) -> Dict:
-    """Normalize House/Senate disclosure formats to a common shape."""
+def _normalize_quiver(item: Dict) -> Dict:
+    """Quiver's live shape → our common shape."""
     return {
-        "chamber": chamber,
-        "representative": item.get("representative") or item.get("senator") or "?",
-        "ticker": (item.get("ticker") or "").upper(),
-        "asset": item.get("asset_description") or item.get("asset_type") or "",
-        "type": item.get("type") or item.get("transaction_type") or "?",  # purchase / sale / exchange
-        "amount": item.get("amount") or item.get("tx_amount") or "",  # range like "$1,001 - $15,000"
-        "transaction_date": item.get("transaction_date") or "",
-        "disclosure_date": item.get("disclosure_date") or "",
-        "ptr_link": item.get("ptr_link") or "",
+        "chamber": item.get("House") or "?",
+        "representative": item.get("Representative") or "?",
+        "party": item.get("Party") or "",
+        "ticker": (item.get("Ticker") or "").upper(),
+        "asset": item.get("Description") or "",
+        "type": (item.get("Transaction") or "").lower(),  # purchase / sale
+        "amount": item.get("Range") or "",
+        "amount_usd": float(item.get("Amount") or 0),
+        "transaction_date": item.get("TransactionDate") or "",
+        "disclosure_date": item.get("ReportDate") or "",
+        "excess_return": item.get("ExcessReturn"),
+        "price_change": item.get("PriceChange"),
     }
 
 
@@ -86,54 +84,48 @@ def _filter_recent(trades: List[Dict], days_back: int) -> List[Dict]:
 
 
 async def fetch_ticker_stats(ticker: str) -> Optional[Dict]:
-    """Pull live price + short interest + key stats for a ticker via Yahoo."""
+    """Pull live price + short interest + key stats via yfinance (which handles
+    Yahoo's auth quirks). yfinance is sync; we offload to a thread."""
     if not ticker:
         return None
     ticker = ticker.upper()
-    url = YAHOO_QUOTE_URL.format(ticker=ticker)
-    params = {"modules": "defaultKeyStatistics,price,summaryDetail,financialData"}
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; polymarket-bot/1.0)"}
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.get(url, params=params, headers=headers)
-            r.raise_for_status()
-            data = r.json()
-        result = data.get("quoteSummary", {}).get("result") or []
-        if not result:
+        import asyncio
+        info = await asyncio.to_thread(_yf_info, ticker)
+        if not info:
             return None
-        d = result[0]
-        ks = d.get("defaultKeyStatistics", {}) or {}
-        price = d.get("price", {}) or {}
-        summ = d.get("summaryDetail", {}) or {}
-        fin = d.get("financialData", {}) or {}
         return {
             "ticker": ticker,
-            "name": price.get("shortName") or price.get("longName") or "",
-            "price": _raw(price.get("regularMarketPrice")),
-            "change_pct": _raw(price.get("regularMarketChangePercent")),
-            "market_cap": _raw(price.get("marketCap")),
-            "volume": _raw(price.get("regularMarketVolume")),
-            "short_interest_pct_float": _raw(ks.get("shortPercentOfFloat")),
-            "shares_short": _raw(ks.get("sharesShort")),
-            "shares_short_prior": _raw(ks.get("sharesShortPriorMonth")),
-            "short_ratio_days_to_cover": _raw(ks.get("shortRatio")),
-            "float_shares": _raw(ks.get("floatShares")),
-            "held_pct_insiders": _raw(ks.get("heldPercentInsiders")),
-            "held_pct_institutions": _raw(ks.get("heldPercentInstitutions")),
-            "fifty_two_week_high": _raw(summ.get("fiftyTwoWeekHigh")),
-            "fifty_two_week_low": _raw(summ.get("fiftyTwoWeekLow")),
-            "recommendation": fin.get("recommendationKey") or "",
+            "name": info.get("shortName") or info.get("longName") or "",
+            "price": info.get("regularMarketPrice") or info.get("currentPrice"),
+            "change_pct": info.get("regularMarketChangePercent"),
+            "market_cap": info.get("marketCap"),
+            "volume": info.get("regularMarketVolume") or info.get("volume"),
+            "short_interest_pct_float": info.get("shortPercentOfFloat"),
+            "shares_short": info.get("sharesShort"),
+            "shares_short_prior": info.get("sharesShortPriorMonth"),
+            "short_ratio_days_to_cover": info.get("shortRatio"),
+            "float_shares": info.get("floatShares"),
+            "held_pct_insiders": info.get("heldPercentInsiders"),
+            "held_pct_institutions": info.get("heldPercentInstitutions"),
+            "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
+            "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
         }
     except Exception as e:
-        logger.warning(f"Yahoo fetch failed for {ticker}: {e}")
+        logger.warning(f"yfinance fetch failed for {ticker}: {e}")
         return None
 
 
-def _raw(v):
-    """Yahoo wraps numbers in {raw, fmt}. Pull the raw value."""
-    if isinstance(v, dict):
-        return v.get("raw")
-    return v
+def _yf_info(ticker: str) -> Optional[Dict]:
+    """Sync yfinance call. Runs in a thread."""
+    try:
+        import yfinance as yf
+        return yf.Ticker(ticker).info or {}
+    except Exception as e:
+        logger.debug(f"yfinance error for {ticker}: {e}")
+        return None
 
 
 def get_watchlist() -> List[str]:
@@ -154,6 +146,50 @@ def set_watchlist(tickers: List[str]):
         if t and t not in seen:
             seen.append(t)
     WATCHLIST_PATH.write_text(json.dumps({"tickers": seen}, indent=2))
+
+
+async def top_politicians_by_alpha(min_trades: int = 5) -> List[Dict]:
+    """Aggregate the politician trade feed by representative and rank by mean
+    excess return. The Pelosi-tracker move: who's actually outperforming?"""
+    trades = await fetch_politician_trades(days_back=180)
+    by_rep: Dict[str, Dict] = {}
+    for t in trades:
+        rep = t.get("representative", "?")
+        if rep == "?":
+            continue
+        d = by_rep.setdefault(rep, {
+            "representative": rep,
+            "party": t.get("party") or "",
+            "chamber": t.get("chamber") or "",
+            "trades": 0,
+            "purchases": 0,
+            "sales": 0,
+            "excess_returns": [],
+            "total_volume_min": 0,
+        })
+        d["trades"] += 1
+        if t.get("type") == "purchase":
+            d["purchases"] += 1
+        elif t.get("type") == "sale":
+            d["sales"] += 1
+        if t.get("excess_return") is not None:
+            try:
+                d["excess_returns"].append(float(t["excess_return"]))
+            except Exception:
+                pass
+        d["total_volume_min"] += t.get("amount_usd") or 0
+
+    out = []
+    for d in by_rep.values():
+        if d["trades"] < min_trades:
+            continue
+        ers = d.pop("excess_returns")
+        d["avg_excess_return"] = sum(ers) / len(ers) if ers else 0
+        d["beats_spy_count"] = sum(1 for r in ers if r > 0)
+        d["beats_spy_pct"] = (d["beats_spy_count"] / len(ers)) if ers else 0
+        out.append(d)
+    out.sort(key=lambda x: x["avg_excess_return"], reverse=True)
+    return out
 
 
 async def fetch_squeeze_setups(min_short_pct: float = 0.20) -> List[Dict]:

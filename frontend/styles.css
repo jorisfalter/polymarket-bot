@@ -2815,3 +2815,31 @@ html[data-theme="light"] body::after {
     border-color: var(--accent-primary);
     color: var(--accent-primary);
 }
+
+/* ===== Sub-navigation within a board ===== */
+.sub-nav {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 4px;
+    overflow-x: auto;
+}
+.sub-link {
+    padding: 8px 16px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+}
+.sub-link:hover {
+    color: var(--text-primary);
+}
+.sub-link.active {
+    color: var(--accent-primary);
+    border-bottom-color: var(--accent-primary);
+}
