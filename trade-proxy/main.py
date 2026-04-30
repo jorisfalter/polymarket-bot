@@ -59,6 +59,36 @@ def verify_auth(authorization: str = Header(None)):
         raise HTTPException(401, "Unauthorized")
 
 
+# Cache neg-risk lookups so we don't hit Gamma on every order.
+_neg_risk_cache: dict = {}
+
+
+def is_neg_risk(token_id: str) -> bool:
+    """Polymarket has two Exchange contracts: regular and Neg-Risk.
+    Multi-outcome events (Will-X-or-Y-or-Z, election outcomes, etc.) use
+    Neg-Risk; binary YES/NO markets use regular. Submitting an order to
+    the wrong contract → order_version_mismatch.
+
+    Best signal: Gamma API's `negRisk` field per market."""
+    if token_id in _neg_risk_cache:
+        return _neg_risk_cache[token_id]
+    import httpx
+    try:
+        r = httpx.get(
+            "https://gamma-api.polymarket.com/markets",
+            params={"clob_token_ids": token_id},
+            timeout=10.0,
+        )
+        r.raise_for_status()
+        markets = r.json() or []
+        result = bool(markets[0].get("negRisk")) if markets else False
+    except Exception as e:
+        logger.warning(f"neg_risk lookup failed for {token_id[:12]}: {e}")
+        result = False
+    _neg_risk_cache[token_id] = result
+    return result
+
+
 class BuyRequest(BaseModel):
     token_id: str
     amount_usd: float
@@ -94,7 +124,7 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
     client = get_client()
 
     try:
-        from py_clob_client.clob_types import MarketOrderArgs, OrderType
+        from py_clob_client.clob_types import MarketOrderArgs, OrderType, PartialCreateOrderOptions
         from py_clob_client.order_builder.constants import BUY
 
         # Get the midpoint price for reporting
@@ -103,13 +133,16 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
         except Exception:
             midpoint = 0
 
-        # Use market order — handles complementary token matching correctly
+        # Determine which Exchange contract to sign for
+        neg_risk = is_neg_risk(req.token_id)
+        options = PartialCreateOrderOptions(neg_risk=neg_risk)
+
         order_args = MarketOrderArgs(
             token_id=req.token_id,
             amount=req.amount_usd,
             side=BUY,
         )
-        signed_order = client.create_market_order(order_args)
+        signed_order = client.create_market_order(order_args, options)
         response = client.post_order(signed_order, OrderType.FOK)
 
         if response and response.get("success"):
@@ -120,10 +153,11 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
                 "order_id": order_id,
                 "price": midpoint,
                 "shares": shares,
+                "neg_risk": neg_risk,
             }
         else:
             error = response.get("errorMsg") or response.get("error") or "Unknown"
-            return {"success": False, "error": error, "price": midpoint}
+            return {"success": False, "error": error, "price": midpoint, "neg_risk": neg_risk}
 
     except Exception as e:
         logger.error(f"Buy error: {e}")
@@ -136,25 +170,25 @@ async def sell(req: SellRequest, authorization: str = Header(None)):
     client = get_client()
 
     try:
-        from py_clob_client.clob_types import MarketOrderArgs, OrderType
+        from py_clob_client.clob_types import MarketOrderArgs, OrderType, PartialCreateOrderOptions
         from py_clob_client.order_builder.constants import SELL
 
-        # Get the midpoint price for reporting
         try:
             midpoint = float(client.get_midpoint(req.token_id))
         except Exception:
             midpoint = 0
 
-        # Calculate USD value of the position
         amount_usd = req.shares * midpoint if midpoint > 0 else req.shares
 
-        # Use market order for correct price execution
+        neg_risk = is_neg_risk(req.token_id)
+        options = PartialCreateOrderOptions(neg_risk=neg_risk)
+
         order_args = MarketOrderArgs(
             token_id=req.token_id,
             amount=amount_usd,
             side=SELL,
         )
-        signed_order = client.create_market_order(order_args)
+        signed_order = client.create_market_order(order_args, options)
         response = client.post_order(signed_order, OrderType.FOK)
 
         if response and response.get("success"):
@@ -164,10 +198,11 @@ async def sell(req: SellRequest, authorization: str = Header(None)):
                 "order_id": order_id,
                 "price": midpoint,
                 "shares": req.shares,
+                "neg_risk": neg_risk,
             }
         else:
             error = response.get("errorMsg") or response.get("error") or "Unknown"
-            return {"success": False, "error": error, "price": midpoint}
+            return {"success": False, "error": error, "price": midpoint, "neg_risk": neg_risk}
 
     except Exception as e:
         logger.error(f"Sell error: {e}")
