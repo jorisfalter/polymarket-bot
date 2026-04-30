@@ -4,6 +4,22 @@ Strategies for the **/stocks** dashboard. Currently manual execution — no brok
 
 ---
 
+## Data sources at a glance
+
+| Strategy | Source | Status | Cost |
+|---|---|---|---|
+| Squeeze setups (SI, days-to-cover) | yfinance (Yahoo) | ✅ Reliable | Free |
+| Politician trades | Quiver public + disk cache | 🟡 Intermittent (cached) | Free |
+| Form 4 insider transactions | SEC EDGAR full-text search | ✅ Reliable | Free |
+| 13D/13G activist filings | SEC EDGAR full-text search | ✅ Reliable | Free |
+| WSB ticker buzz | Reddit JSON via Fly.io proxy | ✅ Reliable | Free |
+| Earnings calendar | Not integrated | ❌ | Would be free (yfinance) |
+| M&A spreads | Not integrated | ❌ | Bloomberg required |
+
+The politician feed is the only non-trivial dependency. See Strategy 2 for the disk-cache fallback that keeps it working through Quiver's rate-limit windows.
+
+---
+
 ## Strategy 1: Short Squeeze Plays
 **Data source:** yfinance (short interest %, days-to-cover, float) + Quiver (politician/insider buying as confirmation)
 
@@ -24,9 +40,28 @@ Strategies for the **/stocks** dashboard. Currently manual execution — no brok
 ---
 
 ## Strategy 2: Politician Following ("Pelosi Tracker")
-**Data source:** Finnhub `/stock/congressional-trading` (free tier, 60 calls/min, requires `FINNHUB_API_KEY`). Switched from Quiver after they dropped public access in early 2026.
 
-**Logic:** Members of Congress consistently outperform broader markets. Studies put their alpha at 6-12% vs SPY annually. Disclosure delay is up to 45 days — but the trades that disclose late often still have legs.
+### Data source — the messy reality
+
+Free congressional-trading APIs are increasingly gated in 2026. What we use today, in priority order:
+
+1. **Quiver Quantitative public endpoint** (`/beta/live/congresstrading`) — free, no auth required, but **rate-limited per IP with random windows**. From our VPS we sometimes get 200 OK with the full feed (~1000 most recent trades), sometimes 401 "Auth not provided". No way to predict — we just retry.
+
+2. **Disk-persisted snapshot** (`data/politician_trades_cache.json`) — every successful Quiver fetch writes to disk. When all live sources fail, we serve the snapshot. Disclosures move slowly (PTRs file 30-45 days late), so a 1-7 day stale snapshot is 99% identical to today's data. This is what makes the Politicians panels actually reliable despite Quiver's flakiness.
+
+3. **Finnhub paid plan** — `FINNHUB_API_KEY` env var. **Their free tier dropped congressional-trading in 2026**, requires $59/mo paid plan now. Code keeps it as fallback.
+
+4. **Quiver paid plan** ($10/mo, `QUIVER_API_KEY` env var) — cheapest reliable paid option if you ever need guaranteed uptime. Code uses it first if set.
+
+### Why this matters
+
+When you see politician data on the dashboard, it's coming from one of: a Quiver fetch from the last few hours OR the disk snapshot. The dashboard doesn't currently surface "data is X hours stale" but the helper `get_politician_cache_age_hours()` is wired up and ready for a UI badge.
+
+If the politician panels are completely empty, that means: Quiver public has been blocking us continuously AND we never had a successful initial fetch to seed the disk cache. Solution: wait an hour and retry, or pay Quiver $10/mo.
+
+### Logic
+
+Members of Congress consistently outperform broader markets. Studies put their alpha at 6-12% vs SPY annually. Disclosure delay is up to 45 days — but the trades that disclose late often still have legs.
 
 **Reliability tiers** (the dashboard surfaces these so you don't chase noise):
 - 🟢 **Reliable** — 20+ trades AND beats SPY ≥55%. Track record is statistically meaningful.
@@ -53,7 +88,18 @@ A 2-trade politician with +25% α is one good Apple buy, not skill. Don't be foo
 - Trigger an **email alert** to `ALERT_EMAIL` (or `GMAIL_ADDRESS` fallback) when they file a new trade
 - Scheduler checks every 30 min; dedup state in `data/politicians_seen.json` prevents repeat alerts
 
-**Currently surfaced on dashboard:** ✅ Top Politicians table with reliability tiers + ☆ stars + Recent Trades feed.
+**Top 5 Portfolios drill-down:** Below the Top Politicians table, a separate panel shows the 5 highest-α politicians with collapsible per-rep portfolio views. For each:
+- Per-ticker NET BUY / NET SELL / MIXED rollup (last 180 days)
+- Recent disclosures table (newest first, last 20)
+- External link-outs to **Capitol Trades** and **Quiver** for the full archival view
+- First politician auto-expanded so the panel is never empty-looking
+
+**External links per politician:** Always available regardless of feed state — Capitol Trades has the cleanest UX:
+- `https://www.capitoltrades.com/politicians?search=<name>` — full disclosed history, sector breakdown, P&L
+- `https://www.quiverquant.com/congresstrading/politician/<Name>` — trade history with ExcessReturn vs SPY
+- `https://efdsearch.senate.gov/search/` — official Senate PTRs (rough UI, authoritative)
+
+**Currently surfaced on dashboard:** ✅ Top Politicians table (reliability tiers + ☆ stars) + Top 5 Portfolios panel (collapsible drill-down) + Recent Politician Trades feed (filterable).
 
 ---
 
