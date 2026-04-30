@@ -104,6 +104,18 @@
                     <div id="basis-content"><div class="empty">Loading…</div></div>
                 </div>
             </div>
+
+            <!-- Stablecoin yields + LST premium -->
+            <div class="grid-2" style="margin-top: 20px;">
+                <div class="panel">
+                    <h3>💵 Stablecoin Yields <span class="sub">— Aave / Compound / Morpho / Spark / Fluid (Ethereum)</span></h3>
+                    <div id="yields-content"><div class="empty">Loading…</div></div>
+                </div>
+                <div class="panel">
+                    <h3>🪙 Liquid Staking Premium <span class="sub">— stETH/ETH ratio</span></h3>
+                    <div id="lst-content"><div class="empty">Loading…</div></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -231,6 +243,44 @@
             el.innerHTML = signals.map(s => `<div class="signal-banner ${s.kind}">${s.text}</div>`).join('');
         }
 
+        function renderYields(rows) {
+            const el = document.getElementById('yields-content');
+            if (!rows.length) { el.innerHTML = '<div class="empty">No data.</div>'; return; }
+            el.innerHTML = `<table class="tbl">
+                <tr><th>Project</th><th>Asset</th><th class="num">APY</th><th class="num">TVL</th></tr>
+                ${rows.map(r => `<tr>
+                    <td><b>${escapeHtml(r.project)}</b></td>
+                    <td><span style="font-family:var(--font-mono);">${escapeHtml(r.symbol)}</span></td>
+                    <td class="num ${r.apy >= 6 ? 'pnl-positive' : ''}">${r.apy.toFixed(2)}%</td>
+                    <td class="num" style="font-size:10px;color:var(--text-muted);">$${(r.tvl_usd/1e6).toFixed(0)}M</td>
+                </tr>`).join('')}
+            </table>
+            <div style="margin-top:10px;font-size:11px;color:var(--text-secondary);line-height:1.5;">
+                Stablecoin lending APY surges when leverage demand spikes — same driver as funding rates. Above 8% sustained for 3+ days = signal.
+            </div>`;
+        }
+
+        function renderLST(d) {
+            const el = document.getElementById('lst-content');
+            if (!d || d.stETH_eth_ratio == null) { el.innerHTML = '<div class="empty">No data.</div>'; return; }
+            const stRatio = d.stETH_eth_ratio;
+            const stPrem = d.stETH_premium_pct;
+            const reRatio = d.rETH_eth_ratio;
+            const isDiscounted = stRatio < 0.999;
+            const dislocated = Math.abs(stPrem) > 0.5;
+            el.innerHTML = `<table class="tbl">
+                <tr><td>ETH spot</td><td class="num">$${(d.eth_price || 0).toFixed(2)}</td></tr>
+                <tr><td>stETH (Lido)</td><td class="num">$${(d.stETH_price || 0).toFixed(2)}</td></tr>
+                <tr><td>stETH/ETH ratio</td><td class="num ${dislocated ? (isDiscounted ? 'pnl-positive' : 'pnl-negative') : ''}"><b>${stRatio.toFixed(5)}</b></td></tr>
+                <tr><td>stETH premium</td><td class="num ${dislocated ? (isDiscounted ? 'pnl-positive' : 'pnl-negative') : ''}"><b>${stPrem >= 0 ? '+' : ''}${stPrem.toFixed(3)}%</b></td></tr>
+                <tr><td>rETH/ETH ratio</td><td class="num">${reRatio ? reRatio.toFixed(4) : '–'}</td></tr>
+            </table>
+            <div style="margin-top:10px;font-size:11px;color:var(--text-secondary);line-height:1.5;">
+                ${dislocated && isDiscounted ? '⚠️ <b>stETH discounted</b> — buy + redeem 1:1 via Lido withdrawal queue. Bounded return.' : dislocated ? '🤔 stETH at premium — odd, watch for mean reversion.' : 'Peg holds. No clean trade.'}
+                <br><span style="color:var(--text-muted);">rETH ratio ~1.10+ is built-in (compounded staking rewards), not dislocation.</span>
+            </div>`;
+        }
+
         async function loadAll() {
             try {
                 const r = await fetch('/api/btc/all');
@@ -239,6 +289,8 @@
                 renderFunding(data.funding_rates || []);
                 renderSpread(data.exchange_spread || []);
                 renderBasis(data.btc_basis);
+                renderYields(data.stablecoin_yields || []);
+                renderLST(data.lst_premium || {});
                 renderSignals(data);
             } catch (e) {
                 console.error('Crypto load failed:', e);

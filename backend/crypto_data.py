@@ -171,15 +171,90 @@ async def fetch_exchange_spread() -> List[Dict]:
     return quotes
 
 
+async def fetch_stablecoin_yields() -> List[Dict]:
+    """Pull current USDC/USDT lending APYs from DeFiLlama. Filters to the
+    big-name lending platforms (Aave, Compound) on Ethereum mainnet."""
+    url = "https://yields.llama.fi/pools"
+    out: List[Dict] = []
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            pools = (r.json() or {}).get("data", []) or []
+        wanted_projects = {"aave-v3", "compound-v3", "morpho-blue", "spark", "fluid-lending"}
+        wanted_symbols = {"USDC", "USDT", "DAI", "USDS"}
+        for p in pools:
+            project = (p.get("project") or "").lower()
+            chain = (p.get("chain") or "").lower()
+            symbol = (p.get("symbol") or "").upper()
+            if project not in wanted_projects:
+                continue
+            if chain != "ethereum":
+                continue
+            if symbol not in wanted_symbols:
+                continue
+            tvl = float(p.get("tvlUsd") or 0)
+            if tvl < 5_000_000:  # ignore dust pools
+                continue
+            out.append({
+                "project": project,
+                "chain": chain,
+                "symbol": symbol,
+                "apy": float(p.get("apy") or 0),
+                "apy_base": float(p.get("apyBase") or 0),
+                "apy_reward": float(p.get("apyReward") or 0),
+                "tvl_usd": tvl,
+            })
+        out.sort(key=lambda x: x["apy"], reverse=True)
+    except Exception as e:
+        logger.warning(f"Stablecoin yields fetch failed: {e}")
+    return out[:15]
+
+
+async def fetch_lst_premium() -> Dict:
+    """Liquid staking token premium/discount vs underlying ETH.
+    Pulls stETH (Lido) and rETH (Rocket Pool) prices from CoinGecko and
+    computes the ratio vs ETH."""
+    out = {"stETH_eth_ratio": None, "rETH_eth_ratio": None, "eth_price": None}
+    url = "https://api.coingecko.com/api/v3/simple/price"
+    params = {"ids": "ethereum,staked-ether,rocket-pool-eth", "vs_currencies": "usd"}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(url, params=params)
+            r.raise_for_status()
+            data = r.json() or {}
+        eth = (data.get("ethereum") or {}).get("usd")
+        steth = (data.get("staked-ether") or {}).get("usd")
+        reth = (data.get("rocket-pool-eth") or {}).get("usd")
+        out["eth_price"] = eth
+        out["stETH_price"] = steth
+        out["rETH_price"] = reth
+        if eth and steth:
+            out["stETH_eth_ratio"] = steth / eth
+            out["stETH_premium_pct"] = (steth / eth - 1) * 100
+        if eth and reth:
+            # rETH is exchange-rate based — has built-in premium that grows
+            # over time (compounded staking). The 1.10ish ratio reflects ~3y
+            # of accrued rewards, not market dislocation. Only flag big moves.
+            out["rETH_eth_ratio"] = reth / eth
+    except Exception as e:
+        logger.warning(f"LST premium fetch failed: {e}")
+    return out
+
+
 async def fetch_all_crypto_signals() -> Dict:
-    """Aggregate everything for the /btc dashboard in one round-trip."""
-    funding, basis, spread = await asyncio.gather(
+    """Aggregate everything for the /crypto dashboard in one round-trip."""
+    funding, basis, spread, yields, lst = await asyncio.gather(
         fetch_funding_rates(),
         fetch_btc_basis(),
         fetch_exchange_spread(),
+        fetch_stablecoin_yields(),
+        fetch_lst_premium(),
     )
     return {
         "funding_rates": funding,
         "btc_basis": basis,
         "exchange_spread": spread,
+        "stablecoin_yields": yields,
+        "lst_premium": lst,
     }

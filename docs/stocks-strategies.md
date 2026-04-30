@@ -54,7 +54,7 @@ Strategies for the **/stocks** dashboard. Currently manual execution — no brok
 
 **Edge:** Insiders have legal information advantage on company performance. They can't trade on material non-public information but they can act on their general read of the business.
 
-**Currently surfaced:** ❌ Not yet — would need SEC EDGAR ingestion.
+**Currently surfaced:** ✅ SEC Form 4 panel on /stocks shows recent filings with link-through to filing detail (purchase vs sale visible there).
 
 ---
 
@@ -70,7 +70,7 @@ Strategies for the **/stocks** dashboard. Currently manual execution — no brok
 
 **Edge:** Activist campaigns extract value over months. Buying alongside a credible activist is asymmetric — they do the work, you ride the move.
 
-**Currently surfaced:** ❌ Not yet integrated. Could share Squeeze Setups infrastructure since both depend on ownership disclosures.
+**Currently surfaced:** ✅ 13D/13G panel on /stocks. Activist filings (Pershing Square, Elliott, Starboard, Engine, Trian, ValueAct, Icahn, Third Point, Jana, ValueAct, Ancora, Macellum, Scopia, Irenic) auto-flagged with a star and ranked first.
 
 ---
 
@@ -129,14 +129,12 @@ Strategies for the **/stocks** dashboard. Currently manual execution — no brok
 ## Implementation Roadmap
 
 ### Currently live on dashboard
-- ✅ Strategy 1 (Squeeze Setups) — partial: ticker watchlist + SI score
-- ✅ Strategy 2 (Politician Following) — full: Top Politicians + Recent Trades
+- ✅ Strategy 1 (Squeeze Setups) — ticker watchlist + SI score from yfinance
+- ✅ Strategy 2 (Politician Following) — Top Politicians by alpha + Recent Trades
+- ✅ Strategy 3 (Insider Buying / Form 4) — SEC EDGAR full-text search
+- ✅ Strategy 4 (13D/13G) — SEC EDGAR with activist auto-flagging
 
-### Next priority
-- Strategy 3 (Insider Buying) — SEC EDGAR Form 4 RSS scanner. Add to Stocks board as a feed.
-- Strategy 4 (13D/13G) — same SEC EDGAR pipeline.
-
-### Lower priority
+### Not yet integrated
 - Strategy 5 (Post-Earnings Drift) — needs earnings calendar API + price scanner.
 - Strategy 6 (M&A Spreads) — Bloomberg / news feed required, harder to automate.
 - Strategy 7 (Spinoffs) — manual research strategy, not great candidate for automation.

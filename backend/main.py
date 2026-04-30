@@ -1542,9 +1542,23 @@ async def get_top_politicians(min_trades: int = Query(5, le=50)):
 
 @app.get("/api/btc/all")
 async def get_all_crypto_signals():
-    """Aggregated BTC dashboard data — funding, basis, exchange spread."""
+    """Aggregated crypto dashboard data — funding, basis, spread, yields, LST."""
     from .crypto_data import fetch_all_crypto_signals
     return await fetch_all_crypto_signals()
+
+
+@app.get("/api/stocks/insider-buys")
+async def get_insider_buys(limit: int = Query(30, le=100)):
+    """SEC EDGAR Form 4 recent filings."""
+    from .sec_data import fetch_form4_buys
+    return await fetch_form4_buys(limit=limit)
+
+
+@app.get("/api/stocks/13d-filings")
+async def get_13d_filings(limit: int = Query(30, le=100)):
+    """SEC EDGAR 13D/13G recent filings (5%+ ownership)."""
+    from .sec_data import fetch_13d_filings
+    return await fetch_13d_filings(limit=limit)
 
 
 @app.get("/api/playbook")

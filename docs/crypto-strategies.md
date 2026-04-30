@@ -86,7 +86,7 @@ Zelfde asset, verschillende prijs op meerdere exchanges. Koop goedkoop, verkoop 
 
 **Edge:** Genuine yield from leverage demand. Lower-risk than funding arb (no liquidation risk on either leg).
 
-**Currently surfaced:** ❌ Not yet — lives on the watchlist for future integration.
+**Currently surfaced:** ✅ Stablecoin Yields panel on /crypto pulls from DeFiLlama (Aave / Compound / Morpho / Spark / Fluid on Ethereum mainnet, USDC/USDT/DAI/USDS pools).
 
 ---
 
@@ -99,7 +99,7 @@ Zelfde asset, verschillende prijs op meerdere exchanges. Koop goedkoop, verkoop 
 
 **Edge:** Bounded return when peg restores. Most plays close in days-weeks.
 
-**Currently surfaced:** ❌ Future expansion.
+**Currently surfaced:** ✅ Liquid Staking Premium panel on /crypto shows stETH/ETH ratio + premium %, with auto-flagging when peg dislocates >0.5%.
 
 ---
 
