@@ -241,8 +241,13 @@
             const el = document.getElementById('top-politicians-list');
             if (!items.length) {
                 el.innerHTML = `<div class="empty" style="text-align:left;line-height:1.6;">
-                    No politician data available.<br>
-                    <span style="font-size:11px;color:var(--text-muted);">Set <code>FINNHUB_API_KEY</code> in <code>.env</code> on the VPS — free tier at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent-secondary);">finnhub.io/register</a>.</span>
+                    <b>No politician data available right now.</b><br>
+                    <span style="font-size:11px;color:var(--text-muted);">All free congressional-trading APIs were closed in 2026 (Finnhub dropped the endpoint from free tier; Quiver, Capitol Trades BFF, House/Senate Stock Watcher S3 all gated). Options to restore data:</span>
+                    <ul style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;">
+                        <li><b>Quiver Quantitative</b> — $10/mo (<a href="https://api.quiverquant.com/pricing" target="_blank" style="color:var(--accent-secondary);">link</a>); single API key, restores full functionality. Cheapest option.</li>
+                        <li><b>Finnhub paid plan</b> — $59/mo, includes congressional-trading.</li>
+                        <li><b>Manual</b> — browse <a href="https://www.capitoltrades.com" target="_blank" style="color:var(--accent-secondary);">Capitol Trades</a>, copy interesting trades to <a href="/research" style="color:var(--accent-secondary);">Research → Ideas Inbox</a>.</li>
+                    </ul>
                 </div>`;
                 return;
             }
@@ -305,8 +310,8 @@
             if (!trades.length) {
                 if (!_allTrades.length) {
                     el.innerHTML = `<div class="empty" style="text-align:left;line-height:1.6;">
-                        No politician feed available.<br>
-                        <span style="font-size:11px;color:var(--text-muted);">Quiver Quantitative dropped public access in 2026. Set <code>FINNHUB_API_KEY</code> in <code>.env</code> (free tier 60 calls/min, sign up at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent-secondary);">finnhub.io/register</a>).</span>
+                        <b>Politician feed unavailable.</b><br>
+                        <span style="font-size:11px;color:var(--text-muted);">All free APIs gated in 2026. Cheapest fix: Quiver Quantitative $10/mo restores the full feed. See the Top Politicians panel above for setup options.</span>
                     </div>`;
                 } else {
                     el.innerHTML = '<div class="empty">No trades match filters.</div>';
@@ -405,7 +410,13 @@
                 const r = await fetch('/api/stocks/top-politicians-portfolios?top=5');
                 const items = await r.json();
                 const el = document.getElementById('portfolios-list');
-                if (!items.length) { el.innerHTML = '<div class="empty">No data.</div>'; return; }
+                if (!items.length) {
+                    el.innerHTML = `<div class="empty" style="text-align:left;line-height:1.6;">
+                        <b>No portfolio data — politician feed unavailable.</b>
+                        <span style="font-size:11px;color:var(--text-muted);">Set up Quiver ($10/mo) or browse <a href="https://www.capitoltrades.com" target="_blank" style="color:var(--accent-secondary);">Capitol Trades</a> directly. Specifically: <a href="https://www.capitoltrades.com/politicians?search=Markwayne+Mullin" target="_blank" style="color:var(--accent-secondary);">Markwayne Mullin's portfolio</a>.</span>
+                    </div>`;
+                    return;
+                }
 
                 el.innerHTML = items.map((p, i) => {
                     const trades = p.trades || [];

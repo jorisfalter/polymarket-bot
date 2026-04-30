@@ -42,10 +42,14 @@ async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
 
     trades: List[Dict] = []
 
-    if settings.finnhub_api_key:
+    # Try Quiver first if a paid key is set (cheapest paid option, $10/mo)
+    if settings.quiver_api_key:
+        trades = await _fetch_quiver_authed(settings.quiver_api_key, days_back=days_back)
+    # Else try Finnhub paid plan
+    if not trades and settings.finnhub_api_key:
         trades = await _fetch_finnhub_congress(settings.finnhub_api_key, days_back=180)
+    # Final hail-mary: unauthenticated Quiver (rarely works in 2026+)
     if not trades:
-        # Last-ditch try at Quiver (works only if they re-open public access)
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 r = await client.get(QUIVER_CONGRESS_URL, headers={"User-Agent": "Mozilla/5.0"})
@@ -55,13 +59,31 @@ async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
                         for it in items:
                             trades.append(_normalize_quiver(it))
         except Exception as e:
-            logger.debug(f"Quiver fallback failed (expected): {e}")
+            logger.debug(f"Quiver public fallback failed (expected): {e}")
 
     trades.sort(key=lambda x: x.get("transaction_date", ""), reverse=True)
     _pol_cache["trades"] = trades
     _pol_cache["timestamp"] = now
     logger.info(f"Politician trades cached: {len(trades)} total")
     return _filter_recent(trades, days_back)
+
+
+async def _fetch_quiver_authed(api_key: str, days_back: int = 180) -> List[Dict]:
+    """Quiver Quantitative authenticated feed. Their /beta/live/congresstrading
+    works with a Bearer token even on the cheapest plan. Returns ExcessReturn
+    pre-calculated which is the killer feature."""
+    headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
+    out: List[Dict] = []
+    try:
+        async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
+            r = await client.get(QUIVER_CONGRESS_URL)
+            r.raise_for_status()
+            items = r.json() or []
+        for it in items:
+            out.append(_normalize_quiver(it))
+    except Exception as e:
+        logger.warning(f"Quiver authed fetch failed: {e}")
+    return out
 
 
 async def _fetch_finnhub_congress(api_key: str, days_back: int = 180) -> List[Dict]:
