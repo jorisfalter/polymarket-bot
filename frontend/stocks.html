@@ -109,6 +109,18 @@
                 </div>
             </div>
 
+            <!-- WSB Pulse -->
+            <div class="grid-2" style="margin-top: 20px;">
+                <div class="panel">
+                    <h3>🦍 WSB Ticker Buzz <span class="sub">— r/wallstreetbets, last hot+new</span> <span class="count" id="wsb-buzz-count">0</span></h3>
+                    <div id="wsb-buzz"><div class="empty">Loading…</div></div>
+                </div>
+                <div class="panel">
+                    <h3>🔥 WSB Hot Posts <span class="sub">— excludes daily/weekly threads</span></h3>
+                    <div id="wsb-posts"><div class="empty">Loading…</div></div>
+                </div>
+            </div>
+
             <!-- SEC: Form 4 + 13D/13G feeds -->
             <div class="grid-2" style="margin-top: 20px;">
                 <div class="panel">
@@ -336,6 +348,48 @@
             } catch (e) { console.error('sc13', e); }
         }
 
+        async function loadWSB() {
+            try {
+                const r = await fetch('/api/stocks/wsb');
+                const d = await r.json();
+
+                // Ticker buzz
+                const buzzEl = document.getElementById('wsb-buzz');
+                const buzz = d.ticker_buzz || [];
+                document.getElementById('wsb-buzz-count').textContent = buzz.length;
+                if (!buzz.length) {
+                    buzzEl.innerHTML = '<div class="empty">No notable ticker mentions.</div>';
+                } else {
+                    buzzEl.innerHTML = `<table class="tbl">
+                        <tr><th>Ticker</th><th class="num">Buzz</th><th>Top post</th></tr>
+                        ${buzz.slice(0, 12).map(t => `<tr>
+                            <td><span class="ticker">${escapeHtml(t.ticker)}</span></td>
+                            <td class="num"><b>${t.buzz_score.toLocaleString()}</b></td>
+                            <td style="font-size:11px;"><a href="${escapeHtml(t.posts[0].url)}" target="_blank" rel="noopener" style="color:var(--text-primary);text-decoration:underline;text-decoration-color:var(--border-color);">${escapeHtml((t.posts[0].title || '').substring(0, 70))}</a></td>
+                        </tr>`).join('')}
+                    </table>
+                    <div style="margin-top:10px;font-size:11px;color:var(--text-muted);line-height:1.4;">
+                        Buzz = upvotes + (comments / 2) summed across all posts mentioning the ticker. Treat as sentiment signal, not signal — many WSB pumps fail.
+                    </div>`;
+                }
+
+                // Hot posts
+                const postsEl = document.getElementById('wsb-posts');
+                const posts = d.hot_posts || [];
+                if (!posts.length) {
+                    postsEl.innerHTML = '<div class="empty">No posts.</div>';
+                } else {
+                    postsEl.innerHTML = posts.slice(0, 10).map(p => {
+                        const flair = p.flair ? `<span class="pill" style="background:rgba(170,102,255,0.15);color:var(--accent-purple);">${escapeHtml(p.flair.substring(0, 18))}</span>` : '';
+                        return `<div style="padding:8px 0; border-bottom:1px solid var(--border-color); font-size:12px;">
+                            <div><a href="${escapeHtml(p.url)}" target="_blank" rel="noopener" style="color:var(--text-primary);text-decoration:none;font-weight:500;">${escapeHtml(p.title.substring(0, 95))}</a></div>
+                            <div style="margin-top:3px;font-size:10px;color:var(--text-muted);">↑ ${p.score.toLocaleString()} · 💬 ${p.num_comments.toLocaleString()} ${flair}</div>
+                        </div>`;
+                    }).join('');
+                }
+            } catch (e) { console.error('wsb', e); }
+        }
+
         document.getElementById('ticker-input').addEventListener('keydown', e => { if (e.key === 'Enter') addTicker(); });
 
         loadSqueezes();
@@ -343,10 +397,12 @@
         loadTrades();
         loadForm4();
         loadSC13();
+        loadWSB();
         setInterval(loadSqueezes, 120000);  // 2 min
         setInterval(loadTrades, 600000);    // 10 min
         setInterval(loadForm4, 1800000);    // 30 min
         setInterval(loadSC13, 1800000);     // 30 min
+        setInterval(loadWSB, 600000);       // 10 min
     </script>
 </body>
 </html>

@@ -109,6 +109,25 @@ Strategies for the **/stocks** dashboard. Currently manual execution — no brok
 
 ---
 
+## Strategy 6.5: WSB Sentiment / Retail Flow
+**Data source:** r/wallstreetbets JSON API (free, no auth)
+
+**Logic:** WSB is the canonical retail-flow leading indicator. When a ticker accumulates buzz (upvotes + comments) within 24h, retail money is moving. The 2021 GME / AMC squeezes, the 2024 NVDA run, the Avis (CAR) squeeze in April 2026 — all visible on WSB before mainstream coverage. Doesn't mean buy blindly: many WSB pumps fail. But it's a signal worth watching against your own thesis.
+
+**Trigger:**
+- Ticker buzz score (upvotes + comments/2 across hot+new posts) ≥ 5,000
+- Multiple distinct posts mentioning the ticker
+- Combine with another signal (squeeze setup, recent news, earnings) before acting
+- Beware mod-pinned daily threads (filtered out by our scanner)
+
+**Edge:** Front-running the retail wave when it aligns with fundamentals. Ride 1-3 days, exit before euphoria breaks.
+
+**Risk:** WSB pumps die fast and unpredictably. Position size like a moonshot, not a core trade.
+
+**Currently surfaced:** ✅ WSB Ticker Buzz panel (top 20 tickers by buzz score) + WSB Hot Posts panel on /stocks. Refreshes every 10 min.
+
+---
+
 ## Strategy 7: Special Situations (Spinoffs, Tender Offers)
 **Data source:** Spin-Off Research, manual press release tracking
 

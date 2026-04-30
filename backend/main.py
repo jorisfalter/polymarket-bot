@@ -1561,6 +1561,13 @@ async def get_13d_filings(limit: int = Query(30, le=100)):
     return await fetch_13d_filings(limit=limit)
 
 
+@app.get("/api/stocks/wsb")
+async def get_wsb_pulse():
+    """r/wallstreetbets pulse — top hot posts + ticker buzz ranking."""
+    from .reddit_data import get_wsb_pulse as wsb
+    return await wsb()
+
+
 @app.get("/api/playbook")
 async def get_playbook_content(board: str = Query("polymarket", regex="^(polymarket|stocks|crypto)$")):
     """Serve a strategy playbook for one of the three boards."""
