@@ -21,18 +21,55 @@ FINNHUB_BASE = "https://finnhub.io/api/v1"
 WATCHLIST_PATH = Path(__file__).parent.parent / "data" / "stocks_watchlist.json"
 POLITICIAN_WATCHLIST_PATH = Path(__file__).parent.parent / "data" / "politicians_watchlist.json"
 POLITICIAN_SEEN_PATH = Path(__file__).parent.parent / "data" / "politicians_seen.json"
+POLITICIAN_CACHE_PATH = Path(__file__).parent.parent / "data" / "politician_trades_cache.json"
 
 # 12h cache for politician trades — they update slowly and the data is heavy.
 _pol_cache: Dict = {"timestamp": None, "trades": []}
 _pol_cache_ttl = timedelta(hours=12)
 
 
+def _load_disk_cache() -> Optional[Dict]:
+    """Load the disk-persisted cache. Politician disclosures move slowly
+    (30-45 day filing window), so a 1-7 day stale snapshot is still useful."""
+    if not POLITICIAN_CACHE_PATH.exists():
+        return None
+    try:
+        return json.loads(POLITICIAN_CACHE_PATH.read_text())
+    except Exception:
+        return None
+
+
+def _save_disk_cache(trades: List[Dict]):
+    POLITICIAN_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    POLITICIAN_CACHE_PATH.write_text(json.dumps({
+        "fetched_at": datetime.utcnow().isoformat(),
+        "trades": trades,
+    }, indent=2))
+
+
+def get_politician_cache_age_hours() -> Optional[float]:
+    """Return how stale the disk cache is, for UI display."""
+    disk = _load_disk_cache()
+    if not disk:
+        return None
+    try:
+        fetched = datetime.fromisoformat(disk["fetched_at"])
+        return (datetime.utcnow() - fetched).total_seconds() / 3600
+    except Exception:
+        return None
+
+
 async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
-    """Fetch congressional disclosures. Tries Finnhub (free tier, 60/min, needs
-    API key) first; falls back to Quiver if accessible. Returns empty list if
-    nothing works — UI shows a configure-API-key message."""
+    """Fetch congressional disclosures. Source priority:
+    1. Quiver paid (QUIVER_API_KEY) — best
+    2. Finnhub paid (FINNHUB_API_KEY for /stock/congressional-trading)
+    3. Quiver public (rare; gated since 2026)
+    4. Disk-persisted snapshot (stale but useful — disclosures move slowly)
+    """
     from .config import settings
     now = datetime.utcnow()
+
+    # In-memory cache hit (fresh)
     if (
         _pol_cache["timestamp"]
         and now - _pol_cache["timestamp"] < _pol_cache_ttl
@@ -42,13 +79,10 @@ async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
 
     trades: List[Dict] = []
 
-    # Try Quiver first if a paid key is set (cheapest paid option, $10/mo)
     if settings.quiver_api_key:
         trades = await _fetch_quiver_authed(settings.quiver_api_key, days_back=days_back)
-    # Else try Finnhub paid plan
     if not trades and settings.finnhub_api_key:
         trades = await _fetch_finnhub_congress(settings.finnhub_api_key, days_back=180)
-    # Final hail-mary: unauthenticated Quiver (rarely works in 2026+)
     if not trades:
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
@@ -61,11 +95,31 @@ async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
         except Exception as e:
             logger.debug(f"Quiver public fallback failed (expected): {e}")
 
-    trades.sort(key=lambda x: x.get("transaction_date", ""), reverse=True)
-    _pol_cache["trades"] = trades
-    _pol_cache["timestamp"] = now
-    logger.info(f"Politician trades cached: {len(trades)} total")
-    return _filter_recent(trades, days_back)
+    if trades:
+        trades.sort(key=lambda x: x.get("transaction_date", ""), reverse=True)
+        _pol_cache["trades"] = trades
+        _pol_cache["timestamp"] = now
+        _save_disk_cache(trades)
+        logger.info(f"Politician trades fetched + persisted: {len(trades)}")
+        return _filter_recent(trades, days_back)
+
+    # All live sources failed → use disk snapshot if available
+    disk = _load_disk_cache()
+    if disk and disk.get("trades"):
+        cached = disk["trades"]
+        try:
+            fetched = datetime.fromisoformat(disk["fetched_at"])
+            age_hours = (now - fetched).total_seconds() / 3600
+        except Exception:
+            age_hours = -1
+        # Hydrate in-memory so subsequent calls in this process don't re-try
+        _pol_cache["trades"] = cached
+        _pol_cache["timestamp"] = now  # treat as fresh-enough this run
+        logger.warning(f"Live sources failed — serving disk snapshot ({len(cached)} trades, {age_hours:.1f}h old)")
+        return _filter_recent(cached, days_back)
+
+    logger.info("Politician trades cached: 0 total (no live + no disk)")
+    return []
 
 
 async def _fetch_quiver_authed(api_key: str, days_back: int = 180) -> List[Dict]:
