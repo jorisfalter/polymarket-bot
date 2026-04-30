@@ -491,6 +491,12 @@ async def lifespan(app: FastAPI):
         hour=9, minute=0,  # Daily at 09:00 UTC — social-media-ready recap
         id='daily_summary_job'
     )
+    scheduler.add_job(
+        check_politician_alerts,
+        'interval',
+        minutes=30,  # Watch for new trades from starred politicians
+        id='politician_alert_job'
+    )
     scheduler.start()
 
     # Initial scan
@@ -1566,6 +1572,67 @@ async def get_wsb_pulse():
     """r/wallstreetbets pulse — top hot posts + ticker buzz ranking."""
     from .reddit_data import get_wsb_pulse as wsb
     return await wsb()
+
+
+@app.get("/api/stocks/politician-watchlist")
+async def get_politician_watch():
+    from .stocks_data import get_politician_watchlist
+    return {"politicians": get_politician_watchlist()}
+
+
+@app.post("/api/stocks/politician-watchlist")
+async def add_politician_watch(payload: Dict):
+    from .stocks_data import get_politician_watchlist, set_politician_watchlist
+    name = (payload.get("name") or "").strip()
+    if not name:
+        return {"ok": False, "error": "name required"}
+    current = get_politician_watchlist()
+    if name not in current:
+        current.append(name)
+        set_politician_watchlist(current)
+    return {"ok": True, "politicians": current}
+
+
+@app.delete("/api/stocks/politician-watchlist")
+async def remove_politician_watch(name: str = Query(...)):
+    from .stocks_data import get_politician_watchlist, set_politician_watchlist
+    current = [n for n in get_politician_watchlist() if n.strip().lower() != name.strip().lower()]
+    set_politician_watchlist(current)
+    return {"ok": True, "politicians": current}
+
+
+async def check_politician_alerts():
+    """Scheduler job: detect new disclosed trades from watched politicians,
+    send email alerts. Runs every 30 min."""
+    from .stocks_data import detect_new_politician_trades
+    from .email_alerts import send_email
+    try:
+        new_trades = await detect_new_politician_trades()
+        if not new_trades:
+            return
+        logger.info(f"Politician alert: {len(new_trades)} new trade(s) from watched politicians")
+        rows = "\n".join(
+            f"<tr><td>{t.get('transaction_date','')}</td>"
+            f"<td><b>{t.get('representative','')}</b> ({t.get('chamber','?')})</td>"
+            f"<td><b>{t.get('ticker') or '–'}</b></td>"
+            f"<td>{t.get('type','?')}</td>"
+            f"<td>{t.get('amount','')}</td></tr>"
+            for t in new_trades
+        )
+        body = f"""
+        <h2>📢 New disclosed trade from your watched politicians</h2>
+        <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:sans-serif;font-size:13px;">
+          <tr style="background:#f0f0f0;"><th>Date</th><th>Representative</th><th>Ticker</th><th>Type</th><th>Range</th></tr>
+          {rows}
+        </table>
+        <p style="font-size:11px;color:#888;">Alert from your Polymarket Stocks board. Manage watchlist at <a href="https://polymarket.ai-tigers.com/stocks">/stocks</a>.</p>
+        """
+        send_email(
+            subject=f"📢 {len(new_trades)} new politician trade(s) — {', '.join({t.get('representative','?') for t in new_trades})}",
+            html_body=body,
+        )
+    except Exception as e:
+        logger.error(f"Politician alert check failed: {e}")
 
 
 @app.get("/api/playbook")

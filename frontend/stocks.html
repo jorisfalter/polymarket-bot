@@ -216,6 +216,13 @@
         }
 
         // Top politicians
+        const RELIABILITY = {
+            high:     { emoji: '🟢', label: 'Reliable',   tip: '20+ trades and beats SPY ≥55% — track record is statistically meaningful.' },
+            moderate: { emoji: '🟡', label: 'Moderate',   tip: '10-19 trades — meaningful but not yet bulletproof.' },
+            weak:     { emoji: '🟠', label: 'Weak',       tip: '5-9 trades — interesting, but small sample.' },
+            noise:    { emoji: '🔴', label: 'Small sample', tip: 'Fewer than 5 trades — α numbers are noise. Treat with caution.' },
+        };
+
         async function loadTopPoliticians() {
             const r = await fetch('/api/stocks/top-politicians?min_trades=2');
             const items = await r.json();
@@ -223,20 +230,44 @@
             if (!items.length) {
                 el.innerHTML = `<div class="empty" style="text-align:left;line-height:1.6;">
                     No politician data available.<br>
-                    <span style="font-size:11px;color:var(--text-muted);">Quiver dropped public access in 2026. Set <code>FINNHUB_API_KEY</code> in <code>.env</code> on the VPS — free tier at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent-secondary);">finnhub.io/register</a>.</span>
+                    <span style="font-size:11px;color:var(--text-muted);">Set <code>FINNHUB_API_KEY</code> in <code>.env</code> on the VPS — free tier at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent-secondary);">finnhub.io/register</a>.</span>
                 </div>`;
                 return;
             }
-            const top = items.slice(0, 12);
+            const top = items.slice(0, 15);
             el.innerHTML = `<table class="tbl">
-                <tr><th>Representative</th><th class="num">Avg α</th><th class="num">Beats SPY</th><th class="num">Trades</th></tr>
-                ${top.map(p => `<tr>
-                    <td>${escapeHtml(p.representative)} <span class="pill ${partyClass(p.party)}">${escapeHtml(p.party || '?')}</span></td>
-                    <td class="num ${p.avg_excess_return >= 0 ? 'pnl-positive' : 'pnl-negative'}">${(p.avg_excess_return >= 0 ? '+' : '') + p.avg_excess_return.toFixed(1)}%</td>
-                    <td class="num">${(p.beats_spy_pct * 100).toFixed(0)}%</td>
-                    <td class="num">${p.trades}</td>
-                </tr>`).join('')}
-            </table>`;
+                <tr><th></th><th>Representative</th><th class="num">Avg α</th><th class="num">Beats</th><th class="num">Trades</th><th>Reliability</th></tr>
+                ${top.map(p => {
+                    const rel = RELIABILITY[p.reliability || 'noise'] || RELIABILITY.noise;
+                    const star = p.watched ? '⭐' : '☆';
+                    return `<tr ${p.watched ? 'style="background:rgba(0,255,136,0.05);"' : ''}>
+                        <td><button class="star-btn" onclick="togglePoliticianWatch(${JSON.stringify(p.representative).replace(/"/g, '&quot;')}, ${!!p.watched})" title="${p.watched ? 'Stop watching' : 'Watch closely + email on new trades'}" style="background:none;border:none;cursor:pointer;font-size:14px;padding:0;color:${p.watched ? 'var(--accent-warning)' : 'var(--text-muted)'};">${star}</button></td>
+                        <td>${escapeHtml(p.representative)} <span class="pill ${partyClass(p.party)}">${escapeHtml(p.party || '?')}</span></td>
+                        <td class="num ${p.avg_excess_return >= 0 ? 'pnl-positive' : 'pnl-negative'}">${(p.avg_excess_return >= 0 ? '+' : '') + p.avg_excess_return.toFixed(1)}%</td>
+                        <td class="num">${(p.beats_spy_pct * 100).toFixed(0)}%</td>
+                        <td class="num">${p.trades}</td>
+                        <td title="${rel.tip}" style="font-size:10px;white-space:nowrap;">${rel.emoji} ${rel.label}</td>
+                    </tr>`;
+                }).join('')}
+            </table>
+            <div style="margin-top:10px;font-size:11px;color:var(--text-muted);line-height:1.5;">
+                Click ☆ to watch a politician — you'll get an <b>email</b> alert when they file a new trade. Stars persist. Reliability column flags small-sample noise: 2-trade α=+25% is one good Apple buy, not skill.
+            </div>`;
+        }
+
+        async function togglePoliticianWatch(name, isWatched) {
+            try {
+                if (isWatched) {
+                    await fetch('/api/stocks/politician-watchlist?name=' + encodeURIComponent(name), { method: 'DELETE' });
+                } else {
+                    await fetch('/api/stocks/politician-watchlist', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name })
+                    });
+                }
+                loadTopPoliticians();
+            } catch (e) { alert('Failed: ' + e.message); }
         }
 
         // Trades feed

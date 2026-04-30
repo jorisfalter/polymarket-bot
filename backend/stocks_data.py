@@ -19,6 +19,8 @@ QUIVER_CONGRESS_URL = "https://api.quiverquant.com/beta/live/congresstrading"
 FINNHUB_BASE = "https://finnhub.io/api/v1"
 
 WATCHLIST_PATH = Path(__file__).parent.parent / "data" / "stocks_watchlist.json"
+POLITICIAN_WATCHLIST_PATH = Path(__file__).parent.parent / "data" / "politicians_watchlist.json"
+POLITICIAN_SEEN_PATH = Path(__file__).parent.parent / "data" / "politicians_seen.json"
 
 # 12h cache for politician trades — they update slowly and the data is heavy.
 _pol_cache: Dict = {"timestamp": None, "trades": []}
@@ -231,6 +233,7 @@ async def top_politicians_by_alpha(min_trades: int = 2) -> List[Dict]:
                 pass
         d["total_volume_min"] += t.get("amount_usd") or 0
 
+    watched = set(n.lower().strip() for n in get_politician_watchlist())
     out = []
     for d in by_rep.values():
         if d["trades"] < min_trades:
@@ -239,9 +242,81 @@ async def top_politicians_by_alpha(min_trades: int = 2) -> List[Dict]:
         d["avg_excess_return"] = sum(ers) / len(ers) if ers else 0
         d["beats_spy_count"] = sum(1 for r in ers if r > 0)
         d["beats_spy_pct"] = (d["beats_spy_count"] / len(ers)) if ers else 0
+        d["reliability"] = reliability_tier(d["trades"], d["beats_spy_pct"])
+        d["watched"] = d["representative"].lower().strip() in watched
         out.append(d)
-    out.sort(key=lambda x: x["avg_excess_return"], reverse=True)
+    out.sort(key=lambda x: (x["watched"], x["avg_excess_return"]), reverse=True)
     return out
+
+
+def get_politician_watchlist() -> List[str]:
+    if not POLITICIAN_WATCHLIST_PATH.exists():
+        return []
+    try:
+        return json.loads(POLITICIAN_WATCHLIST_PATH.read_text()).get("politicians", [])
+    except Exception:
+        return []
+
+
+def set_politician_watchlist(names: List[str]):
+    POLITICIAN_WATCHLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    deduped = []
+    for n in names:
+        n = (n or "").strip()
+        if n and n not in deduped:
+            deduped.append(n)
+    POLITICIAN_WATCHLIST_PATH.write_text(json.dumps({"politicians": deduped}, indent=2))
+
+
+def reliability_tier(trades: int, beats_spy_pct: float) -> str:
+    """Classify a politician's track-record reliability based on sample size.
+    The dashboard surfaces this so users don't chase 2-trade outliers."""
+    if trades >= 20 and beats_spy_pct >= 0.55:
+        return "high"
+    if trades >= 10:
+        return "moderate"
+    if trades >= 5:
+        return "weak"
+    return "noise"
+
+
+async def detect_new_politician_trades() -> List[Dict]:
+    """Compare current politician trades against last-seen state.
+    Returns NEW disclosures from watched politicians since last check."""
+    watchlist = get_politician_watchlist()
+    if not watchlist:
+        return []
+
+    # Load last-seen state — keyed by representative name → set of "ticker:date" strings
+    seen: Dict[str, set] = {}
+    if POLITICIAN_SEEN_PATH.exists():
+        try:
+            raw = json.loads(POLITICIAN_SEEN_PATH.read_text())
+            seen = {k: set(v) for k, v in raw.items()}
+        except Exception:
+            pass
+
+    trades = await fetch_politician_trades(days_back=30)
+    new_trades: List[Dict] = []
+    watch_lower = {w.lower().strip() for w in watchlist}
+
+    for t in trades:
+        rep = t.get("representative", "")
+        if not rep or rep.lower().strip() not in watch_lower:
+            continue
+        key = f"{t.get('ticker','')}:{t.get('transaction_date','')}:{t.get('type','')}"
+        seen_set = seen.setdefault(rep, set())
+        if key in seen_set:
+            continue
+        new_trades.append(t)
+        seen_set.add(key)
+
+    # Persist updated state
+    POLITICIAN_SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    POLITICIAN_SEEN_PATH.write_text(
+        json.dumps({k: list(v) for k, v in seen.items()}, indent=2)
+    )
+    return new_trades
 
 
 async def fetch_squeeze_setups(min_short_pct: float = 0.20) -> List[Dict]:
