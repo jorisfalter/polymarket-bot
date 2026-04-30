@@ -1,10 +1,12 @@
-# Bitcoin Carry & Arbitrage Strategies
+# Crypto — Strategy Playbook
 
-Delta-neutrale strategieën die structureel rendement genereren zonder directional exposure op Bitcoin.
+Strategies for the **/crypto** dashboard. Mostly **delta-neutral** — structural yield without directional exposure on BTC/ETH/SOL. Currently manual execution; the dashboard surfaces signals.
+
+The first three strategies (funding arb, basis, cross-exchange) are the canonical "carry" trades. The last two are non-carry plays we may surface later.
 
 ---
 
-## 1. Funding Rate Arbitrage
+## Strategy 1: Funding Rate Arbitrage
 
 ### Concept
 Perpetual futures (Binance, Bybit, OKX) hebben geen expiratie maar betalen elke 8 uur een "funding rate" om de prijs dicht bij spot te houden. In bullish markten betalen longs aan shorts — jij pakt die stroom door beide kanten te houden.
@@ -34,7 +36,7 @@ Exit:   funding rate < 0.005% per 8u of negatief
 
 ---
 
-## 2. Cash-and-Carry (Basis Trading)
+## Strategy 2: Cash-and-Carry (Basis Trading)
 
 ### Concept
 Futures met vaste expiratie (kwartaalscontracten) handelen altijd met een premium boven spot — de "basis". Bij expiratie convergeert de prijs naar spot. Jij koopt spot en verkoopt futures, en pakt die spread gegarandeerd.
@@ -62,7 +64,7 @@ Futures met vaste expiratie (kwartaalscontracten) handelen altijd met een premiu
 
 ---
 
-## 3. Cross-Exchange Arbitrage (ter info — niet implementeerbaar voor retail)
+## Strategy 3: Cross-Exchange Arbitrage (informational — not retail-implementable)
 
 Zelfde asset, verschillende prijs op meerdere exchanges. Koop goedkoop, verkoop duur.
 
@@ -71,9 +73,37 @@ Zelfde asset, verschillende prijs op meerdere exchanges. Koop goedkoop, verkoop 
 - HFT-bots met co-location domineren
 - Transfertijd tussen exchanges elimineert de edge
 
+**Currently surfaced on dashboard:** ✅ Cross-exchange spread visible (Binance/Coinbase/Kraken/OKX). Treat it as a market-quality signal — when spreads widen materially, retail can occasionally catch a few bps if you have funded accounts on both sides.
+
 ---
 
-## Gecombineerde Bot — Implementatieplan
+## Strategy 4: Stablecoin Yield (lower-priority watchlist)
+**Data source:** DeFi yield aggregators (Aave, Compound, Pendle, Ethena)
+
+**Logic:** USDC and other stablecoins earn variable yields on lending platforms. Rates spike when leverage demand spikes — same drivers as funding rates. Pendle's PT tokens lock in fixed yields ahead of time.
+
+**Trigger:** Aave/Compound USDC borrow rates > 8% APY for ≥3 days, or Pendle PT yields > 12% on quality assets.
+
+**Edge:** Genuine yield from leverage demand. Lower-risk than funding arb (no liquidation risk on either leg).
+
+**Currently surfaced:** ❌ Not yet — lives on the watchlist for future integration.
+
+---
+
+## Strategy 5: Liquid Staking Premium Arb (ETH-specific)
+**Data source:** ETH staking yields + lstETH market prices (Lido, Rocket Pool, EtherFi)
+
+**Logic:** Liquid staking tokens (stETH, rETH, etc.) sometimes trade at discounts/premiums to underlying ETH. Discount > peg = arb (buy stETH, redeem 1:1 for ETH after withdrawal queue).
+
+**Trigger:** stETH/ETH ratio < 0.998 sustained for 24h+.
+
+**Edge:** Bounded return when peg restores. Most plays close in days-weeks.
+
+**Currently surfaced:** ❌ Future expansion.
+
+---
+
+## Combined carry bot — implementation plan
 
 ### Architectuur
 ```

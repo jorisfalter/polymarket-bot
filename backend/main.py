@@ -1548,12 +1548,18 @@ async def get_all_crypto_signals():
 
 
 @app.get("/api/playbook")
-async def get_playbook_content():
-    """Serve TRADING_STRATEGIES.md content for the playbook page."""
-    md_path = Path(__file__).parent.parent / "TRADING_STRATEGIES.md"
-    if not md_path.exists():
-        return {"content": "# Playbook not found"}
-    return {"content": md_path.read_text()}
+async def get_playbook_content(board: str = Query("polymarket", regex="^(polymarket|stocks|crypto)$")):
+    """Serve a strategy playbook for one of the three boards."""
+    docs_dir = Path(__file__).parent.parent / "docs"
+    file_map = {
+        "polymarket": docs_dir / "polymarket-strategies.md",
+        "stocks": docs_dir / "stocks-strategies.md",
+        "crypto": docs_dir / "crypto-strategies.md",
+    }
+    md_path = file_map.get(board)
+    if not md_path or not md_path.exists():
+        return {"board": board, "content": f"# {board.title()} playbook not found"}
+    return {"board": board, "content": md_path.read_text()}
 
 
 @app.get("/animations")

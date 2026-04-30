@@ -57,12 +57,11 @@
         </header>
 
         <div class="main-content single-panel">
-            <div class="sub-nav">
-                <a href="/agent" class="sub-link">Dashboard</a>
-                <a href="/research" class="sub-link">Research</a>
-                <a href="/playbook" class="sub-link active">Playbook</a>
-                <a href="/" class="sub-link">Detection</a>
-                <a href="/strategy" class="sub-link">Engine</a>
+            <div id="sub-nav-container"></div>
+            <div class="board-tabs" style="display:flex; gap:4px; padding:4px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:10px; margin-bottom:20px;">
+                <a href="/playbook?board=polymarket" id="tab-polymarket" class="board-tab" style="flex:1;text-align:center;padding:10px 16px;border-radius:6px;color:var(--text-secondary);text-decoration:none;font-weight:600;font-size:14px;">🎯 Polymarket</a>
+                <a href="/playbook?board=stocks" id="tab-stocks" class="board-tab" style="flex:1;text-align:center;padding:10px 16px;border-radius:6px;color:var(--text-secondary);text-decoration:none;font-weight:600;font-size:14px;">📈 Stocks</a>
+                <a href="/playbook?board=crypto" id="tab-crypto" class="board-tab" style="flex:1;text-align:center;padding:10px 16px;border-radius:6px;color:var(--text-secondary);text-decoration:none;font-weight:600;font-size:14px;">₿ Crypto</a>
             </div>
             <div class="layout">
                 <aside class="toc" id="toc">
@@ -75,15 +74,47 @@
     </div>
 
     <script>
+        function getBoard() {
+            const p = new URLSearchParams(location.search);
+            const b = p.get('board');
+            return ['polymarket', 'stocks', 'crypto'].includes(b) ? b : 'polymarket';
+        }
+
+        function setActiveTab(board) {
+            document.querySelectorAll('.board-tab').forEach(t => {
+                const isActive = t.id === 'tab-' + board;
+                t.style.background = isActive ? 'var(--accent-primary)' : 'transparent';
+                t.style.color = isActive ? 'var(--bg-primary)' : 'var(--text-secondary)';
+            });
+        }
+
+        function renderSubNav(board) {
+            // Polymarket has its own sub-nav; Stocks and Crypto are single pages.
+            const subNav = document.getElementById('sub-nav-container');
+            if (board === 'polymarket') {
+                subNav.innerHTML = `<div class="sub-nav">
+                    <a href="/agent" class="sub-link">Dashboard</a>
+                    <a href="/research" class="sub-link">Research</a>
+                    <a href="/playbook?board=polymarket" class="sub-link active">Playbook</a>
+                    <a href="/" class="sub-link">Detection</a>
+                    <a href="/strategy" class="sub-link">Engine</a>
+                </div>`;
+            } else {
+                subNav.innerHTML = '';
+            }
+        }
+
         async function loadPlaybook() {
+            const board = getBoard();
+            setActiveTab(board);
+            renderSubNav(board);
             try {
-                const res = await fetch('/api/playbook');
+                const res = await fetch('/api/playbook?board=' + board);
                 const data = await res.json();
                 const md = data.content || '# Empty';
                 const html = marked.parse(md);
                 document.getElementById('playbook').innerHTML = html;
 
-                // Build TOC from h1/h2 headings
                 const article = document.getElementById('playbook');
                 const headings = article.querySelectorAll('h1, h2');
                 const tocList = document.getElementById('toc-list');

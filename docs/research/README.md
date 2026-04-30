@@ -8,7 +8,7 @@ Distilled summaries of trading strategies, insider patterns, and platform ideas 
 | [movez-copy-trading-algo.md](movez-copy-trading-algo.md) | Mispricing formula `δ = actual win rate − implied prob`. Real edge is 80–99¢, not 0.1–50¢. |
 | [car-on-x-infinite-money-glitch.md](car-on-x-infinite-money-glitch.md) | Daily-resolving markets with long Yes-streaks priced 92–95¢ = free money if sized right. |
 | [paris-weather-case.md](paris-weather-case.md) | Météo-France tampering (Apr 2026). Inspired the Asymmetric Bet detector signal. |
-| [bitcoin-carry-strategies.md](bitcoin-carry-strategies.md) | Brainstorm notes on BTC day-trading via funding rates, cash-and-carry, cross-exchange arb. |
+| (Crypto carry strategies moved to [`docs/crypto-strategies.md`](../crypto-strategies.md)) | Promoted to top-level playbook. |
 | [polymarket-derivatives-platform.md](polymarket-derivatives-platform.md) | Brainstorm: Deribit-style derivatives platform built on top of Polymarket. |
 
 ## Adding a new research doc
