@@ -7,46 +7,78 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=13">
+    <link rel="stylesheet" href="/static/styles.css?v=14">
     <style>
-        .thinking-panel { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 12px; padding: 20px; margin-bottom: 20px; max-height: 500px; overflow-y: auto; }
-        .thinking-entry { border-bottom: 1px solid var(--border-primary); padding: 16px 0; }
-        .thinking-entry:last-child { border-bottom: none; }
-        .thinking-time { font-size: 11px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; }
-        .thinking-text { font-size: 14px; color: var(--text-primary); line-height: 1.6; margin: 8px 0; white-space: pre-wrap; }
-        .thinking-trades { margin-top: 8px; }
-        .thinking-trade { background: rgba(0,255,136,0.08); border: 1px solid rgba(0,255,136,0.2); border-radius: 6px; padding: 8px 12px; margin-top: 6px; font-size: 13px; }
-        .thinking-trade .action { color: #00ff88; font-weight: 600; }
-        .thinking-trade .thesis { color: var(--text-secondary); font-style: italic; }
-        .thinking-meta { display: flex; gap: 16px; margin-top: 8px; font-size: 12px; }
-        .thinking-meta .watchlist { color: #00d4ff; }
-        .thinking-meta .risk { color: #ffaa00; }
-        .no-thinking { text-align: center; color: var(--text-secondary); padding: 40px; font-size: 14px; }
-        .thesis-card { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; padding: 14px 16px; }
-        .thesis-card .thesis-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-        .thesis-card .thesis-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
-        .thesis-card .thesis-note { font-size: 12px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4; }
-        .thesis-card .thesis-meta { font-size: 11px; color: var(--text-secondary); margin-top: 6px; font-family: 'JetBrains Mono', monospace; }
-        .conviction-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 3px; text-transform: uppercase; }
-        .conviction-badge.high { background: rgba(0,255,136,0.15); color: #00ff88; }
-        .conviction-badge.medium { background: rgba(255,170,0,0.15); color: #ffaa00; }
-        .conviction-badge.low { background: rgba(136,136,136,0.15); color: #888; }
+        /* Layout */
+        .dash-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; margin-bottom: 20px; }
+        @media (max-width: 1024px) { .dash-grid { grid-template-columns: 1fr; } }
 
-        .agent-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
-        .agent-stat { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; padding: 12px 16px; text-align: center; }
-        .agent-stat .value { font-size: 20px; font-family: 'JetBrains Mono', monospace; color: var(--text-primary); }
-        .agent-stat .label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; margin-top: 4px; }
-        .model-badge { font-size: 11px; background: rgba(0,212,255,0.15); color: #00d4ff; padding: 3px 10px; border-radius: 4px; font-weight: 600; }
-        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-        .status-dot.active { background: #00ff88; }
-        .status-dot.inactive { background: #666; }
-        .pnl-positive { color: #00ff88; }
-        .pnl-negative { color: #ff3366; }
-        .positions-grid { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 12px; }
-        .position-card { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
-        .position-card .market { color: var(--text-primary); flex: 1; }
-        .position-card .amount { font-family: 'JetBrains Mono', monospace; color: #00d4ff; min-width: 60px; text-align: right; }
-        @media (max-width: 768px) { .agent-stats { grid-template-columns: repeat(2, 1fr); } }
+        /* Headline card */
+        .headline-card { background: linear-gradient(135deg, rgba(0,255,136,0.06), rgba(0,212,255,0.06)); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .headline-card .row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+        @media (max-width: 768px) { .headline-card .row { grid-template-columns: repeat(3, 1fr); } }
+        .headline-card .stat { text-align: center; }
+        .headline-card .stat .value { font-family: var(--font-mono); font-size: 22px; font-weight: 600; color: var(--text-primary); }
+        .headline-card .stat .label { font-size: 10px; text-transform: uppercase; color: var(--text-secondary); margin-top: 4px; letter-spacing: 0.5px; }
+        .pnl-positive { color: var(--accent-primary) !important; }
+        .pnl-negative { color: var(--accent-danger) !important; }
+
+        /* Generic panel */
+        .panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; }
+        .panel h3 { font-size: 13px; text-transform: uppercase; color: var(--text-secondary); margin: 0 0 12px 0; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center; }
+        .panel h3 .count { font-size: 11px; background: rgba(0,212,255,0.15); color: var(--accent-secondary); padding: 2px 8px; border-radius: 4px; }
+
+        /* Trade rows */
+        .trade-row { display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-color); align-items: center; font-size: 13px; }
+        .trade-row:last-child { border-bottom: none; }
+        .trade-row .ts { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+        .trade-row .market { color: var(--text-primary); line-height: 1.3; }
+        .trade-row .market .strategy-tag { display: inline-block; font-size: 10px; padding: 1px 6px; background: rgba(170,102,255,0.15); color: var(--accent-purple); border-radius: 3px; margin-right: 6px; font-weight: 500; }
+        .trade-row .market .thesis { font-size: 11px; color: var(--text-secondary); margin-top: 3px; line-height: 1.4; }
+        .trade-row .amount { font-family: var(--font-mono); font-weight: 600; text-align: right; min-width: 70px; }
+        .trade-row.entry .amount { color: var(--accent-secondary); }
+        .trade-row.exit-win .amount { color: var(--accent-primary); }
+        .trade-row.exit-loss .amount { color: var(--accent-danger); }
+        .trade-row.exit-unknown .amount { color: var(--text-muted); font-size: 11px; }
+
+        /* Strategy table */
+        .strat-row { display: grid; grid-template-columns: 1.5fr 60px 80px 70px; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-color); font-size: 12px; align-items: center; }
+        .strat-row:last-child { border-bottom: none; }
+        .strat-row.header { font-size: 10px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; letter-spacing: 0.5px; }
+        .strat-row .name { color: var(--text-primary); font-weight: 500; }
+        .strat-row .pnl { font-family: var(--font-mono); text-align: right; }
+        .strat-row .winrate { font-family: var(--font-mono); text-align: right; color: var(--text-secondary); }
+        .strat-row .open { font-family: var(--font-mono); text-align: right; color: var(--accent-secondary); }
+
+        /* Position cards */
+        .position-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-color); font-size: 13px; align-items: center; }
+        .position-row:last-child { border-bottom: none; }
+        .position-row .market { color: var(--text-primary); line-height: 1.3; }
+        .position-row .market .meta { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+        .position-row .price { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-align: right; }
+        .position-row .stake { font-family: var(--font-mono); color: var(--accent-secondary); text-align: right; min-width: 60px; }
+
+        /* Theses */
+        .thesis-card { padding: 10px 0; border-bottom: 1px solid var(--border-color); }
+        .thesis-card:last-child { border-bottom: none; }
+        .thesis-card .title { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+        .thesis-card .conv { font-size: 10px; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; font-weight: 700; margin-left: 8px; }
+        .thesis-card .conv.high { background: rgba(0,255,136,0.15); color: var(--accent-primary); }
+        .thesis-card .conv.medium { background: rgba(255,170,0,0.15); color: var(--accent-warning); }
+        .thesis-card .conv.low { background: rgba(136,136,136,0.15); color: var(--text-muted); }
+        .thesis-card .note { font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4; }
+
+        /* Thinking */
+        .thinking-panel { max-height: 400px; overflow-y: auto; }
+        .thinking-entry { padding: 12px 0; border-bottom: 1px solid var(--border-color); }
+        .thinking-entry:last-child { border-bottom: none; }
+        .thinking-time { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+        .thinking-text { font-size: 13px; color: var(--text-primary); line-height: 1.5; margin-top: 6px; white-space: pre-wrap; }
+
+        .empty { color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px; font-style: italic; }
+        .actions-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+        .btn-action { background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: inherit; }
+        .btn-action:hover { background: var(--bg-hover); border-color: var(--accent-primary); }
     </style>
 </head>
 <body>
@@ -55,80 +87,76 @@
             <div class="header-left">
                 <div class="logo">
                     <span class="logo-icon">🧠</span>
-                    <span class="logo-text">AI<span class="logo-highlight">AGENT</span></span>
+                    <span class="logo-text">AI<span class="logo-highlight">DASH</span></span>
                 </div>
-                <span class="tagline">Claude-Powered Trading</span>
+                <span class="tagline">Live Trading Console</span>
             </div>
             <div class="header-right">
                 <nav class="main-nav">
-                    <a href="/" class="nav-link">
-                        <span class="nav-icon">🔍</span>
-                        <span class="nav-text">Detection</span>
-                    </a>
-                    <a href="/agent" class="nav-link active">
-                        <span class="nav-icon">🧠</span>
-                        <span class="nav-text">AI Agent</span>
-                    </a>
-                    <a href="/strategy" class="nav-link">
-                        <span class="nav-icon">🤖</span>
-                        <span class="nav-text">Strategies</span>
-                    </a>
+                    <a href="/" class="nav-link"><span class="nav-icon">🔍</span><span class="nav-text">Detection</span></a>
+                    <a href="/agent" class="nav-link active"><span class="nav-icon">🧠</span><span class="nav-text">Agent</span></a>
+                    <a href="/strategy" class="nav-link"><span class="nav-icon">🤖</span><span class="nav-text">Strategies</span></a>
                 </nav>
             </div>
         </header>
 
         <div class="main-content single-panel">
-            <!-- Stats Bar -->
-            <div class="agent-stats">
-                <div class="agent-stat">
-                    <div class="value" id="balance">--</div>
-                    <div class="label">Balance</div>
-                </div>
-                <div class="agent-stat">
-                    <div class="value" id="exposure">--</div>
-                    <div class="label">Exposure / $5</div>
-                </div>
-                <div class="agent-stat">
-                    <div class="value" id="positions">--</div>
-                    <div class="label">Positions</div>
-                </div>
-                <div class="agent-stat">
-                    <div class="value" id="pnl">--</div>
-                    <div class="label">Total P&L</div>
-                </div>
-                <div class="agent-stat">
-                    <div class="value"><span class="status-dot" id="status-dot"></span><span id="status-text">--</span></div>
-                    <div class="label">Status</div>
+            <!-- Headline / scoreboard -->
+            <div class="headline-card">
+                <div class="row">
+                    <div class="stat"><div class="value" id="pnl-24h">--</div><div class="label">24h P&amp;L</div></div>
+                    <div class="stat"><div class="value" id="pnl-lifetime">--</div><div class="label">Lifetime P&amp;L</div></div>
+                    <div class="stat"><div class="value" id="winrate">--</div><div class="label">Win Rate</div></div>
+                    <div class="stat"><div class="value" id="exposure">--</div><div class="label">Exposure</div></div>
+                    <div class="stat"><div class="value" id="positions">--</div><div class="label">Slots</div></div>
+                    <div class="stat"><div class="value" id="balance">--</div><div class="label">Balance</div></div>
                 </div>
             </div>
 
-            <!-- Open Positions -->
-            <div id="positions-section" style="margin-bottom: 20px; display: none;">
-                <h3 style="font-size: 14px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px;">Open Positions</h3>
-                <div class="positions-grid" id="positions-grid"></div>
+            <div class="actions-bar">
+                <button class="btn-action" onclick="triggerCycle()">⚡ Run Cycle Now</button>
+                <button class="btn-action" onclick="triggerSummary()">📰 Send Daily Summary</button>
+                <span style="margin-left:auto;font-size:11px;color:var(--text-muted);" id="last-update">Loading...</span>
             </div>
 
-            <!-- Thesis Board -->
-            <div id="thesis-section" style="margin-bottom: 20px;">
-                <h3 style="font-size: 14px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px;">Thesis Board</h3>
-                <div id="thesis-board" style="display: grid; gap: 8px;">
-                    <div style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No active theses yet. The agent will create them when it spots patterns.</div>
+            <!-- Top row: Open positions + Strategy P&L -->
+            <div class="dash-grid">
+                <div class="panel">
+                    <h3>Open Positions <span class="count" id="positions-count">0</span></h3>
+                    <div id="positions-list"><div class="empty">No open positions.</div></div>
+                </div>
+                <div class="panel">
+                    <h3>Strategy Breakdown</h3>
+                    <div id="strategy-table"><div class="empty">No closed trades yet.</div></div>
                 </div>
             </div>
 
-            <!-- Agent's Thinking -->
-            <div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <h2 style="margin: 0; font-size: 18px;">Agent's Thinking</h2>
-                    <span class="model-badge" id="model-badge">--</span>
+            <!-- Middle row: Recent entries / exits -->
+            <div class="dash-grid">
+                <div class="panel">
+                    <h3>Recent Entries <span class="count" id="entries-count">0</span></h3>
+                    <div id="entries-list"><div class="empty">No entries yet.</div></div>
                 </div>
-                <div class="thinking-panel" id="thinking-panel">
-                    <div class="no-thinking">Waiting for first cycle... The agent thinks every 5 minutes.</div>
+                <div class="panel">
+                    <h3>Recent Exits <span class="count" id="exits-count">0</span></h3>
+                    <div id="exits-list"><div class="empty">No exits yet.</div></div>
+                </div>
+            </div>
+
+            <!-- Bottom row: Thesis board + Thinking -->
+            <div class="dash-grid">
+                <div class="panel">
+                    <h3>Thesis Board <span class="count" id="thesis-count">0</span></h3>
+                    <div id="thesis-list"><div class="empty">No active theses.</div></div>
+                </div>
+                <div class="panel">
+                    <h3>Agent Thinking (Last 5 cycles)</h3>
+                    <div class="thinking-panel" id="thinking-list"><div class="empty">Waiting for next cycle...</div></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <script src="/static/agent.js?v=1"></script>
+    <script src="/static/agent.js?v=2"></script>
 </body>
 </html>

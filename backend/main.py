@@ -1282,6 +1282,54 @@ async def trigger_daily_summary():
     return {"ok": True, "summary": generate_daily_summary()}
 
 
+@app.get("/api/agent/journal")
+async def get_agent_journal(limit: int = Query(50, le=500)):
+    """Recent ENTER/EXIT entries from the trade journal (most recent first)."""
+    from .trade_journal import journal
+    history = journal.get_history(limit=limit)
+    enters = [e for e in history if e.get("action") == "ENTER"][:limit]
+    exits = [e for e in history if e.get("action") == "EXIT"][:limit]
+    return {
+        "enters": enters,
+        "exits": exits,
+        "performance": journal.get_performance(),
+    }
+
+
+@app.get("/api/agent/strategy-summary")
+async def get_agent_strategy_summary():
+    """Per-strategy P&L breakdown from the journal."""
+    from .trade_journal import journal
+    perf = journal.get_performance()
+    by_strategy = perf.get("by_strategy", {})
+    # Add open position counts per strategy
+    open_by_strategy: Dict[str, int] = {}
+    for p in journal.get_open_positions():
+        s = p.get("strategy", "unknown")
+        open_by_strategy[s] = open_by_strategy.get(s, 0) + 1
+    return {
+        "totals": {k: v for k, v in perf.items() if k != "by_strategy"},
+        "by_strategy": [
+            {
+                "name": name,
+                "pnl": stats["pnl"],
+                "trades": stats["trades"],
+                "wins": stats["wins"],
+                "win_rate": (stats["wins"] / stats["trades"]) if stats["trades"] else 0,
+                "open_positions": open_by_strategy.get(name, 0),
+            }
+            for name, stats in by_strategy.items()
+        ],
+    }
+
+
+@app.get("/api/agent/daily-summary")
+async def get_daily_summary_data():
+    """Read-only: return the same data the daily summary cron job would format."""
+    from .daily_summary import generate_daily_summary
+    return generate_daily_summary()
+
+
 @app.get("/agent")
 async def serve_agent():
     return FileResponse(
