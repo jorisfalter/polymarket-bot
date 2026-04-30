@@ -1552,6 +1552,38 @@ async def get_top_politicians(min_trades: int = Query(2, le=50)):
     return await top_politicians_by_alpha(min_trades=min_trades)
 
 
+@app.get("/api/stocks/top-politicians-portfolios")
+async def get_top_politicians_portfolios(top: int = Query(5, le=20), min_trades: int = Query(2, le=50)):
+    """Top N politicians + their recent trades, grouped per politician.
+    Useful for the dashboard's portfolio drill-down."""
+    from .stocks_data import top_politicians_by_alpha, fetch_politician_trades
+    leaders = await top_politicians_by_alpha(min_trades=min_trades)
+    leaders = leaders[:top]
+    leader_names = {p["representative"].lower().strip() for p in leaders}
+    all_trades = await fetch_politician_trades(days_back=180)
+    by_rep: Dict[str, List[Dict]] = {}
+    for t in all_trades:
+        rep = (t.get("representative") or "").strip()
+        if rep.lower() in leader_names:
+            by_rep.setdefault(rep, []).append(t)
+    # Sort each politician's trades newest-first
+    for trades in by_rep.values():
+        trades.sort(key=lambda x: x.get("transaction_date", ""), reverse=True)
+    return [
+        {
+            "representative": p["representative"],
+            "party": p.get("party", ""),
+            "chamber": p.get("chamber", ""),
+            "reliability": p.get("reliability"),
+            "avg_excess_return": p.get("avg_excess_return"),
+            "trades_count": p.get("trades"),
+            "watched": p.get("watched", False),
+            "trades": by_rep.get(p["representative"], [])[:30],  # last 30 trades each
+        }
+        for p in leaders
+    ]
+
+
 @app.get("/api/btc/all")
 async def get_all_crypto_signals():
     """Aggregated crypto dashboard data — funding, basis, spread, yields, LST."""

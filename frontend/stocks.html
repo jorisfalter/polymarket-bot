@@ -109,6 +109,12 @@
                 </div>
             </div>
 
+            <!-- Top 5 Politician Portfolios -->
+            <div class="panel" style="margin-top: 20px;">
+                <h3>📂 Top 5 Politician Portfolios <span class="sub">— last 180d disclosures, click to expand</span></h3>
+                <div id="portfolios-list"><div class="empty">Loading…</div></div>
+            </div>
+
             <!-- WSB Pulse -->
             <div class="grid-2" style="margin-top: 20px;">
                 <div class="panel">
@@ -385,6 +391,95 @@
             } catch (e) { console.error('sc13', e); }
         }
 
+        // External research links per politician (Capitol Trades is the cleanest)
+        function politicianLinks(name) {
+            const slug = name.replace(/\s+/g, '+');
+            return `
+                <a href="https://www.capitoltrades.com/politicians?search=${encodeURIComponent(name)}" target="_blank" rel="noopener" style="color:var(--accent-secondary);font-size:11px;margin-left:8px;">capitoltrades ↗</a>
+                <a href="https://www.quiverquant.com/congresstrading/politician/${slug}" target="_blank" rel="noopener" style="color:var(--accent-secondary);font-size:11px;margin-left:6px;">quiver ↗</a>
+            `;
+        }
+
+        async function loadPortfolios() {
+            try {
+                const r = await fetch('/api/stocks/top-politicians-portfolios?top=5');
+                const items = await r.json();
+                const el = document.getElementById('portfolios-list');
+                if (!items.length) { el.innerHTML = '<div class="empty">No data.</div>'; return; }
+
+                el.innerHTML = items.map((p, i) => {
+                    const trades = p.trades || [];
+                    if (!trades.length) {
+                        return `<details style="margin-bottom:6px;border-bottom:1px solid var(--border-color);padding:10px 0;">
+                            <summary style="cursor:pointer;font-size:13px;">
+                                <b>${escapeHtml(p.representative)}</b>
+                                <span class="pill ${partyClass(p.party)}">${escapeHtml(p.party || '?')}</span>
+                                <span style="color:var(--text-muted);font-size:11px;margin-left:8px;">${RELIABILITY[p.reliability || 'noise'].emoji} ${p.trades_count} trades · α ${(p.avg_excess_return || 0).toFixed(1)}%</span>
+                                ${politicianLinks(p.representative)}
+                            </summary>
+                            <div style="padding:8px 0;color:var(--text-muted);font-size:12px;">No trades in last 180d.</div>
+                        </details>`;
+                    }
+
+                    // Group by ticker for portfolio summary
+                    const byTicker = {};
+                    for (const t of trades) {
+                        const tk = t.ticker || '–';
+                        if (!byTicker[tk]) byTicker[tk] = { ticker: tk, purchases: 0, sales: 0, last_date: '', last_type: '' };
+                        if (t.type === 'purchase') byTicker[tk].purchases += 1;
+                        else if (t.type === 'sale') byTicker[tk].sales += 1;
+                        if (!byTicker[tk].last_date || (t.transaction_date || '') > byTicker[tk].last_date) {
+                            byTicker[tk].last_date = t.transaction_date || '';
+                            byTicker[tk].last_type = t.type || '';
+                        }
+                    }
+                    const portfolioRows = Object.values(byTicker).sort((a, b) => b.last_date.localeCompare(a.last_date)).map(t => {
+                        const action = t.purchases > t.sales ? 'NET BUY' : t.purchases < t.sales ? 'NET SELL' : 'MIXED';
+                        const klass = t.purchases > t.sales ? 'purchase' : t.purchases < t.sales ? 'sale' : 'exchange';
+                        return `<tr>
+                            <td><span class="ticker">${escapeHtml(t.ticker)}</span></td>
+                            <td><span class="pill ${klass}">${action}</span></td>
+                            <td class="num">${t.purchases}P / ${t.sales}S</td>
+                            <td><span style="font-family:var(--font-mono);font-size:11px;">${escapeHtml(t.last_date)}</span></td>
+                        </tr>`;
+                    }).join('');
+
+                    const tradeRows = trades.slice(0, 20).map(t => `<tr>
+                        <td><span style="font-family:var(--font-mono);font-size:11px;">${escapeHtml(t.transaction_date || '')}</span></td>
+                        <td><span class="ticker">${escapeHtml(t.ticker || '–')}</span></td>
+                        <td><span class="pill ${t.type}">${escapeHtml(t.type || '?')}</span></td>
+                        <td style="font-size:11px;">${escapeHtml(t.amount || '')}</td>
+                    </tr>`).join('');
+
+                    return `<details ${i === 0 ? 'open' : ''} style="margin-bottom:6px;border-bottom:1px solid var(--border-color);padding:10px 0;">
+                        <summary style="cursor:pointer;font-size:13px;list-style:none;">
+                            <b>${escapeHtml(p.representative)}</b>
+                            <span class="pill ${partyClass(p.party)}">${escapeHtml(p.party || '?')}</span>
+                            <span style="color:var(--text-muted);font-size:11px;margin-left:8px;">${RELIABILITY[p.reliability || 'noise'].emoji} ${p.trades_count} trades · α ${(p.avg_excess_return || 0).toFixed(1)}% · ${trades.length} disclosures last 180d</span>
+                            ${politicianLinks(p.representative)}
+                        </summary>
+                        <div style="padding:12px 0;display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+                            <div>
+                                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;font-weight:600;">Portfolio (per ticker)</div>
+                                <table class="tbl">
+                                    <tr><th>Ticker</th><th>Net</th><th class="num">P/S</th><th>Last</th></tr>
+                                    ${portfolioRows}
+                                </table>
+                            </div>
+                            <div>
+                                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;font-weight:600;">Recent trades (newest first)</div>
+                                <table class="tbl">
+                                    <tr><th>Date</th><th>Ticker</th><th>Type</th><th>Range</th></tr>
+                                    ${tradeRows}
+                                </table>
+                                ${trades.length > 20 ? `<div style="font-size:10px;color:var(--text-muted);text-align:center;padding-top:6px;">Showing 20 of ${trades.length}.</div>` : ''}
+                            </div>
+                        </div>
+                    </details>`;
+                }).join('');
+            } catch (e) { console.error('portfolios', e); }
+        }
+
         async function loadWSB() {
             try {
                 const r = await fetch('/api/stocks/wsb');
@@ -439,15 +534,17 @@
 
         loadSqueezes();
         loadTopPoliticians();
+        loadPortfolios();
         loadTrades();
         loadForm4();
         loadSC13();
         loadWSB();
-        setInterval(loadSqueezes, 120000);  // 2 min
-        setInterval(loadTrades, 600000);    // 10 min
-        setInterval(loadForm4, 1800000);    // 30 min
-        setInterval(loadSC13, 1800000);     // 30 min
-        setInterval(loadWSB, 600000);       // 10 min
+        setInterval(loadSqueezes, 120000);   // 2 min
+        setInterval(loadPortfolios, 600000); // 10 min
+        setInterval(loadTrades, 600000);     // 10 min
+        setInterval(loadForm4, 1800000);     // 30 min
+        setInterval(loadSC13, 1800000);      // 30 min
+        setInterval(loadWSB, 600000);        // 10 min
     </script>
 </body>
 </html>
