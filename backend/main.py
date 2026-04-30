@@ -1457,6 +1457,80 @@ async def serve_playbook():
     )
 
 
+@app.get("/stocks")
+async def serve_stocks():
+    return FileResponse(
+        "frontend/stocks.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
+@app.get("/btc")
+async def serve_btc():
+    return FileResponse(
+        "frontend/btc.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
+@app.get("/api/stocks/politician-trades")
+async def get_politician_trades(days: int = Query(30, le=90)):
+    """Recent congressional stock disclosures (House + Senate)."""
+    from .stocks_data import fetch_politician_trades
+    return await fetch_politician_trades(days_back=days)
+
+
+@app.get("/api/stocks/squeeze-setups")
+async def get_squeeze_setups():
+    """Cross-reference watchlist tickers with short interest + politician activity."""
+    from .stocks_data import fetch_squeeze_setups
+    return await fetch_squeeze_setups()
+
+
+@app.get("/api/stocks/watchlist")
+async def get_stocks_watchlist():
+    from .stocks_data import get_watchlist
+    return {"tickers": get_watchlist()}
+
+
+@app.post("/api/stocks/watchlist")
+async def add_to_stocks_watchlist(payload: Dict):
+    from .stocks_data import get_watchlist, set_watchlist
+    ticker = (payload.get("ticker") or "").upper().strip()
+    if not ticker:
+        return {"ok": False, "error": "ticker required"}
+    current = get_watchlist()
+    if ticker not in current:
+        current.append(ticker)
+        set_watchlist(current)
+    return {"ok": True, "tickers": current}
+
+
+@app.delete("/api/stocks/watchlist/{ticker}")
+async def remove_from_stocks_watchlist(ticker: str):
+    from .stocks_data import get_watchlist, set_watchlist
+    current = [t for t in get_watchlist() if t.upper() != ticker.upper()]
+    set_watchlist(current)
+    return {"ok": True, "tickers": current}
+
+
+@app.get("/api/stocks/ticker/{ticker}")
+async def get_ticker_details(ticker: str):
+    """Live stats for a specific ticker."""
+    from .stocks_data import fetch_ticker_stats
+    stats = await fetch_ticker_stats(ticker)
+    if not stats:
+        return {"ok": False, "error": "ticker not found"}
+    return stats
+
+
+@app.get("/api/btc/all")
+async def get_all_crypto_signals():
+    """Aggregated BTC dashboard data — funding, basis, exchange spread."""
+    from .crypto_data import fetch_all_crypto_signals
+    return await fetch_all_crypto_signals()
+
+
 @app.get("/api/playbook")
 async def get_playbook_content():
     """Serve TRADING_STRATEGIES.md content for the playbook page."""

@@ -7,8 +7,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=15">
-    <script src="/static/theme.js?v=1"></script>
+    <link rel="stylesheet" href="/static/styles.css?v=16">
+    <script src="/static/theme.js?v=2"></script>
     <style>
         /* Layout */
         .dash-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; margin-bottom: 20px; }
@@ -70,11 +70,31 @@
         .thesis-card .note { font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4; }
 
         /* Thinking */
-        .thinking-panel { max-height: 400px; overflow-y: auto; }
-        .thinking-entry { padding: 12px 0; border-bottom: 1px solid var(--border-color); }
+        .thinking-panel { max-height: 600px; overflow-y: auto; }
+        .thinking-entry { padding: 14px 0; border-bottom: 1px solid var(--border-color); }
         .thinking-entry:last-child { border-bottom: none; }
-        .thinking-time { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
-        .thinking-text { font-size: 13px; color: var(--text-primary); line-height: 1.5; margin-top: 6px; white-space: pre-wrap; }
+        .thinking-time { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); margin-bottom: 8px; }
+        .thinking-points { display: grid; gap: 8px; margin-top: 6px; }
+        .thinking-point { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 6px 8px; background: var(--bg-tertiary); border-radius: 6px; }
+        .thinking-point .label { font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--accent-secondary); white-space: nowrap; padding-top: 1px; }
+        .thinking-point .body { font-size: 12px; color: var(--text-primary); line-height: 1.5; }
+        .thinking-point.exposure { background: rgba(0,255,136,0.06); }
+        .thinking-point.exposure .label { color: var(--accent-primary); }
+        .thinking-fallback { font-size: 13px; color: var(--text-primary); line-height: 1.6; white-space: pre-wrap; }
+
+        /* Thesis cards */
+        .thesis-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-color); align-items: start; }
+        .thesis-row:last-child { border-bottom: none; }
+        .thesis-row .title { font-size: 13px; color: var(--text-primary); font-weight: 500; line-height: 1.3; }
+        .thesis-row .note { font-size: 11px; color: var(--text-secondary); margin-top: 3px; line-height: 1.4; max-height: 32px; overflow: hidden; }
+        .thesis-row .meta { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 4px; }
+        .thesis-row .conv { font-size: 9px; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; font-weight: 700; align-self: flex-start; white-space: nowrap; }
+        .thesis-row .conv.high, .thesis-row .conv.extreme { background: rgba(0,255,136,0.15); color: var(--accent-primary); }
+        .thesis-row .conv.medium { background: rgba(255,170,0,0.15); color: var(--accent-warning); }
+        .thesis-row .conv.low { background: rgba(136,136,136,0.15); color: var(--text-muted); }
+        .thesis-controls { display: flex; gap: 8px; margin-bottom: 12px; font-size: 11px; }
+        .thesis-controls button { background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-secondary); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 11px; }
+        .thesis-controls button.active { background: var(--accent-secondary); color: var(--bg-primary); border-color: var(--accent-secondary); }
 
         .empty { color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px; font-style: italic; }
         .actions-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -113,7 +133,7 @@
                     <div class="stat"><div class="value" id="winrate">--</div><div class="label">Win Rate</div></div>
                     <div class="stat"><div class="value" id="exposure">--</div><div class="label">Exposure</div></div>
                     <div class="stat"><div class="value" id="positions">--</div><div class="label">Slots</div></div>
-                    <div class="stat"><div class="value" id="balance">--</div><div class="label">Balance</div></div>
+                    <div class="stat" title="Idle USDC sitting in the wallet — what's available to deploy. Funds inside open positions are counted under Exposure."><div class="value" id="balance">--</div><div class="label">Cash idle</div></div>
                 </div>
             </div>
 
@@ -130,7 +150,7 @@
                     <div id="positions-list"><div class="empty">No open positions.</div></div>
                 </div>
                 <div class="panel">
-                    <h3>Strategy Breakdown</h3>
+                    <h3>By Book / Signal Type</h3>
                     <div id="strategy-table"><div class="empty">No closed trades yet.</div></div>
                 </div>
             </div>
@@ -151,6 +171,11 @@
             <div class="dash-grid">
                 <div class="panel">
                     <h3>Thesis Board <span class="count" id="thesis-count">0</span></h3>
+                    <div class="thesis-controls">
+                        <button data-filter="high" class="active" onclick="setThesisFilter('high')">High conviction</button>
+                        <button data-filter="recent" onclick="setThesisFilter('recent')">Recent</button>
+                        <button data-filter="all" onclick="setThesisFilter('all')">All</button>
+                    </div>
                     <div id="thesis-list"><div class="empty">No active theses.</div></div>
                 </div>
                 <div class="panel">
@@ -161,6 +186,6 @@
         </div>
     </div>
 
-    <script src="/static/agent.js?v=2"></script>
+    <script src="/static/agent.js?v=3"></script>
 </body>
 </html>

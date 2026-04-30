@@ -7,7 +7,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=12">
+    <link rel="stylesheet" href="/static/styles.css?v=16">
+    <script src="/static/theme.js?v=2"></script>
     <style>
         .strategy-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
         .strategy-card { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 12px; padding: 20px; }
@@ -69,19 +70,13 @@
             </div>
             <div class="header-right">
                 <nav class="main-nav">
-                    <a href="/" class="nav-link">
-                        <span class="nav-icon">🔍</span>
-                        <span class="nav-text">Insider Detection</span>
-                    </a>
-                    <a href="/copy" class="nav-link">
-                        <span class="nav-icon">📄</span>
-                        <span class="nav-text">Copy Trading</span>
-                    </a>
-                    <a href="/strategy" class="nav-link active">
-                        <span class="nav-icon">🤖</span>
-                        <span class="nav-text">Auto Trading</span>
-                    </a>
+                    <a href="/agent" class="nav-link"><span class="nav-icon">🧠</span><span class="nav-text">Dashboard</span></a>
+                    <a href="/research" class="nav-link"><span class="nav-icon">📚</span><span class="nav-text">Research</span></a>
+                    <a href="/playbook" class="nav-link"><span class="nav-icon">📖</span><span class="nav-text">Playbook</span></a>
+                    <a href="/" class="nav-link"><span class="nav-icon">🔍</span><span class="nav-text">Detection</span></a>
+                    <a href="/strategy" class="nav-link active"><span class="nav-icon">🤖</span><span class="nav-text">Engine</span></a>
                 </nav>
+                <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()">🌙 Dark</button>
             </div>
         </header>
 

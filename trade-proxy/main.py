@@ -76,6 +76,18 @@ async def health():
     return {"status": "ok", "region": os.environ.get("FLY_REGION", "unknown")}
 
 
+@app.get("/version")
+async def version():
+    """Return installed py-clob-client version. Useful when Polymarket bumps
+    their order schema and we get order_version_mismatch errors."""
+    try:
+        import importlib.metadata as md
+        clob_v = md.version("py-clob-client")
+    except Exception as e:
+        clob_v = f"unknown ({e})"
+    return {"py_clob_client": clob_v}
+
+
 @app.post("/buy")
 async def buy(req: BuyRequest, authorization: str = Header(None)):
     verify_auth(authorization)
