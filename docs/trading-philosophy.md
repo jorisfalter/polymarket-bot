@@ -1,6 +1,6 @@
 # Trading Philosophy — Entertainment + Edge
 
-**Purpose of this document:** lock in the philosophy so we don't drift. The Polymarket bot exists for two reasons, in this order:
+**Purpose of this document:** lock in the philosophy so we don't drift. The system exists for two reasons, in this order:
 
 1. **Entertainment and content** — daily stories to share on social (Telegram, X, whatever). Every day must produce something worth talking about.
 2. **Edge** — systematic detection + AI agent should make money, or at least not lose much. Small account, real money, real risk.
@@ -9,7 +9,24 @@ If a change improves edge but kills the narrative, we skip it. If a change makes
 
 ---
 
-## The Three Books
+## Three Boards
+
+The system is split into three independent boards, each with its own dashboard and playbook:
+
+- **🎯 Polymarket** (`/agent`) — the AI bot trades autonomously, real money, $100 cap. Strategy playbook: [`polymarket-strategies.md`](polymarket-strategies.md). Sub-pages: Dashboard / Research / Playbook / Detection / Engine.
+- **📈 Stocks** (`/stocks`) — manual execution. Surfaces signals: squeeze setups, politician trades (with reliability tiers + ☆ watchlist), Form 4 insider transactions, 13D/13G filings, WSB buzz with spike alerts. Playbook: [`stocks-strategies.md`](stocks-strategies.md).
+- **₿ Crypto** (`/crypto`) — manual execution. Funding rates, perp/spot basis, cross-exchange spreads, stablecoin yields, liquid staking premium. Playbook: [`crypto-strategies.md`](crypto-strategies.md).
+
+Each board uses **its own alert channel**:
+- Polymarket → **Telegram** (firehose: cycle thinking, trade fills, resolutions, daily summary)
+- Stocks → **email** (low-volume high-signal: politician watchlist trades, WSB spikes, watchlist × WSB overlap)
+- Crypto → no alerts yet — dashboard refresh-and-look
+
+---
+
+## The Three Books (Polymarket)
+
+The Polymarket AI agent runs three "books" with different sizing and philosophies. This mirrors how a real trader thinks and gives us three distinct stories per day.
 
 The agent runs three separate "books" with different sizing and different philosophies. This mirrors how a real trader thinks, and gives us three distinct stories per day.
 

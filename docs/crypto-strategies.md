@@ -2,7 +2,9 @@
 
 Strategies for the **/crypto** dashboard. Mostly **delta-neutral** — structural yield without directional exposure on BTC/ETH/SOL. Currently manual execution; the dashboard surfaces signals.
 
-The first three strategies (funding arb, basis, cross-exchange) are the canonical "carry" trades. The last two are non-carry plays we may surface later.
+All five strategies are now surfaced on the dashboard: funding rates (Binance/OKX/Bybit), perp/spot basis, cross-exchange spread, stablecoin yields (Aave / Compound / Morpho / Spark / Fluid via DeFiLlama), and stETH/ETH liquid staking premium. Auto-detected signals appear above the panels when funding goes extreme (>30% annualized), spreads widen (>0.15%), or basis dislocates (>0.2%).
+
+The first three strategies (funding arb, basis, cross-exchange) are the canonical "carry" trades. Strategies 4 and 5 are non-carry yield plays.
 
 ---
 
@@ -165,3 +167,9 @@ Wanneer klaar om te bouwen:
 2. Maak futures-account aan + API keys
 3. Start met klein bedrag ($500-1000) om strategie te valideren
 4. Schaal op na 30 dagen bewezen werking
+
+---
+
+## Alert channel
+
+Crypto board has **no automated alert channel yet** — refresh `/crypto` to see live state. The auto-detected signals appear inline as banners above the panels. If you want email alerts when funding spikes / basis dislocates / stablecoin yields explode, that's a 30-min build using the same Gmail SMTP infra as the Stocks board.

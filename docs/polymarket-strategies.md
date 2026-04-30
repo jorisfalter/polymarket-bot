@@ -131,16 +131,20 @@ Applicable to our bot: focus on Kelly-sized positions and exploit off-hours misp
 
 ---
 
-## Data Sources (9 total)
+## Data Sources (12 total)
 1. Insider alerts — suspicious trades flagged by detection system
 2. Auditor pattern watch — earnings alerts tagged with auditor
-3. Smart money — recent trades from watched wallets (incl. 3 quant wallets)
-4. Leaderboard — top traders by PnL with win rates
-5. Top 20 markets — volume, prices, end dates
+3. Smart money — recent trades from watched wallets (incl. 3 quant wallets: 0xeebde7a0, 0xe1d6b515, 0xb27bc932)
+4. Leaderboard — top traders by PnL with win rates + specialization tags
+5. Top 20 markets — volume, prices, end dates (from a 300-market fetch)
 6. Near-resolution markets — ending within 48h with 80%+ dominant outcome
-7. Stock market data — live SPY/QQQ/Gold/Oil
-8. Thesis board — running hypotheses from previous cycles
-9. Market inconsistencies — cross-market contradictions
+7. Long-tail mispricing — 80-99¢ near-resolution markets *outside* volume top-50 (whales-don't-bother edge)
+8. Daily-repeating candidates — Trump-insult and similar (Strategy 3b)
+9. Stock market data — live SPY/QQQ/Gold/Oil
+10. Market inconsistencies — cross-market contradictions (temporal + hierarchy arb)
+11. Newsletter intel — Matt Levine, Doomberg, EventWaves (via Gmail IMAP, 8000 chars per email)
+12. WSB ticker buzz — top 10 r/wallstreetbets tickers via Fly.io proxy (cross-board signal)
+13. Thesis board — running hypotheses from previous cycles
 
 ---
 

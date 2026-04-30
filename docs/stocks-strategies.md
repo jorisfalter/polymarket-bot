@@ -24,20 +24,36 @@ Strategies for the **/stocks** dashboard. Currently manual execution — no brok
 ---
 
 ## Strategy 2: Politician Following ("Pelosi Tracker")
-**Data source:** Quiver Quantitative public live feed (House + Senate STOCK Act disclosures)
+**Data source:** Finnhub `/stock/congressional-trading` (free tier, 60 calls/min, requires `FINNHUB_API_KEY`). Switched from Quiver after they dropped public access in early 2026.
 
-**Logic:** Members of Congress consistently outperform broader markets. Studies put their alpha at 6-12% vs SPY annually. Disclosure delay is up to 45 days — but the trades that disclose late often still have legs (the bet wasn't a one-day option play).
+**Logic:** Members of Congress consistently outperform broader markets. Studies put their alpha at 6-12% vs SPY annually. Disclosure delay is up to 45 days — but the trades that disclose late often still have legs.
+
+**Reliability tiers** (the dashboard surfaces these so you don't chase noise):
+- 🟢 **Reliable** — 20+ trades AND beats SPY ≥55%. Track record is statistically meaningful.
+- 🟡 **Moderate** — 10-19 trades. Meaningful but not bulletproof.
+- 🟠 **Weak** — 5-9 trades. Interesting, small sample.
+- 🔴 **Small sample** — <5 trades. α numbers are noise.
+
+A 2-trade politician with +25% α is one good Apple buy, not skill. Don't be fooled by the leaderboard sort.
+
+**Currently confirmed reliable** (as of April 2026):
+- **Markwayne Mullin** (R-OK, Senate Banking Cmte) — 99 trades, +11.4% α, beats SPY 61%. Real signal.
+- **Tim Moore** (R-NC) — 15 trades, +8.3% α, beats SPY 80%.
 
 **Trigger:**
-- Politician known for sustained outperformance (Top Politicians table, ≥10 trades, beats SPY ≥60% of the time, avg α ≥3%) makes a new disclosed trade
-- Trade is a **purchase** (sales are noisier — could be portfolio rebalancing)
-- Amount range ≥ $50,001-$100,000 bracket (smaller is rounding error)
+- 🟢 or 🟡 reliability politician makes a new disclosed trade
+- Trade is a **purchase** (sales noisier — could be rebalancing)
+- Amount range ≥ $50,001-$100,000 bracket
+- Within 7 days of disclosure (older = priced-in)
 
-**Edge:** Information asymmetry. Members of Congress sit on legislative + intel committees that move markets. Their staff also.
+**Edge:** Information asymmetry. Members of Congress sit on legislative + intel committees that move markets. Their staff too.
 
-**Currently surfaced on dashboard:** ✅ Top Politicians (180d) ranked by avg excess return + Recent Trades feed.
+**Watch closely feature:** Click ☆ next to a politician on /stocks to add them to your personal watchlist. Watched politicians:
+- Get pinned to top of the table with green tint
+- Trigger an **email alert** to `ALERT_EMAIL` (or `GMAIL_ADDRESS` fallback) when they file a new trade
+- Scheduler checks every 30 min; dedup state in `data/politicians_seen.json` prevents repeat alerts
 
-**Practical:** Don't blindly copy. Use as a watchlist — if politician X buys Lockheed, dig into why. Often there's news within a week.
+**Currently surfaced on dashboard:** ✅ Top Politicians table with reliability tiers + ☆ stars + Recent Trades feed.
 
 ---
 
@@ -110,21 +126,36 @@ Strategies for the **/stocks** dashboard. Currently manual execution — no brok
 ---
 
 ## Strategy 6.5: WSB Sentiment / Retail Flow
-**Data source:** r/wallstreetbets JSON API (free, no auth)
+**Data source:** r/wallstreetbets JSON API (free, no auth). Reddit blocks Hetzner / data-center IPs so we route through the Fly.io trade-proxy in Tokyo (`/reddit/{subreddit}/{sort}`).
 
-**Logic:** WSB is the canonical retail-flow leading indicator. When a ticker accumulates buzz (upvotes + comments) within 24h, retail money is moving. The 2021 GME / AMC squeezes, the 2024 NVDA run, the Avis (CAR) squeeze in April 2026 — all visible on WSB before mainstream coverage. Doesn't mean buy blindly: many WSB pumps fail. But it's a signal worth watching against your own thesis.
+**Logic:** WSB is the canonical retail-flow leading indicator. When a ticker accumulates buzz (upvotes + comments) within 24h, retail money is moving. The 2021 GME / AMC squeezes, the 2024 NVDA run, the Avis (CAR) squeeze in April 2026 — all visible on WSB before mainstream coverage. Many WSB pumps fail; this is signal not gospel.
 
 **Trigger:**
 - Ticker buzz score (upvotes + comments/2 across hot+new posts) ≥ 5,000
 - Multiple distinct posts mentioning the ticker
 - Combine with another signal (squeeze setup, recent news, earnings) before acting
-- Beware mod-pinned daily threads (filtered out by our scanner)
+
+**The combo signal — Watchlist × WSB overlap:**
+A ticker on your stock watchlist (Squeeze Setups) that also appears in WSB buzz is the strongest combination we have — high short interest + retail attention = AVIS pattern setup. Surfaced on the dashboard with a 🔥 badge and orange left-border. Email alert fires whenever this overlap appears.
+
+**Spike detection:**
+Scheduler checks every 30 min. Spike fires when:
+- Ticker buzz ≥ 3× prior observation AND ≥3,000 buzz, OR
+- Brand-new ticker entering the list with ≥5,000 buzz
+
+State persists in `data/wsb_buzz_state.json` so each spike alerts once per move (next observation becomes the new baseline).
+
+**AI agent integration:**
+The Polymarket AI agent now receives the top-10 WSB buzz tickers in its 15-min cycle prompt. If a Polymarket market exists on a hot WSB ticker (earnings, price levels, election outcomes), the agent can incorporate WSB momentum as a soft signal.
 
 **Edge:** Front-running the retail wave when it aligns with fundamentals. Ride 1-3 days, exit before euphoria breaks.
 
 **Risk:** WSB pumps die fast and unpredictably. Position size like a moonshot, not a core trade.
 
-**Currently surfaced:** ✅ WSB Ticker Buzz panel (top 20 tickers by buzz score) + WSB Hot Posts panel on /stocks. Refreshes every 10 min.
+**Currently surfaced:** ✅ Three layers:
+1. WSB Ticker Buzz + Hot Posts panels on /stocks (refresh 10 min)
+2. 🔥 cross-reference badge on Squeeze Setups when ticker overlaps WSB buzz
+3. Email alerts (spike detection + watchlist overlap) every 30 min
 
 ---
 
@@ -148,15 +179,27 @@ Strategies for the **/stocks** dashboard. Currently manual execution — no brok
 ## Implementation Roadmap
 
 ### Currently live on dashboard
-- ✅ Strategy 1 (Squeeze Setups) — ticker watchlist + SI score from yfinance
-- ✅ Strategy 2 (Politician Following) — Top Politicians by alpha + Recent Trades
-- ✅ Strategy 3 (Insider Buying / Form 4) — SEC EDGAR full-text search
+- ✅ Strategy 1 (Squeeze Setups) — ticker watchlist + yfinance SI score + 🔥 WSB cross-reference
+- ✅ Strategy 2 (Politician Following) — Finnhub feed + reliability tiers + ☆ watchlist + email alerts
+- ✅ Strategy 3 (Insider Buying / Form 4) — SEC EDGAR full-text search, click-through to filings
 - ✅ Strategy 4 (13D/13G) — SEC EDGAR with activist auto-flagging
+- ✅ Strategy 6.5 (WSB Sentiment) — buzz panel + spike alerts + watchlist overlap + agent integration
 
 ### Not yet integrated
 - Strategy 5 (Post-Earnings Drift) — needs earnings calendar API + price scanner.
 - Strategy 6 (M&A Spreads) — Bloomberg / news feed required, harder to automate.
 - Strategy 7 (Spinoffs) — manual research strategy, not great candidate for automation.
+
+---
+
+## Alert channel summary
+
+The Stocks board uses **email** (Gmail SMTP via `GMAIL_APP_PASSWORD`) for low-volume high-signal alerts — the Telegram channel is reserved for the Polymarket bot's firehose (cycle thinking, trade fills, resolutions). Set `ALERT_EMAIL` in `.env` for a different destination, or leave unset to use `GMAIL_ADDRESS`.
+
+Active alert types:
+- 📢 Watched politician files a new trade (every 30 min check)
+- 🦍 WSB ticker buzz spike (every 30 min check)
+- 🔥 Watchlist ticker × WSB overlap (every 30 min check)
 
 ---
 
