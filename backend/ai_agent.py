@@ -109,6 +109,45 @@ DAILY_REPEATING_EVENT_SLUGS = [
 ]
 
 
+# Hard category blocklist — the prompt rule isn't enough, agent violates it.
+_CRYPTO_PRICE_PATTERNS = [
+    r"\bbitcoin\b.*\b(up|down|above|below|reach|hit|over|under|price)\b",
+    r"\bbtc\b.*\b(up|down|above|below|reach|hit|over|under)\b",
+    r"\bethereum\b.*\b(up|down|above|below|reach|hit|over|under|price)\b",
+    r"\beth\b.*\b(price|above|below)\b",
+    r"\bwill the price of (bitcoin|ethereum|btc|eth|sol|solana)\b",
+    r"\bprice of bitcoin .* (on|by) ",
+    r"\bbitcoin .* (5-?min|hourly|daily) ",
+    r"\b(btc|eth|sol)/?usd\b",
+    r"\bcoinbase price\b",
+]
+_SPORTS_PATTERNS = [
+    r"\b(nba|nhl|nfl|mlb|fifa|uefa|wimbledon|french open|us open|australian open|atp|wta)\b",
+    r"\bvs\.?\s+\w+\s+-\s+(game|match|set)\b",
+    r"\b(eurovision|grammys|oscars|emmys)\b",
+    r"\b(esports|league of legends|valorant|cs2|counter-strike)\b",
+    r"\b(hockey|tennis|football|soccer|basketball|baseball|cricket|rugby|golf)\b.*\b(winner|champion|final)\b",
+]
+_CRYPTO_PATTERNS_RE = [re.compile(p, re.IGNORECASE) for p in _CRYPTO_PRICE_PATTERNS]
+_SPORTS_PATTERNS_RE = [re.compile(p, re.IGNORECASE) for p in _SPORTS_PATTERNS]
+
+
+def _category_blocked(market_question: str) -> Optional[str]:
+    """Return a reason string if the market is in a blocked category, else None.
+    Catches crypto-price markets and sports/entertainment that the agent's
+    prompt rule sometimes lets through."""
+    if not market_question:
+        return None
+    q = market_question
+    for r in _CRYPTO_PATTERNS_RE:
+        if r.search(q):
+            return "crypto price market (off-limits per philosophy)"
+    for r in _SPORTS_PATTERNS_RE:
+        if r.search(q):
+            return "sports/entertainment market (off-limits per philosophy)"
+    return None
+
+
 async def _find_daily_repeating_candidates(client) -> list:
     """For each known daily-repeating event, compute the Yes-streak from closed markets
     and surface today/tomorrow's market if price ≤95c (Strategy 3b candidate).
@@ -975,6 +1014,15 @@ class AITradingAgent:
                 confidence = float(trade.get("confidence", 0))
                 thesis = trade.get("thesis", "")
 
+                # Validate market_id shape — agent occasionally truncates it
+                if market_id and not (market_id.startswith("0x") and len(market_id) == 66):
+                    logger.warning(f"Trade BLOCKED: malformed market_id {market_id!r} for {market_question[:50]}")
+                    await send_telegram(
+                        f"🚫 Trade blocked: {market_question[:60]}\n"
+                        f"Reason: malformed market_id ({len(market_id)} chars, expected 66)"
+                    )
+                    continue
+
                 # Enforce hard limits
                 amount_usd = min(amount_usd, settings.agent_max_per_trade)
                 # Polymarket minimum order is $1.00 — bump up if below
@@ -1010,7 +1058,7 @@ class AITradingAgent:
 
                 # Get token_id for the market
                 logger.info(f"🤖 Attempting trade: {action} ${amount_usd:.2f} on {market_question[:40]} (ID: {market_id})")
-                token_id = await self._resolve_token_id(market_id, outcome)
+                token_id = await self._resolve_token_id(market_id, outcome, market_question=market_question)
                 if not token_id:
                     logger.warning(f"Could not resolve token for {market_question[:30]} (ID: {market_id})")
                     await send_telegram(f"❌ Trade failed: {market_question[:50]}\nReason: could not resolve token ID for market {market_id[:20]}")
@@ -1159,17 +1207,22 @@ class AITradingAgent:
             logger.debug(f"orderMinSize lookup failed for {token_id[:12]}: {e}")
         return None
 
-    async def _resolve_token_id(self, market_id: str, outcome: str) -> Optional[str]:
-        """Resolve a market_id + outcome to a CLOB token_id."""
+    async def _resolve_token_id(self, market_id: str, outcome: str, market_question: str = "") -> Optional[str]:
+        """Resolve a market_id + outcome to a CLOB token_id.
+
+        Lookup chain:
+        1. Direct gamma /markets/{id} (works only for numeric DB ids)
+        2. Top-500 markets by volume — slug + conditionId match
+        3. /public-search?q=<question> — catches low-volume markets that
+           don't appear in top-500 (e.g. weather, daily-resolving, niche)
+        """
         import json as _json
 
         async with PolymarketClient() as client:
             market = await client.get_market(market_id)
 
-            # If direct lookup fails, search by slug or conditionId in top markets
             if not market:
                 logger.info(f"Direct lookup failed for '{market_id[:30]}...', searching top markets...")
-                # Normalise: strip special chars for slug comparison
                 import unicodedata
                 def _norm(s: str) -> str:
                     return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower().strip("-")
@@ -1188,8 +1241,39 @@ class AITradingAgent:
                         or _norm(slug) in market_id_norm
                     ):
                         market = m
-                        logger.info(f"Matched to: {m.get('question', '?')[:40]}")
+                        logger.info(f"Matched (top-500) to: {m.get('question', '?')[:40]}")
                         break
+
+            # Final fallback — public-search by question text. Catches low-volume
+            # markets (weather, daily-repeating, niche) that aren't in top-500.
+            if not market and market_question:
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=15.0) as hc:
+                        r = await hc.get(
+                            f"{settings.gamma_api_url}/public-search",
+                            params={"q": market_question[:80], "limit": 20},
+                        )
+                        r.raise_for_status()
+                        events = (r.json() or {}).get("events", []) or []
+                    q_lower = market_question.lower().strip()
+                    for e in events:
+                        for m in e.get("markets", []):
+                            mq = (m.get("question") or "").lower().strip()
+                            full_id = m.get("conditionId") or ""
+                            if (
+                                full_id == market_id
+                                or mq == q_lower
+                                or (q_lower and q_lower in mq)
+                                or (mq and mq in q_lower)
+                            ):
+                                market = m
+                                logger.info(f"Matched (public-search) to: {m.get('question','?')[:50]}")
+                                break
+                        if market:
+                            break
+                except Exception as e:
+                    logger.debug(f"public-search fallback failed: {e}")
 
             if not market:
                 logger.warning(f"Could not find market for ID: {market_id}")
