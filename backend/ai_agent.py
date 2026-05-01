@@ -109,43 +109,8 @@ DAILY_REPEATING_EVENT_SLUGS = [
 ]
 
 
-# Hard category blocklist — the prompt rule isn't enough, agent violates it.
-_CRYPTO_PRICE_PATTERNS = [
-    r"\bbitcoin\b.*\b(up|down|above|below|reach|hit|over|under|price)\b",
-    r"\bbtc\b.*\b(up|down|above|below|reach|hit|over|under)\b",
-    r"\bethereum\b.*\b(up|down|above|below|reach|hit|over|under|price)\b",
-    r"\beth\b.*\b(price|above|below)\b",
-    r"\bwill the price of (bitcoin|ethereum|btc|eth|sol|solana)\b",
-    r"\bprice of bitcoin .* (on|by) ",
-    r"\bbitcoin .* (5-?min|hourly|daily) ",
-    r"\b(btc|eth|sol)/?usd\b",
-    r"\bcoinbase price\b",
-]
-_SPORTS_PATTERNS = [
-    r"\b(nba|nhl|nfl|mlb|fifa|uefa|wimbledon|french open|us open|australian open|atp|wta)\b",
-    r"\bvs\.?\s+\w+\s+-\s+(game|match|set)\b",
-    r"\b(eurovision|grammys|oscars|emmys)\b",
-    r"\b(esports|league of legends|valorant|cs2|counter-strike)\b",
-    r"\b(hockey|tennis|football|soccer|basketball|baseball|cricket|rugby|golf)\b.*\b(winner|champion|final)\b",
-]
-_CRYPTO_PATTERNS_RE = [re.compile(p, re.IGNORECASE) for p in _CRYPTO_PRICE_PATTERNS]
-_SPORTS_PATTERNS_RE = [re.compile(p, re.IGNORECASE) for p in _SPORTS_PATTERNS]
-
-
-def _category_blocked(market_question: str) -> Optional[str]:
-    """Return a reason string if the market is in a blocked category, else None.
-    Catches crypto-price markets and sports/entertainment that the agent's
-    prompt rule sometimes lets through."""
-    if not market_question:
-        return None
-    q = market_question
-    for r in _CRYPTO_PATTERNS_RE:
-        if r.search(q):
-            return "crypto price market (off-limits per philosophy)"
-    for r in _SPORTS_PATTERNS_RE:
-        if r.search(q):
-            return "sports/entertainment market (off-limits per philosophy)"
-    return None
+# (Hard category blocker was removed — user prefers softer prompt-based rule
+# allowing crypto/sports trades when the agent has a strong specific thesis.)
 
 
 async def _find_daily_repeating_candidates(client) -> list:
