@@ -204,8 +204,27 @@ async def fetch_gmail_newsletters() -> List[Dict]:
                     import re
                     body = re.sub(r"\s+", " ", body).strip()[:8000]
 
+                    # Friendly source label — Matt Levine, Doomberg, etc. instead
+                    # of cryptic "noreply@..." prefixes. Match on subject keywords
+                    # since multiple senders share the same noreply@ prefix.
+                    subj_lower = (subject or "").lower()
+                    if "money stuff" in subj_lower or "matt levine" in subj_lower:
+                        source_label = "Matt Levine"
+                    elif "doomberg" in subj_lower or "doomberg" in sender.lower():
+                        source_label = "Doomberg"
+                    elif "stratechery" in sender.lower():
+                        source_label = "Stratechery"
+                    elif "thediff" in sender.lower() or "byrnehobart" in sender.lower():
+                        source_label = "The Diff"
+                    elif "eventwaves" in sender.lower():
+                        source_label = "EventWaves"
+                    elif "bloomberg" in sender.lower():
+                        source_label = "Bloomberg"
+                    else:
+                        source_label = sender.split("@")[0]
+
                     results.append({
-                        "source": sender.split("@")[0],
+                        "source": source_label,
                         "subject": subject[:200],
                         "preview": body[:400],   # short preview for dashboard rows
                         "body": body,             # full body for the agent prompt

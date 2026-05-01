@@ -80,12 +80,18 @@ def is_neg_risk(token_id: str) -> bool:
     return result
 
 
-def check_market_tradeable(token_id: str) -> tuple:
-    """Pre-flight check: is the market actually tradeable right now?
+def check_market_tradeable(token_id: str, amount_usd: float = 0) -> tuple:
+    """Pre-flight check: is the market actually tradeable AND does our order
+    meet its minimum size?
+
     Returns (ok, reason). False reasons include: disputed UMA resolution,
-    closed/inactive market, archived. Polymarket's CLOB rejects orders
-    on these markets with confusing error codes (e.g. order_version_mismatch),
-    so checking up front gives us a clean diagnostic."""
+    closed/inactive/archived market, OR amount below the market-specific
+    `orderMinSize` (which Polymarket exposes per-market and varies from $1
+    on standard binaries to $5+ on multi-outcome events with 0.001 ticks).
+
+    Polymarket's CLOB rejects size-violations with the same confusing
+    'order_version_mismatch' error as version mismatches — checking up
+    front gives us a clean diagnostic."""
     import httpx
     try:
         r = httpx.get(
@@ -107,6 +113,11 @@ def check_market_tradeable(token_id: str) -> tuple:
         uma_status = (m.get("umaResolutionStatus") or "").lower()
         if uma_status in ("disputed", "challenged"):
             return False, f"UMA dispute in progress ({uma_status})"
+        # Order minimum (in USD-equivalent). Multi-outcome neg_risk markets
+        # typically require $5+; standard binaries accept $1.
+        order_min = float(m.get("orderMinSize") or 0)
+        if amount_usd and order_min and amount_usd < order_min:
+            return False, f"order below market minimum (need ≥${order_min:.2f}, got ${amount_usd:.2f})"
         return True, "ok"
     except Exception as e:
         logger.debug(f"tradeable check failed (proceeding anyway): {e}")
@@ -153,7 +164,7 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
 
         # Pre-flight: skip clearly untradeable markets so callers see a
         # useful error rather than Polymarket's confusing version_mismatch.
-        ok, reason = check_market_tradeable(req.token_id)
+        ok, reason = check_market_tradeable(req.token_id, amount_usd=req.amount_usd)
         if not ok:
             logger.warning(f"Buy refused: {reason} ({req.token_id[:12]})")
             return {"success": False, "error": f"market not tradeable: {reason}"}
