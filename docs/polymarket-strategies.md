@@ -160,3 +160,9 @@ Stored in `data/agent_theses.json`.
 - **Thinking journal**: `data/agent_thinking.jsonl`
 - **Trade journal**: `data/trade_journal.jsonl`
 - **Airtable**: live trade log
+
+## Trade execution & failure modes
+
+When the agent submits a trade, it goes through layered pre-flight checks against six known Polymarket failure modes (all originally surfaced as the misleading `order_version_mismatch` error). Each check has a clean user-facing reason and a programmatic guard so the agent's prompt doesn't have to know about edge cases like UMA dispute states or expired orderbook windows.
+
+Full operational doc with the catalog of failure modes, where each is caught, and how to add new ones: [`polymarket-trade-execution.md`](polymarket-trade-execution.md).
