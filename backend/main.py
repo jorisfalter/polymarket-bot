@@ -1343,6 +1343,49 @@ async def get_daily_summary_data():
     return generate_daily_summary()
 
 
+@app.get("/api/agent/failures")
+async def get_failures(limit: int = Query(50, le=500), untriaged_only: bool = False):
+    """Recent trade failures with classification."""
+    from .trade_failures import list_failures, KNOWN_MODES
+    items = list_failures(limit=limit, untriaged_only=untriaged_only)
+    by_mode: Dict[str, int] = {}
+    for f in items:
+        m = f.get("classified_mode") or "unknown"
+        by_mode[m] = by_mode.get(m, 0) + 1
+    return {
+        "total": len(items),
+        "by_mode": by_mode,
+        "modes": KNOWN_MODES,
+        "items": items[:limit],
+    }
+
+
+@app.post("/api/agent/triage-failures")
+async def trigger_triage(limit: int = Query(50, le=200)):
+    """Walk through untriaged failures and re-check each market against
+    Gamma. Classify whether our current pre-flight chain would catch it
+    OR if it's a genuinely new failure mode that needs investigation."""
+    from .trade_failures import triage_failures
+    result = await triage_failures(limit=limit)
+    if settings.telegram_enabled and settings.telegram_chat_id:
+        from .integrations import send_telegram
+        summary = result.get("summary", {})
+        modes = summary.get("by_mode", {})
+        lines = [f"🔧 <b>Failure triage</b> — checked {result.get('triaged', 0)} entries"]
+        if modes:
+            lines.append("\n<b>By mode:</b>")
+            for mode, count in sorted(modes.items(), key=lambda x: -x[1]):
+                lines.append(f"  {mode}: {count}")
+        if result.get("needs_investigation"):
+            lines.append(f"\n⚠️ <b>{len(result['needs_investigation'])}</b> still 'unknown' — need a new pre-flight check.")
+            for inv in result["needs_investigation"][:5]:
+                lines.append(f"  • {inv['market_question'][:60]}")
+        else:
+            lines.append("\n✅ All failures are now caught by current pre-flight chain.")
+        await send_telegram("\n".join(lines))
+    return result
+
+
 @app.get("/api/intel/newsletters")
 async def get_newsletters():
     """Recent newsletter emails (Matt Levine, EventWaves, etc.) pulled from Gmail."""

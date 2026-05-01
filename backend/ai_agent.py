@@ -1026,7 +1026,19 @@ class AITradingAgent:
                 token_id = await self._resolve_token_id(market_id, outcome, market_question=market_question)
                 if not token_id:
                     logger.warning(f"Could not resolve token for {market_question[:30]} (ID: {market_id})")
-                    await send_telegram(f"❌ Trade failed: {market_question[:50]}\nReason: could not resolve token ID for market {market_id[:20]}")
+                    err = f"could not resolve token ID for market {market_id[:20]}"
+                    from .trade_failures import log_failure
+                    log_failure(
+                        market_question=market_question,
+                        market_id=market_id,
+                        token_id=None,
+                        outcome=outcome,
+                        amount_usd=amount_usd,
+                        error=err,
+                        confidence=confidence,
+                        thesis=thesis,
+                    )
+                    await send_telegram(f"❌ Trade failed: {market_question[:50]}\nReason: {err}")
                     continue
 
                 # Auto-bump to market minimum order size. Multi-outcome neg-risk
@@ -1112,6 +1124,17 @@ class AITradingAgent:
                     )
                 else:
                     logger.warning(f"AI trade failed: {result.error}")
+                    from .trade_failures import log_failure
+                    log_failure(
+                        market_question=market_question,
+                        market_id=market_id,
+                        token_id=token_id,
+                        outcome=outcome,
+                        amount_usd=amount_usd,
+                        error=result.error or "unknown",
+                        confidence=confidence,
+                        thesis=thesis,
+                    )
                     await send_telegram(f"❌ Trade failed: {market_question[:50]}\nReason: {result.error}")
 
             except Exception as e:
