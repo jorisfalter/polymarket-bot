@@ -110,9 +110,15 @@ def check_market_tradeable(token_id: str, amount_usd: float = 0) -> tuple:
             return False, "market archived"
         if not m.get("active", True):
             return False, "market inactive"
+        # acceptingOrders=False is the most authoritative tradeability signal.
+        if m.get("acceptingOrders") is False:
+            return False, "market not accepting orders"
+        # UMA states that block trading: 'proposed' (in liveness window),
+        # 'disputed' / 'challenged' (under dispute), 'resolved' (final, no
+        # more trading). 'None' / 'pending' / 'open' / 'unproposed' are fine.
         uma_status = (m.get("umaResolutionStatus") or "").lower()
-        if uma_status in ("disputed", "challenged"):
-            return False, f"UMA dispute in progress ({uma_status})"
+        if uma_status in ("disputed", "challenged", "proposed", "resolved"):
+            return False, f"UMA {uma_status} (no orders accepted)"
         # Order minimum (in USD-equivalent). Multi-outcome neg_risk markets
         # typically require $5+; standard binaries accept $1.
         order_min = float(m.get("orderMinSize") or 0)
