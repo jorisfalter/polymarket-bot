@@ -80,6 +80,51 @@ def is_neg_risk(token_id: str) -> bool:
     return result
 
 
+def check_orderbook_feasibility(token_id: str, expected_price: float) -> tuple:
+    """Pre-flight orderbook checks before signing/posting.
+
+    Refuses for two distinct reasons:
+    1. **No orderbook** (404 from CLOB) — the market has expired or never had
+       one. Polymarket's old short-window crypto markets fall here once their
+       resolution window passes.
+    2. **Cheapest ask is much worse than displayed price** — the asymmetric-bet
+       thesis only works if you can actually buy at the displayed cheap price.
+       If only expensive asks exist, the trade isn't the bet the agent thinks
+       it is, and CLOB usually rejects with order_version_mismatch anyway.
+    """
+    try:
+        client = get_client()
+        book = client.get_order_book(token_id)
+    except Exception as e:
+        # Distinguish 404 ("no orderbook") from generic API failures.
+        msg = str(e).lower()
+        if "404" in msg or "no orderbook" in msg or "not found" in msg:
+            return False, "no orderbook exists (market likely expired/closed)"
+        logger.debug(f"orderbook feasibility check failed (proceeding): {e}")
+        return True, "orderbook unreachable"
+
+    if not book or not getattr(book, "asks", None):
+        return False, "empty orderbook (no asks available)"
+
+    # py-clob-client returns asks high→low; cheapest ask = last entry.
+    try:
+        first_ask = float(book.asks[0].price)
+        last_ask = float(book.asks[-1].price)
+        best_ask = min(first_ask, last_ask)
+    except Exception:
+        return True, "could not parse asks"
+
+    if expected_price <= 0:
+        return True, "no expected price to compare"
+    # For sub-10c tokens (asymmetric bets): refuse if ask > 5x displayed price.
+    if expected_price < 0.10 and best_ask > expected_price * 5:
+        return False, f"orderbook too thin: best ask {best_ask*100:.2f}¢ vs displayed {expected_price*100:.3f}¢ ({best_ask/expected_price:.0f}× worse)"
+    # For mid-range tokens: refuse if ask is >50% above displayed.
+    if expected_price >= 0.10 and best_ask > expected_price * 1.5:
+        return False, f"orderbook too thin: best ask {best_ask*100:.1f}¢ vs displayed {expected_price*100:.1f}¢"
+    return True, "ok"
+
+
 def check_market_tradeable(token_id: str, amount_usd: float = 0) -> tuple:
     """Pre-flight check: is the market actually tradeable AND does our order
     meet its minimum size?
@@ -179,6 +224,14 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
             midpoint = float(client.get_midpoint(req.token_id))
         except Exception:
             midpoint = 0
+
+        # Pre-flight orderbook check: if the displayed price is far from the
+        # cheapest available ask, buying makes no sense (asymmetric bet thesis
+        # collapses, and CLOB usually rejects with order_version_mismatch).
+        ok, reason = check_orderbook_feasibility(req.token_id, midpoint)
+        if not ok:
+            logger.warning(f"Buy refused: {reason} ({req.token_id[:12]})")
+            return {"success": False, "error": f"orderbook unfavorable: {reason}"}
 
         neg_risk = is_neg_risk(req.token_id)
         options = PartialCreateOrderOptions(neg_risk=neg_risk)
