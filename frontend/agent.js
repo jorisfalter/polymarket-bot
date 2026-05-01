@@ -320,6 +320,37 @@ async function triggerCycle() {
     btn.disabled = false; btn.textContent = '⚡ Run Cycle Now';
 }
 
+async function triggerTriage() {
+    const btn = event.target;
+    btn.disabled = true; btn.textContent = '⏳ Triaging...';
+    try {
+        const r = await fetch('/api/agent/triage-failures?limit=100', { method: 'POST' });
+        const data = await r.json();
+        const summary = data.summary || {};
+        const modes = summary.by_mode || {};
+        const lines = [`Triaged ${data.triaged || 0} failures.`];
+        if (Object.keys(modes).length) {
+            lines.push('\nBy mode:');
+            for (const [m, c] of Object.entries(modes).sort((a, b) => b[1] - a[1])) {
+                lines.push(`  ${m}: ${c}`);
+            }
+        }
+        const inv = data.needs_investigation || [];
+        if (inv.length) {
+            lines.push(`\n${inv.length} unknown failure(s) need investigation:`);
+            inv.slice(0, 5).forEach(i => lines.push(`  • ${i.market_question?.substring(0, 60)}`));
+        } else if (data.triaged > 0) {
+            lines.push('\n✅ All failures now caught by current pre-flight.');
+        }
+        alert(lines.join('\n'));
+        btn.textContent = '✅ Done';
+        setTimeout(() => { btn.textContent = '🔧 Triage Failures'; btn.disabled = false; }, 3000);
+    } catch (e) {
+        alert('Failed: ' + e.message);
+        btn.disabled = false; btn.textContent = '🔧 Triage Failures';
+    }
+}
+
 async function triggerSummary() {
     const btn = event.target;
     btn.disabled = true; btn.textContent = '⏳ Sending...';
