@@ -1016,6 +1016,27 @@ class AITradingAgent:
                     await send_telegram(f"❌ Trade failed: {market_question[:50]}\nReason: could not resolve token ID for market {market_id[:20]}")
                     continue
 
+                # Auto-bump to market minimum order size. Multi-outcome neg-risk
+                # markets typically require $5+ vs $1 on standard binaries.
+                # Without this, ~half our moonshot orders get rejected with the
+                # cryptic order_version_mismatch error. We bump to min if it
+                # still fits within agent_max_per_trade — otherwise skip.
+                try:
+                    market_min = await self._fetch_market_min_order_size(token_id)
+                    if market_min and amount_usd < market_min:
+                        bumped = market_min + 0.05  # +5c rounding cushion
+                        if bumped > settings.agent_max_per_trade:
+                            logger.info(f"Trade skipped: market min ${market_min:.2f} > per-trade cap ${settings.agent_max_per_trade}")
+                            await send_telegram(
+                                f"⏭️ Trade skipped: {market_question[:50]}\n"
+                                f"Reason: market requires ${market_min:.2f} min, exceeds ${settings.agent_max_per_trade:.2f} per-trade cap"
+                            )
+                            continue
+                        logger.info(f"Bumping order from ${amount_usd:.2f} → ${bumped:.2f} (market minimum: ${market_min:.2f})")
+                        amount_usd = bumped
+                except Exception as e:
+                    logger.debug(f"Min order size lookup failed (proceeding with original size): {e}")
+
                 # Execute real penny trade
                 result = await auto_seller.execute_buy(
                     token_id=token_id,
@@ -1111,6 +1132,32 @@ class AITradingAgent:
             return None
 
         return "## Auditor Pattern Watch (KPMG-style)\n" + "\n".join(lines)
+
+    async def _fetch_market_min_order_size(self, token_id: str) -> Optional[float]:
+        """Look up Polymarket's per-market orderMinSize (USD) so we can bump
+        below-min orders before the proxy refuses them. Cached per token_id
+        for the lifetime of the process — orderMinSize is immutable."""
+        if not hasattr(self, "_min_order_cache"):
+            self._min_order_cache: Dict[str, float] = {}
+        if token_id in self._min_order_cache:
+            return self._min_order_cache[token_id]
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    f"{settings.gamma_api_url}/markets",
+                    params={"clob_token_ids": token_id},
+                )
+                r.raise_for_status()
+                markets = r.json() or []
+            if markets:
+                v = markets[0].get("orderMinSize")
+                if v:
+                    self._min_order_cache[token_id] = float(v)
+                    return float(v)
+        except Exception as e:
+            logger.debug(f"orderMinSize lookup failed for {token_id[:12]}: {e}")
+        return None
 
     async def _resolve_token_id(self, market_id: str, outcome: str) -> Optional[str]:
         """Resolve a market_id + outcome to a CLOB token_id."""

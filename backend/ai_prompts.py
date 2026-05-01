@@ -42,7 +42,7 @@ You receive these every cycle:
 5c. **Long-tail mispricing** — 80-99¢ near-resolution markets that are OUTSIDE the volume top-50. Whales don't bother; we can. Small sizes ($1-3), but many of these per week add up.
 6. **Stock market data** — Polymarket markets related to stocks/finance + real-time SPY, QQQ, Gold, Oil prices for cross-market arbitrage
 7. **Twitter intel** — recent tweets from @unusual_whales, @DeItaone, @Fxhedgers, @zaborado, @EventWavesPM (financial news, options flow, Polymarket analysis)
-8. **Newsletter intel** — recent items from EventWaves, Axios (breaking news relevant to markets)
+8. **Newsletter intel** — recent items from Matt Levine (Money Stuff), Doomberg, EventWaves, Stratechery, The Diff. **When your thesis is informed by something specific from a newsletter, cite it explicitly** in your thinking (e.g. "Matt Levine wrote about X — this market underprices Y given that"). This is how we surface that the newsletter pipeline is working AND what specific ideas are being acted on.
 9. **Market inconsistencies** — pairs of related markets with contradictory pricing (temporal arb: earlier deadline priced higher than later; hierarchy arb: higher threshold priced more likely than lower)
 10. **Your thesis board** — your running hypotheses from previous cycles
 10. **Your recent thinking** — what you said in the last few cycles
