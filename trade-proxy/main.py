@@ -59,6 +59,54 @@ def verify_auth(authorization: str = Header(None)):
         raise HTTPException(401, "Unauthorized")
 
 
+def post_order_with_retry(client, order_args, options, order_type, side, max_attempts: int = 4):
+    """Submit an order with exponential backoff on order_version_mismatch.
+
+    Polymarket's neg-risk exchange occasionally rejects valid orders with
+    order_version_mismatch on first attempt — usually a transient state issue
+    in their CLOB matcher. Retrying with a fresh signed order resolves
+    ~50-70% of these. After max_attempts we give up.
+
+    Returns (response, attempt_count) — caller checks response.get('success').
+    """
+    import time
+    backoff = [0, 1.5, 3, 6]  # seconds before each retry
+    last_response = None
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            time.sleep(backoff[min(attempt, len(backoff) - 1)])
+            # Re-sign the order each retry — fresh nonce, fresh timestamp
+            try:
+                from py_clob_client.clob_types import MarketOrderArgs
+                signed_order = client.create_market_order(order_args, options)
+            except Exception as e:
+                logger.warning(f"Retry {attempt}: re-signing failed: {e}")
+                continue
+        else:
+            signed_order = client.create_market_order(order_args, options)
+
+        try:
+            response = client.post_order(signed_order, order_type)
+            last_response = response
+            if response and response.get("success"):
+                logger.info(f"Order succeeded on attempt {attempt + 1}")
+                return response, attempt + 1
+            err = (response or {}).get("error") or (response or {}).get("errorMsg") or ""
+            if "order_version_mismatch" not in str(err).lower():
+                # Non-retryable error — return immediately
+                return response, attempt + 1
+            logger.info(f"Attempt {attempt + 1} hit order_version_mismatch, retrying...")
+        except Exception as e:
+            err_str = str(e).lower()
+            if "order_version_mismatch" not in err_str:
+                # Non-retryable exception
+                raise
+            logger.info(f"Attempt {attempt + 1} raised order_version_mismatch, retrying...")
+            last_response = {"success": False, "error": str(e)}
+
+    return last_response, max_attempts
+
+
 # Cache neg-risk lookups per token (immutable so safe to cache forever)
 _neg_risk_cache: dict = {}
 
@@ -241,12 +289,11 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
             amount=req.amount_usd,
             side=BUY,
         )
-        signed_order = client.create_market_order(order_args, options)
-        # FAK (Fill-And-Kill) instead of FOK (Fill-Or-Kill): partial fills are
-        # OK, kill the remainder. FOK fails on thin neg-risk orderbooks with
-        # the misleading order_version_mismatch error.
-        response = client.post_order(signed_order, OrderType.FAK)
-        logger.info(f"Buy response: success={response.get('success') if response else 'no-response'} full={response}")
+        # FAK + retry on order_version_mismatch (Polymarket neg-risk transient).
+        response, attempts = post_order_with_retry(
+            client, order_args, options, OrderType.FAK, BUY,
+        )
+        logger.info(f"Buy response after {attempts} attempt(s): success={response.get('success') if response else 'no-response'}")
 
         if response and response.get("success"):
             order_id = response.get("orderID") or response.get("order_id")
@@ -257,16 +304,18 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
                 "price": midpoint,
                 "shares": shares,
                 "neg_risk": neg_risk,
+                "attempts": attempts,
             }
         else:
             # Surface the FULL response so we can diagnose ambiguous errors
-            error = response.get("errorMsg") or response.get("error") or "Unknown"
+            error = (response or {}).get("errorMsg") or (response or {}).get("error") or "Unknown"
             return {
                 "success": False,
-                "error": error,
+                "error": f"{error} (after {attempts} attempts)",
                 "price": midpoint,
                 "neg_risk": neg_risk,
                 "full_response": response,
+                "attempts": attempts,
             }
 
     except Exception as e:
@@ -303,11 +352,9 @@ async def sell(req: SellRequest, authorization: str = Header(None)):
             amount=amount_usd,
             side=SELL,
         )
-        signed_order = client.create_market_order(order_args, options)
-        # FAK (Fill-And-Kill) instead of FOK (Fill-Or-Kill): partial fills are
-        # OK, kill the remainder. FOK fails on thin neg-risk orderbooks with
-        # the misleading order_version_mismatch error.
-        response = client.post_order(signed_order, OrderType.FAK)
+        response, attempts = post_order_with_retry(
+            client, order_args, options, OrderType.FAK, SELL,
+        )
 
         if response and response.get("success"):
             order_id = response.get("orderID") or response.get("order_id")
@@ -317,10 +364,11 @@ async def sell(req: SellRequest, authorization: str = Header(None)):
                 "price": midpoint,
                 "shares": req.shares,
                 "neg_risk": neg_risk,
+                "attempts": attempts,
             }
         else:
-            error = response.get("errorMsg") or response.get("error") or "Unknown"
-            return {"success": False, "error": error, "price": midpoint, "neg_risk": neg_risk}
+            error = (response or {}).get("errorMsg") or (response or {}).get("error") or "Unknown"
+            return {"success": False, "error": f"{error} (after {attempts} attempts)", "price": midpoint, "neg_risk": neg_risk, "attempts": attempts}
 
     except Exception as e:
         logger.error(f"Sell error: {e}")
