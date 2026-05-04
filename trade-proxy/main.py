@@ -242,7 +242,10 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
             side=BUY,
         )
         signed_order = client.create_market_order(order_args, options)
-        response = client.post_order(signed_order, OrderType.FOK)
+        # FAK (Fill-And-Kill) instead of FOK (Fill-Or-Kill): partial fills are
+        # OK, kill the remainder. FOK fails on thin neg-risk orderbooks with
+        # the misleading order_version_mismatch error.
+        response = client.post_order(signed_order, OrderType.FAK)
         logger.info(f"Buy response: success={response.get('success') if response else 'no-response'} full={response}")
 
         if response and response.get("success"):
@@ -301,7 +304,10 @@ async def sell(req: SellRequest, authorization: str = Header(None)):
             side=SELL,
         )
         signed_order = client.create_market_order(order_args, options)
-        response = client.post_order(signed_order, OrderType.FOK)
+        # FAK (Fill-And-Kill) instead of FOK (Fill-Or-Kill): partial fills are
+        # OK, kill the remainder. FOK fails on thin neg-risk orderbooks with
+        # the misleading order_version_mismatch error.
+        response = client.post_order(signed_order, OrderType.FAK)
 
         if response and response.get("success"):
             order_id = response.get("orderID") or response.get("order_id")
