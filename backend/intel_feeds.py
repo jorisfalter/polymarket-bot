@@ -199,10 +199,10 @@ async def fetch_gmail_newsletters() -> List[Dict]:
                     else:
                         body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
 
-                    # Matt Levine emails are long — trading ideas are mid-article.
-                    # Capture up to 8k chars; the agent prompt builder slices what it needs.
+                    # Matt Levine emails run long (often 25k+ chars). Capture up to 30k
+                    # so prediction-market sections that appear mid-article aren't truncated.
                     import re
-                    body = re.sub(r"\s+", " ", body).strip()[:8000]
+                    body = re.sub(r"\s+", " ", body).strip()[:30000]
 
                     # Friendly source label — Matt Levine, Doomberg, etc. instead
                     # of cryptic "noreply@..." prefixes. Match on subject keywords

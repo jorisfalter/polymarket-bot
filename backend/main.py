@@ -503,6 +503,12 @@ async def lifespan(app: FastAPI):
         minutes=30,  # WSB buzz spikes + watchlist overlap
         id='wsb_alert_job'
     )
+    scheduler.add_job(
+        run_weekly_trade_analysis,
+        'cron',
+        day_of_week='mon', hour=8, minute=0,  # Mondays 08:00 UTC — Telegram digest of last 30d
+        id='weekly_trade_analysis_job'
+    )
     scheduler.start()
 
     # Initial scan
@@ -1386,6 +1392,27 @@ async def trigger_triage(limit: int = Query(50, le=200)):
     return result
 
 
+@app.get("/api/agent/learn-from-history")
+async def get_learn_from_history(days: int = Query(30, ge=1, le=365)):
+    """Read-only: aggregate journal exits by strategy + signal pattern + stake bucket
+    so we can see which signals are actually making money. Excludes unresolved exits
+    from win/loss counts."""
+    from .trade_analysis import analyze_history
+    return analyze_history(days=days)
+
+
+@app.post("/api/agent/learn-from-history")
+async def trigger_learn_from_history(days: int = Query(30, ge=1, le=365)):
+    """Run the analysis and push a Telegram summary. Same data as the GET, but
+    fans the digest out to the user. Used by the dashboard button + the weekly cron."""
+    from .trade_analysis import analyze_history, format_telegram_summary
+    analysis = analyze_history(days=days)
+    if settings.telegram_enabled and settings.telegram_chat_id:
+        from .integrations import send_telegram
+        await send_telegram(format_telegram_summary(analysis))
+    return analysis
+
+
 @app.get("/api/intel/newsletters")
 async def get_newsletters():
     """Recent newsletter emails (Matt Levine, EventWaves, etc.) pulled from Gmail."""
@@ -1786,6 +1813,24 @@ async def check_politician_alerts():
         )
     except Exception as e:
         logger.error(f"Politician alert check failed: {e}")
+
+
+async def run_weekly_trade_analysis():
+    """Scheduler job: analyse last 30d of bot trades and push a Telegram digest.
+    Runs Monday mornings so red flags (signals consistently losing money) surface
+    before the next week's trading instead of after another week of bleed."""
+    from .trade_analysis import analyze_history, format_telegram_summary
+    try:
+        analysis = analyze_history(days=30)
+        if analysis.get("total_exits", 0) == 0:
+            return
+        if settings.telegram_enabled and settings.telegram_chat_id:
+            from .integrations import send_telegram
+            await send_telegram(format_telegram_summary(analysis))
+        logger.info(f"Weekly trade analysis: {analysis.get('total_exits', 0)} exits, "
+                    f"net ${analysis.get('total_pnl', 0):+.2f}")
+    except Exception as e:
+        logger.error(f"Weekly trade analysis failed: {e}")
 
 
 @app.get("/api/playbook")

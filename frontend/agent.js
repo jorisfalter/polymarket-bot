@@ -351,6 +351,48 @@ async function triggerTriage() {
     }
 }
 
+async function triggerLearn() {
+    const btn = event.target;
+    btn.disabled = true; btn.textContent = '⏳ Analyzing...';
+    try {
+        const r = await fetch('/api/agent/learn-from-history?days=30', { method: 'POST' });
+        const data = await r.json();
+        if (!data.total_exits) {
+            alert('No exits in journal yet — nothing to learn from.');
+            btn.disabled = false; btn.textContent = '📊 Learn from History';
+            return;
+        }
+        const lines = [
+            `Last ${data.window_days}d: ${data.total_exits} exits (${data.resolved} resolved)`,
+            `Net P&L: $${data.total_pnl.toFixed(2)} on $${data.total_stake.toFixed(0)} staked`,
+            data.win_rate != null ? `Win rate: ${(data.win_rate * 100).toFixed(0)}%` : '',
+            '',
+            'By signal pattern:',
+        ];
+        const byPattern = data.by_pattern || {};
+        Object.entries(byPattern)
+            .sort((a, b) => a[1].total_pnl - b[1].total_pnl)
+            .forEach(([p, agg]) => {
+                const wr = agg.win_rate != null ? `${(agg.win_rate * 100).toFixed(0)}%` : '—';
+                lines.push(`  ${p}: ${agg.resolved}r / $${agg.total_pnl.toFixed(2)} (${wr})`);
+            });
+        if ((data.red_flags || []).length) {
+            lines.push('', 'Red flags:');
+            data.red_flags.slice(0, 5).forEach(f => lines.push(`  ${f}`));
+        }
+        if ((data.winners || []).length) {
+            lines.push('', "What's working:");
+            data.winners.slice(0, 5).forEach(w => lines.push(`  ${w}`));
+        }
+        alert(lines.filter(Boolean).join('\n'));
+        btn.textContent = '✅ Sent to Telegram';
+        setTimeout(() => { btn.textContent = '📊 Learn from History'; btn.disabled = false; }, 3000);
+    } catch (e) {
+        alert('Failed: ' + e.message);
+        btn.disabled = false; btn.textContent = '📊 Learn from History';
+    }
+}
+
 async function triggerSummary() {
     const btn = event.target;
     btn.disabled = true; btn.textContent = '⏳ Sending...';

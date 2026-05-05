@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # Asymmetric-bet pattern (Paris-temperature case): small stake, extreme-low price, huge payoff.
     # These bypass the normal min_notional_low floor but cap severity at HIGH.
     asymmetric_max_price_cents: float = 3.0   # Entry price must be ≤3c (≤3% implied)
-    asymmetric_min_notional: float = 5.0      # Stake must be ≥$5 (insiders often split buys into tiny chunks)
+    asymmetric_min_notional: float = 50.0     # Stake must be ≥$50. Was $5, but $20-30 retail bets on Eurovision/longshots were firing as "insider" signals — real insider asymmetric bets (Paris weather) were $30+ AND from fresh wallets with no other activity. Raise the floor to keep the noise out.
     asymmetric_min_payoff_ratio: float = 30.0 # Payoff/stake ≥30x
     
     # Scan pipeline settings
