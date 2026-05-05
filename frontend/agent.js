@@ -393,6 +393,51 @@ async function triggerLearn() {
     }
 }
 
+async function triggerAudit() {
+    const btn = event.target;
+    btn.disabled = true; btn.textContent = '⏳ Auditing...';
+    try {
+        const r = await fetch('/api/agent/audit-trades?days=30', { method: 'POST' });
+        const data = await r.json();
+        if (!data.total_enters) {
+            alert('No entries in journal yet — nothing to audit.');
+            btn.disabled = false; btn.textContent = '🔍 Audit Trades';
+            return;
+        }
+        const lines = [
+            `Audit — last ${data.window_days}d`,
+            `${data.total_enters} ENTER, ${data.total_exits} EXIT`,
+            '',
+        ];
+        const findings = data.findings || [];
+        if (!findings.length) {
+            lines.push('✅ No red flags.');
+        } else {
+            const icon = { critical: '🚨', warning: '⚠️', info: 'ℹ️' };
+            findings.forEach(f => {
+                lines.push(`${icon[f.severity] || ''} ${f.category}: ${f.headline}`);
+            });
+        }
+        const sizing = data.sizing || {};
+        if (sizing.buckets) {
+            lines.push('', 'Sizing:');
+            Object.entries(sizing.buckets).forEach(([b, n]) => lines.push(`  ${b}: ${n}`));
+        }
+        const themes = data.themes || {};
+        const topThemes = Object.entries(themes).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        if (topThemes.length) {
+            lines.push('', 'Top themes:');
+            topThemes.forEach(([t, s]) => lines.push(`  ${t}: ${(s * 100).toFixed(0)}%`));
+        }
+        alert(lines.join('\n'));
+        btn.textContent = '✅ Sent to Telegram';
+        setTimeout(() => { btn.textContent = '🔍 Audit Trades'; btn.disabled = false; }, 3000);
+    } catch (e) {
+        alert('Failed: ' + e.message);
+        btn.disabled = false; btn.textContent = '🔍 Audit Trades';
+    }
+}
+
 async function triggerSummary() {
     const btn = event.target;
     btn.disabled = true; btn.textContent = '⏳ Sending...';

@@ -79,11 +79,18 @@ class TradeJournal:
         return entries[:limit]
 
     def get_open_positions(self) -> List[dict]:
-        """Return positions that have an ENTER but no matching EXIT."""
+        """Return positions that have an ENTER but no matching EXIT.
+
+        Aggregates duplicate ENTERs on the same token_id: amount_usd and shares
+        are summed, all other fields come from the most recent ENTER. This
+        prevents the historical duplicate-trade bug (Apr 2026, 9× same Iran
+        market in 5 hours) from corrupting downstream P&L math — the legacy
+        version overwrote prior ENTERs and hid the real total exposure.
+        """
         if not JOURNAL_PATH.exists():
             return []
 
-        enters = {}  # token_id -> entry
+        enters = {}  # token_id -> aggregated entry
         for line in JOURNAL_PATH.read_text().strip().split("\n"):
             if not line:
                 continue
@@ -93,6 +100,14 @@ class TradeJournal:
                 continue
             token_id = entry.get("token_id", "")
             if entry["action"] == "ENTER":
+                if token_id in enters:
+                    # Aggregate dollar exposure and shares; keep latest entry
+                    # for descriptive fields (timestamp, reason).
+                    prev = enters[token_id]
+                    entry = dict(entry)
+                    entry["amount_usd"] = (prev.get("amount_usd") or 0) + (entry.get("amount_usd") or 0)
+                    entry["shares"] = (prev.get("shares") or 0) + (entry.get("shares") or 0)
+                    entry["_entries_aggregated"] = (prev.get("_entries_aggregated") or 1) + 1
                 enters[token_id] = entry
             elif entry["action"] == "EXIT" and token_id in enters:
                 del enters[token_id]

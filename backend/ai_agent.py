@@ -1010,20 +1010,38 @@ class AITradingAgent:
                     await send_telegram(f"⏭️ Trade skipped: {market_question[:50]}\nReason: max {settings.agent_max_positions} positions already open")
                     continue
 
-                # Check duplicate against live positions (by market question, case-insensitive)
+                # Check duplicates against BOTH live positions AND the journal.
+                # Live API alone is unreliable: dust-sized positions (e.g. $1 at
+                # 76c = 1.4 shares) are sometimes filtered out by Polymarket,
+                # which on 2026-04-03 caused 9× duplicate buys of the same
+                # Iran market within 5 hours. Journal is the source of truth —
+                # if we logged an ENTER, we own the position regardless of API lag.
                 mq_lower = market_question.lower()
-                already_held = any(
+                already_held_live = any(
                     mq_lower in p.get("market_question", "").lower() or
                     p.get("market_question", "").lower() in mq_lower
                     for p in self._live_positions
                 )
-                if already_held:
-                    logger.info(f"Agent trade skipped: already have live position in {market_question[:30]}")
+                journal_open = journal.get_open_positions()
+                already_held_journal = any(
+                    p.get("market_question", "").lower() == mq_lower or
+                    p.get("market_slug", "") == market_id
+                    for p in journal_open
+                )
+                if already_held_live or already_held_journal:
+                    src = "journal" if already_held_journal else "live"
+                    logger.info(f"Agent trade skipped: already have position in {market_question[:30]} (src: {src})")
                     continue  # No Telegram — not interesting
 
                 # Get token_id for the market
                 logger.info(f"🤖 Attempting trade: {action} ${amount_usd:.2f} on {market_question[:40]} (ID: {market_id})")
                 token_id = await self._resolve_token_id(market_id, outcome, market_question=market_question)
+                # Token-id-level dedupe: the market_question check above could miss
+                # if the same market is referenced with slightly different question
+                # text. token_id is the canonical key.
+                if token_id and journal.has_open_position(token_id):
+                    logger.info(f"Agent trade skipped: token_id {token_id[:16]} already in journal")
+                    continue
                 if not token_id:
                     logger.warning(f"Could not resolve token for {market_question[:30]} (ID: {market_id})")
                     err = f"could not resolve token ID for market {market_id[:20]}"

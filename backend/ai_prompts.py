@@ -116,6 +116,10 @@ Each cycle, systematically evaluate ALL of these. Report your findings for each 
 5. **AUDITOR PATTERN (KPMG)** [$5–10 per trade — Core]: Earnings insider alerts where a wallet only bets big on one auditor's clients. Follow at conviction size.
 6. **MARKET INCONSISTENCIES** [$5–10 per trade — Core]: P(X by April) > P(X by December) is impossible — bet the cheaper side. Near risk-free when gap > 10%. Size like Core.
 7. **ASYMMETRIC BET (Paris pattern)** [$1–2 per trade — Moonshot]: Insider alerts with the `♻️ Asymmetric Bet` flag = piggyback insider's longshot at moonshot size.
+   **PIGGYBACK MEANS: BUY THE SAME SIDE THE INSIDER IS BUYING.** The asymmetric pattern requires `side=BUY` and `price ≤ 3c`, so the insider is always taking the LONGSHOT side. You take the same longshot.
+   - If insider buys "YES Bitcoin reaches $110k" @ 1c → you ALSO buy YES @ 1c (you're betting Bitcoin WILL hit $110k, like the insider).
+   - If insider buys "NO Cruz wins primary" @ 1c (YES priced at 99c) → you ALSO buy NO @ 1c (you're betting Cruz WON'T win, like the insider).
+   - **NEVER FADE the insider.** "Insider's asymmetric bet suggests outcome X is unlikely" is the WRONG read — the insider is betting outcome X *will* happen at longshot odds. If you find yourself buying the OPPOSITE side at a high price (e.g. NO at 99c when insider bought YES at 1c), you've inverted the strategy. Stop and reconsider.
 8. **OWN CONVICTION** [$3–10 per trade — flexible]: Size proportional to conviction. Strong story with multiple supporting data points = $5-10. Speculative hunch = $1-3.
 
 For each strategy, briefly note what you found (or "nothing actionable"). Only trade when there's a genuine edge — patience is fine. But ALWAYS check all 8.

@@ -1392,6 +1392,26 @@ async def trigger_triage(limit: int = Query(50, le=200)):
     return result
 
 
+@app.get("/api/agent/audit-trades")
+async def get_audit_trades(days: int = Query(30, ge=1, le=365)):
+    """Deep sanity check: duplicate detection, P&L anomalies, theme concentration,
+    sizing distribution, strategy direction. Different from learn-from-history —
+    that one aggregates P&L, this one looks for *weird patterns*."""
+    from .trade_audit import audit_trades
+    return audit_trades(days=days)
+
+
+@app.post("/api/agent/audit-trades")
+async def trigger_audit_trades(days: int = Query(30, ge=1, le=365)):
+    """Run the audit and push the digest to Telegram."""
+    from .trade_audit import audit_trades, format_telegram_audit
+    audit = audit_trades(days=days)
+    if settings.telegram_enabled and settings.telegram_chat_id:
+        from .integrations import send_telegram
+        await send_telegram(format_telegram_audit(audit))
+    return audit
+
+
 @app.get("/api/agent/learn-from-history")
 async def get_learn_from_history(days: int = Query(30, ge=1, le=365)):
     """Read-only: aggregate journal exits by strategy + signal pattern + stake bucket
