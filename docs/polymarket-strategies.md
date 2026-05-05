@@ -1,168 +1,182 @@
-# AI Trading Agent — Strategy Playbook
+# AI Trading Agent — Strategie-playbook
 
-## Overview
-The AI agent runs every 15 minutes and systematically checks all 7 strategies. It receives 9 data sources per cycle and decides whether to trade based on genuine edge.
+## Overzicht
+De AI-agent draait elke 15 minuten en checkt systematisch alle 7 strategieën. Hij ontvangt 9 databronnen per cyclus en beslist of hij een trade plaatst op basis van echte edge.
 
-**Limits**: $10 max per trade, $100 max total exposure, 10 max positions.
-
----
-
-## Strategy 1: Insider Signal Following
-**Data source**: Insider detection alerts (HIGH/CRITICAL severity)
-
-**Logic**: When the detection system flags a suspicious trade — fresh wallet, big position on unlikely outcome, low market diversity — the agent evaluates whether to follow.
-
-**Trigger**: Fresh wallet dumps $5k+ on a <30c outcome in a non-sports market.
-
-**Edge**: Insider traders have information the market hasn't priced in yet. Following their bet before the market moves captures the same edge.
+**Limieten**: $10 max per trade, $100 max totale exposure, 10 max posities.
 
 ---
 
-## Strategy 2: Smart Money Copy Trading
-**Data source**: Leaderboard top traders + watched wallets
+## Strategie 1: Insider-signaal volgen
+**Databron**: Insider-detectie alerts (HIGH/CRITICAL severity)
 
-**Logic**: Top-performing traders (60%+ win rate, 20+ markets) have demonstrated skill. Three known quant wallets made $1.3M in 30 days using Markov chain arbitrage on Polymarket crypto windows. When they take new positions, consider copying.
+**Logica**: Wanneer het detectiesysteem een verdachte trade flagt — fresh wallet, grote positie op onwaarschijnlijke uitkomst, lage marktdiversiteit — beoordeelt de agent of hij meegaat.
 
-**Known quant wallets (added April 2026):**
+**Trigger**: Fresh wallet dumpt $5k+ op een <30c uitkomst in een non-sportsmarkt.
+
+**Edge**: Insider traders hebben informatie die de markt nog niet heeft ingeprijsd. Hun bet volgen vóór de markt beweegt vangt dezelfde edge.
+
+---
+
+## Strategie 2: Smart Money Copy Trading
+**Databron**: Leaderboard top traders + watched wallets
+
+**Logica**: Top-presterende traders (60%+ winrate, 20+ markten) hebben skill aangetoond. Drie bekende quant wallets maakten $1,3M in 30 dagen met Markov chain arbitrage op Polymarket cryptowindows. Wanneer zij nieuwe posities innemen, overweeg je te kopiëren.
+
+**Bekende quant wallets (toegevoegd april 2026):**
 - `0xeebde7a0e019a63e6b476eb425505b7b3e6eba30` — High-Confidence Spread Capture (BTC/ETH hourly)
 - `0xe1d6b51521bd4365769199f392f9818661bd907c` — Dual-Mode EV (directional + price locks)
 - `0xb27bc932bf8110d8f78e55da7d5f0497a18b5b82` — Multi-Asset Variance Reduction (5-min windows)
 
-**Trigger**: Top trader or quant wallet places a new significant bet.
+**Trigger**: Top trader of quant wallet plaatst een nieuwe significante bet.
 
-**Edge**: Skilled traders identify mispriced markets before the crowd.
-
----
-
-## Strategy 3: Near-Resolution Mispricing (updated)
-**Data source**: Near-resolution markets (ending within 48h)
-
-**Logic**: Research on 72M Polymarket trades (Movez, April 2026) shows traders *underprice* high-probability outcomes. The real edge is in the **80¢–99¢ range**, not in cheap contracts. Markets priced 80-95c with near-certain outcomes are systematically mispriced.
-
-**Trigger**: Market ends within 48h, dominant outcome priced 80–99c, outcome appears near-certain from fundamentals.
-
-**Edge**: Guaranteed return if outcome resolves as expected. Compounding many of these creates consistent returns. Buying at 92c that resolves at 100c = 8.7% return in hours.
-
-**Previous approach was wrong**: We were only looking at 95%+ markets. The real edge starts at 80c.
+**Edge**: Geskillde traders identificeren misprijsde markten vóór de massa.
 
 ---
 
-## Strategy 3b: Daily Repeating Base-Rate Plays ("Infinite Money Glitch")
-**Data source**: Polymarket daily-resolving markets with strong historical base rate
+## Strategie 3: Mispricing nabij resolutie (geüpdatet)
+**Databron**: Markten dicht bij resolutie (eindigen binnen 48u)
 
-**Logic**: Some markets resolve the same way every single day (e.g., "Will Trump insult someone today?", "Will Bitcoin finish up today?"). Traders systematically underprice these — a 99%+ event is priced 90-95c because traders anchor on "prices above 90c feel expensive". Classic example: @CarOnPolymarket's Trump-insult market priced 92-95c daily, resolving Yes 30+ days in a row ($100/day ≈ 5-8% daily compounded).
+**Logica**: Onderzoek op 72M Polymarket trades (Movez, april 2026) laat zien dat traders uitkomsten met hoge waarschijnlijkheid *te laag prijzen*. De echte edge zit in de **80¢–99¢ range**, niet in goedkope contracten. Markten geprijsd 80-95c met bijna-zekere uitkomsten zijn systematisch misprijsd.
 
-**Trigger**: Daily-resolving market where the Yes side has resolved Yes 10+ times in a row AND current price ≤ 95c. The base rate must be derivable from the market's own history, not speculation.
+**Trigger**: Markt eindigt binnen 48u, dominante uitkomst geprijsd 80–99c, uitkomst lijkt bijna-zeker op basis van fundamentals.
 
-**Edge**: Same mispricing as Strategy 3 (traders underprice near-certain outcomes) but applied to a repeating market, so you can compound the edge every 24 hours. 5% daily for 30 days = ~4.3x capital if fills weren't a constraint.
+**Edge**: Gegarandeerd rendement als de uitkomst resolveert zoals verwacht. Veel hiervan compounden geeft consistente returns. Kopen op 92c die resolveert op 100c = 8,7% rendement in uren.
 
-**Risk**: The one day it breaks, you lose 90c+. Size so a single loss ≤ 2-3 winning days. Skip if the underlying pattern has a known expiration (e.g., "Trump tweets daily" doesn't survive Trump leaving office).
-
----
-
-## Strategy 4: Stock Market Arbitrage
-**Data source**: Polymarket finance markets + real-time SPY, QQQ, Gold, Oil prices
-
-**Logic**: If real market data diverges from what Polymarket is pricing, that's an arbitrage opportunity.
-
-**Trigger**: e.g., "S&P above 5500 by March 31" priced at 40c but SPY is already at 5490.
-
-**Edge**: Real-time stock data gives us information Polymarket hasn't fully priced in yet.
+**Vorige aanpak was fout**: We keken alleen naar 95%+ markten. De echte edge begint bij 80c.
 
 ---
 
-## Strategy 5: Auditor Insider Pattern (KPMG Pattern)
-**Data source**: Earnings market alerts + auditor mapping (80+ companies mapped to Big 4 auditors)
+## Strategie 3b: Dagelijks herhalende base-rate plays ("Infinite Money Glitch")
+**Databron**: Polymarket dagelijks-resolverende markten met sterke historische base rate
 
-**Logic**: Based on EventWaves research — wallets that bet big exclusively on earnings markets for companies with the same auditor are likely insiders at the audit firm.
+**Logica**: Sommige markten resolveren elke dag op dezelfde manier (bv. "Will Trump insult someone today?", "Will Bitcoin finish up today?"). Traders prijzen die systematisch te laag — een 99%+ event wordt geprijsd op 90-95c omdat traders ankeren op "prijzen boven 90c voelen duur". Klassiek voorbeeld: @CarOnPolymarket's Trump-insult markt geprijsd 92-95c per dag, 30+ dagen op rij Yes resolverend ($100/dag ≈ 5-8% dagelijks compounded).
 
-**Trigger**: Wallet bets $5k+ on KPMG-audited company earnings but only $50 on non-KPMG companies.
+**Trigger**: Dagelijks-resolverende markt waar de Yes-kant 10+ keer op rij Yes geresolveerd is EN de huidige prijs ≤ 95c. De base rate moet afleidbaar zijn uit de eigen geschiedenis van de markt, niet uit speculatie.
 
-**Edge**: Audit firm insiders have the most reliable pre-earnings information.
+**Edge**: Dezelfde mispricing als Strategie 3 (traders prijzen bijna-zekere uitkomsten te laag) maar toegepast op een herhalende markt, zodat je de edge elke 24 uur kunt compounden. 5% dagelijks voor 30 dagen = ~4,3x kapitaal als fills geen constraint waren.
 
----
-
-## Strategy 6: Market Inconsistencies (Temporal + Hierarchy Arb)
-**Data source**: Cross-market inconsistency detector
-
-**Logic**: Related markets sometimes price contradictory outcomes. P(X by April) > P(X by December) is mathematically impossible. P(BTC > $80k) > P(BTC > $70k) is impossible. Bet the cheaper side.
-
-**Trigger**: Two logically related markets with >10% pricing gap in the wrong direction.
-
-**Edge**: Near risk-free — one of the two prices MUST be wrong by definition.
+**Risico**: De dag dat het breekt verlies je 90c+. Sizing zo dat één enkele loss ≤ 2-3 winnende dagen is. Skip als het onderliggende patroon een bekende einddatum heeft (bv. "Trump tweets daily" overleeft Trump's vertrek niet).
 
 ---
 
-## Strategy 8: Asymmetric Bet (Paris-Weather Pattern)
-**Data source**: Detector's new `♻️ Asymmetric Bet` signal (fires in the detector pipeline, not a separate feed)
+## Strategie 4: Beurs-arbitrage
+**Databron**: Polymarket finance-markten + real-time SPY, QQQ, Goud, Olie prijzen
 
-**Logic**: The Paris Météo-France tampering case (FT, April 2026) exposed a blind spot: insiders routinely bet *small dollar amounts* on *extreme longshots* (<3c) and pocket 50-100x returns. Our $1000 notional floor was hiding this pattern entirely. An insider betting $50 at 0.5c to win $10,000 is exactly as suspicious as one betting $5000 at 50c — just the blast radius differs.
+**Logica**: Als echte marktdata divergeert van wat Polymarket prijst, is dat een arbitrage-kans.
 
-**Trigger**: Detector raises a HIGH-severity alert with `♻️ Asymmetric Bet` flag. That means: BUY side, price ≤3c, stake ≥$5, payoff ratio ≥30x, ideally fresh wallet and low market diversity.
+**Trigger**: bv. "S&P above 5500 by March 31" geprijsd op 40c maar SPY staat al op 5490.
 
-**Edge**: Piggyback the insider's asymmetric bet with our own moonshot-sized stake ($1–3). If they're right, we 30-100x our stake. If they're wrong or it's a false positive, we lose $1–3. The math strongly favors us even at a 10% hit rate.
-
-**Budget**: lives in the Moonshot book (see `docs/trading-philosophy.md`). Max $20 aggregate exposure across all active moonshots.
-
-**Known cases**: `paris_temperature_apr6_2026`, `paris_temperature_apr15_2026` — both backtestable via `backtester.run_known_case()`.
+**Edge**: Real-time beursdata geeft ons informatie die Polymarket nog niet volledig heeft ingeprijsd.
 
 ---
 
-## Strategy 9: Own Conviction
-**Data source**: All available data + thesis board
+## Strategie 5: Auditor Insider-patroon (KPMG-patroon)
+**Databron**: Earnings-markt alerts + auditor mapping (80+ bedrijven gemapt aan Big 4 auditors)
 
-**Logic**: Sometimes the data tells a clear story that doesn't fit neatly into the other strategies. The agent trades on its own analysis when conviction is high.
+**Logica**: Gebaseerd op EventWaves-onderzoek — wallets die exclusief groot betten op earnings-markten van bedrijven met dezelfde auditor zijn waarschijnlijk insiders bij de auditfirma.
 
-**Trigger**: Strong evidence from multiple sources pointing to a mispriced market.
+**Trigger**: Wallet bet $5k+ op KPMG-geauditeerde bedrijfs-earnings maar slechts $50 op niet-KPMG bedrijven.
 
-**Edge**: AI reasoning applied to full context of market data, signals, and theses.
-
----
-
-## Quant Math (from 0xRicker research, April 2026)
-
-The three quant wallets above used:
-- **Markov Chain transition matrices** — measure which price state the market is in NOW and probability of next state
-- **Entry rule**: Arbitrage gap ≥ 5% AND state persistence ≥ 0.87
-- **Kelly Criterion**: f* ≈ 0.71 for optimal bet sizing
-- **Off-hours edge**: Human traders are offline at 3AM → crypto windows become "stale and exploitable"
-
-Applicable to our bot: focus on Kelly-sized positions and exploit off-hours mispricing in resolution arb.
+**Edge**: Auditor-insiders hebben de meest betrouwbare pre-earnings informatie.
 
 ---
 
-## Data Sources (12 total)
-1. Insider alerts — suspicious trades flagged by detection system
-2. Auditor pattern watch — earnings alerts tagged with auditor
-3. Smart money — recent trades from watched wallets (incl. 3 quant wallets: 0xeebde7a0, 0xe1d6b515, 0xb27bc932)
-4. Leaderboard — top traders by PnL with win rates + specialization tags
-5. Top 20 markets — volume, prices, end dates (from a 300-market fetch)
-6. Near-resolution markets — ending within 48h with 80%+ dominant outcome
-7. Long-tail mispricing — 80-99¢ near-resolution markets *outside* volume top-50 (whales-don't-bother edge)
-8. Daily-repeating candidates — Trump-insult and similar (Strategy 3b)
-9. Stock market data — live SPY/QQQ/Gold/Oil
-10. Market inconsistencies — cross-market contradictions (temporal + hierarchy arb)
+## Strategie 6: Marktinconsistenties (Temporal + Hierarchy Arb)
+**Databron**: Cross-markt inconsistentie-detector
+
+**Logica**: Gerelateerde markten prijzen soms tegenstrijdige uitkomsten. P(X by April) > P(X by December) is wiskundig onmogelijk. P(BTC > $80k) > P(BTC > $70k) is onmogelijk. Bet de goedkopere kant.
+
+**Trigger**: Twee logisch gerelateerde markten met >10% prijskloof in de verkeerde richting.
+
+**Edge**: Bijna risicoloos — één van de twee prijzen MOET per definitie fout zijn.
+
+---
+
+## Strategie 8: Asymmetrische bet (Parijs-weer patroon)
+**Databron**: Het nieuwe `♻️ Asymmetric Bet` signal van de detector (vuurt in de detector pipeline, geen aparte feed)
+
+**Logica**: De Parijs Météo-France manipulatiezaak (FT, april 2026) legde een blinde vlek bloot: insiders betten routinematig *kleine bedragen* op *extreme longshots* (<3c) en pakken 50-100x returns. Onze $1000 notional floor verborg dit patroon volledig. Een insider die $50 bet op 0,5c om $10.000 te winnen is precies even verdacht als één die $5000 bet op 50c — alleen de blast radius verschilt.
+
+**Trigger**: Detector geeft een HIGH-severity alert met `♻️ Asymmetric Bet` flag. Dat betekent: BUY-kant, prijs ≤3c, stake ≥$5, payoff ratio ≥30x, idealiter fresh wallet en lage marktdiversiteit.
+
+**Edge**: Piggyback op de asymmetrische bet van de insider met onze eigen moonshot-sized stake ($1–3). Als zij gelijk hebben, doen we 30-100x onze stake. Als ze fout zitten of het is een false positive, verliezen we $1–3. De wiskunde is sterk in ons voordeel zelfs bij een 10% hit rate.
+
+**Budget**: zit in het Moonshot book (zie `docs/trading-philosophy.md`). Max $20 totale exposure over alle actieve moonshots.
+
+**Bekende cases**: `paris_temperature_apr6_2026`, `paris_temperature_apr15_2026` — beide backtestbaar via `backtester.run_known_case()`.
+
+**🎯 Single-name vs Broad-based filter (toegevoegd 2026-05-05)**
+
+Sinds mei 2026 weegt de detector het asymmetrische signaal mee op basis van het type markt. Bron: Bartlett & O'Hara, *"Adverse Selection in Prediction Markets: Evidence from Kalshi"* (2026, 41.6M trades, aangehaald door Matt Levine in Money Stuff).
+
+| Markttype | Voorbeeld | Aanpassing op asymmetric_score |
+| --------- | --------- | ------------------------------ |
+| `single_name` | "Will Trump be impeached?", "Will Tesla announce X?" | × 1.3 (boost) |
+| `broad_based` | "Will BTC > $84k?", "Will Poland win Eurovision?", "Fed rate cut?" | × 0.5 (halveren) |
+| `unknown` | onbekend onderwerp | geen aanpassing |
+
+**Waarom**: insider-edge concentreert zich in markten over specifieke personen of bedrijven. Op brede markten (macro, crypto, weer, sport) is het asymmetrische patroon meestal gewoon retail-fans die meegokken. Het $26 Eurovision-incident (mei 2026) is een schoolvoorbeeld: $26 op een longshot voelt als insider, is in werkelijkheid een fan.
+
+Implementatie: `_classify_market_subject()` in `backend/detectors.py`. Volledige uitleg in `docs/research/single-name-vs-broad-based.md`. De classificatie verschijnt op het dashboard als `🎯 Market Subject` signaal-entry naast het asymmetric signaal.
+
+---
+
+## Strategie 9: Eigen overtuiging
+**Databron**: Alle beschikbare data + thesis board
+
+**Logica**: Soms vertelt de data een duidelijk verhaal dat niet netjes in de andere strategieën past. De agent trade dan op basis van zijn eigen analyse als de overtuiging hoog is.
+
+**Trigger**: Sterk bewijs uit meerdere bronnen dat wijst op een misprijsde markt.
+
+**Edge**: AI-redenering toegepast op de volledige context van marktdata, signals en theses.
+
+---
+
+## Quant Math (uit 0xRicker onderzoek, april 2026)
+
+De drie quant wallets hierboven gebruikten:
+- **Markov Chain transitiematrices** — meet welke prijsstaat de markt NU heeft en de kans op de volgende staat
+- **Entry rule**: Arbitrage gap ≥ 5% EN state persistence ≥ 0,87
+- **Kelly Criterion**: f* ≈ 0,71 voor optimale bet sizing
+- **Off-hours edge**: Menselijke traders zijn offline om 3 uur 's nachts → cryptowindows worden "stale and exploitable"
+
+Toepasbaar op onze bot: focus op Kelly-sized posities en exploit off-hours mispricing in resolution arb.
+
+---
+
+## Databronnen (12 totaal)
+1. Insider alerts — verdachte trades geflagd door het detectiesysteem
+2. Auditor pattern watch — earnings-alerts getagd met auditor
+3. Smart money — recente trades van watched wallets (incl. 3 quant wallets: 0xeebde7a0, 0xe1d6b515, 0xb27bc932)
+4. Leaderboard — top traders op PnL met winrates + specialisatietags
+5. Top 20 markten — volume, prijzen, einddata (uit een 300-markten fetch)
+6. Markten nabij resolutie — eindigen binnen 48u met 80%+ dominante uitkomst
+7. Long-tail mispricing — 80-99¢ bijna-resolverende markten *buiten* volume top-50 (whales-don't-bother edge)
+8. Dagelijks-herhalende kandidaten — Trump-insult en vergelijkbaar (Strategie 3b)
+9. Beursdata — live SPY/QQQ/Goud/Olie
+10. Marktinconsistenties — cross-markt tegenstrijdigheden (temporal + hierarchy arb)
 11. Newsletter intel — Matt Levine, Doomberg, EventWaves (via Gmail IMAP, 8000 chars per email)
 12. WSB ticker buzz — top 10 r/wallstreetbets tickers via Fly.io proxy (cross-board signal)
-13. Thesis board — running hypotheses from previous cycles
+13. Thesis board — lopende hypothesen uit eerdere cycli
 
 ---
 
 ## Thesis Board
-The agent maintains persistent investment theses across cycles:
-- **CREATE**: new pattern spotted
-- **UPDATE**: new evidence (confirm or weaken)
-- **CLOSE**: resolved or invalidated
+De agent houdt persistent investment theses bij over cycli heen:
+- **CREATE**: nieuw patroon gespot
+- **UPDATE**: nieuw bewijs (bevestigt of verzwakt)
+- **CLOSE**: opgelost of ongeldig
 
-Stored in `data/agent_theses.json`.
+Opgeslagen in `data/agent_theses.json`.
 
 ## Audit Trail
 - **Thinking journal**: `data/agent_thinking.jsonl`
 - **Trade journal**: `data/trade_journal.jsonl`
 - **Airtable**: live trade log
 
-## Trade execution & failure modes
+## Trade-uitvoering & failure modes
 
-When the agent submits a trade, it goes through layered pre-flight checks against six known Polymarket failure modes (all originally surfaced as the misleading `order_version_mismatch` error). Each check has a clean user-facing reason and a programmatic guard so the agent's prompt doesn't have to know about edge cases like UMA dispute states or expired orderbook windows.
+Wanneer de agent een trade indient, gaat die door gelaagde pre-flight checks tegen zes bekende Polymarket failure modes (allemaal oorspronkelijk opgekomen als de misleidende `order_version_mismatch` error). Elke check heeft een nette user-facing reden en een programmatic guard zodat de prompt van de agent geen weet hoeft te hebben van edge cases zoals UMA dispute states of verlopen orderbook windows.
 
-Full operational doc with the catalog of failure modes, where each is caught, and how to add new ones: [`polymarket-trade-execution.md`](polymarket-trade-execution.md).
+Volledig operationeel doc met de catalogus van failure modes, waar elk wordt opgevangen, en hoe je nieuwe toevoegt: [`polymarket-trade-execution.md`](polymarket-trade-execution.md).

@@ -1,14 +1,14 @@
-# Crypto — Strategy Playbook
+# Crypto — Strategie-playbook
 
-Strategies for the **/crypto** dashboard. Mostly **delta-neutral** — structural yield without directional exposure on BTC/ETH/SOL. Currently manual execution; the dashboard surfaces signals.
+Strategieën voor het **/crypto** dashboard. Vooral **delta-neutraal** — structurele yield zonder directionele exposure op BTC/ETH/SOL. Momenteel handmatige uitvoering; het dashboard surfacet de signals.
 
-All five strategies are now surfaced on the dashboard: funding rates (Binance/OKX/Bybit), perp/spot basis, cross-exchange spread, stablecoin yields (Aave / Compound / Morpho / Spark / Fluid via DeFiLlama), and stETH/ETH liquid staking premium. Auto-detected signals appear above the panels when funding goes extreme (>30% annualized), spreads widen (>0.15%), or basis dislocates (>0.2%).
+Alle vijf strategieën staan nu op het dashboard: funding rates (Binance/OKX/Bybit), perp/spot basis, cross-exchange spread, stablecoin yields (Aave / Compound / Morpho / Spark / Fluid via DeFiLlama), en stETH/ETH liquid staking premium. Auto-detected signals verschijnen boven de panels wanneer funding extreem wordt (>30% geannualiseerd), spreads breder worden (>0,15%), of basis dislocates (>0,2%).
 
-The first three strategies (funding arb, basis, cross-exchange) are the canonical "carry" trades. Strategies 4 and 5 are non-carry yield plays.
+De eerste drie strategieën (funding arb, basis, cross-exchange) zijn de canonieke "carry"-trades. Strategieën 4 en 5 zijn non-carry yield plays.
 
 ---
 
-## Strategy 1: Funding Rate Arbitrage
+## Strategie 1: Funding Rate Arbitrage
 
 ### Concept
 Perpetual futures (Binance, Bybit, OKX) hebben geen expiratie maar betalen elke 8 uur een "funding rate" om de prijs dicht bij spot te houden. In bullish markten betalen longs aan shorts — jij pakt die stroom door beide kanten te houden.
@@ -38,7 +38,7 @@ Exit:   funding rate < 0.005% per 8u of negatief
 
 ---
 
-## Strategy 2: Cash-and-Carry (Basis Trading)
+## Strategie 2: Cash-and-Carry (Basis Trading)
 
 ### Concept
 Futures met vaste expiratie (kwartaalscontracten) handelen altijd met een premium boven spot — de "basis". Bij expiratie convergeert de prijs naar spot. Jij koopt spot en verkoopt futures, en pakt die spread gegarandeerd.
@@ -66,7 +66,7 @@ Futures met vaste expiratie (kwartaalscontracten) handelen altijd met een premiu
 
 ---
 
-## Strategy 3: Cross-Exchange Arbitrage (informational — not retail-implementable)
+## Strategie 3: Cross-Exchange Arbitrage (informatief — niet retail-haalbaar)
 
 Zelfde asset, verschillende prijs op meerdere exchanges. Koop goedkoop, verkoop duur.
 
@@ -75,37 +75,37 @@ Zelfde asset, verschillende prijs op meerdere exchanges. Koop goedkoop, verkoop 
 - HFT-bots met co-location domineren
 - Transfertijd tussen exchanges elimineert de edge
 
-**Currently surfaced on dashboard:** ✅ Cross-exchange spread visible (Binance/Coinbase/Kraken/OKX). Treat it as a market-quality signal — when spreads widen materially, retail can occasionally catch a few bps if you have funded accounts on both sides.
+**Momenteel op dashboard:** ✅ Cross-exchange spread zichtbaar (Binance/Coinbase/Kraken/OKX). Behandel het als een marktkwaliteit-signal — wanneer spreads materieel breder worden, kan retail af en toe een paar bps pakken als je gefunde accounts aan beide kanten hebt.
 
 ---
 
-## Strategy 4: Stablecoin Yield (lower-priority watchlist)
-**Data source:** DeFi yield aggregators (Aave, Compound, Pendle, Ethena)
+## Strategie 4: Stablecoin Yield (lower-priority watchlist)
+**Databron:** DeFi yield aggregators (Aave, Compound, Pendle, Ethena)
 
-**Logic:** USDC and other stablecoins earn variable yields on lending platforms. Rates spike when leverage demand spikes — same drivers as funding rates. Pendle's PT tokens lock in fixed yields ahead of time.
+**Logica:** USDC en andere stablecoins verdienen variabele yields op lending-platformen. Rates spiken wanneer leverage-vraag spiked — dezelfde drivers als funding rates. Pendle's PT-tokens locken vaste yields vooraf in.
 
-**Trigger:** Aave/Compound USDC borrow rates > 8% APY for ≥3 days, or Pendle PT yields > 12% on quality assets.
+**Trigger:** Aave/Compound USDC borrow rates > 8% APY voor ≥3 dagen, of Pendle PT yields > 12% op kwaliteits-assets.
 
-**Edge:** Genuine yield from leverage demand. Lower-risk than funding arb (no liquidation risk on either leg).
+**Edge:** Echte yield uit leverage-vraag. Lager-risico dan funding arb (geen liquidatierisico op een van beide legs).
 
-**Currently surfaced:** ✅ Stablecoin Yields panel on /crypto pulls from DeFiLlama (Aave / Compound / Morpho / Spark / Fluid on Ethereum mainnet, USDC/USDT/DAI/USDS pools).
-
----
-
-## Strategy 5: Liquid Staking Premium Arb (ETH-specific)
-**Data source:** ETH staking yields + lstETH market prices (Lido, Rocket Pool, EtherFi)
-
-**Logic:** Liquid staking tokens (stETH, rETH, etc.) sometimes trade at discounts/premiums to underlying ETH. Discount > peg = arb (buy stETH, redeem 1:1 for ETH after withdrawal queue).
-
-**Trigger:** stETH/ETH ratio < 0.998 sustained for 24h+.
-
-**Edge:** Bounded return when peg restores. Most plays close in days-weeks.
-
-**Currently surfaced:** ✅ Liquid Staking Premium panel on /crypto shows stETH/ETH ratio + premium %, with auto-flagging when peg dislocates >0.5%.
+**Momenteel op dashboard:** ✅ Stablecoin Yields panel op /crypto pulled van DeFiLlama (Aave / Compound / Morpho / Spark / Fluid op Ethereum mainnet, USDC/USDT/DAI/USDS pools).
 
 ---
 
-## Combined carry bot — implementation plan
+## Strategie 5: Liquid Staking Premium Arb (ETH-specifiek)
+**Databron:** ETH staking yields + lstETH marktprijzen (Lido, Rocket Pool, EtherFi)
+
+**Logica:** Liquid staking tokens (stETH, rETH, etc.) handelen soms op kortingen/premiums ten opzichte van underlying ETH. Korting > peg = arb (koop stETH, redeem 1:1 voor ETH na withdrawal queue).
+
+**Trigger:** stETH/ETH ratio < 0,998 aanhoudend voor 24u+.
+
+**Edge:** Begrensde return wanneer peg herstelt. De meeste plays sluiten in dagen-weken.
+
+**Momenteel op dashboard:** ✅ Liquid Staking Premium panel op /crypto toont stETH/ETH ratio + premium %, met auto-flagging wanneer peg dislocates >0,5%.
+
+---
+
+## Combined carry bot — implementatieplan
 
 ### Architectuur
 ```
@@ -170,6 +170,6 @@ Wanneer klaar om te bouwen:
 
 ---
 
-## Alert channel
+## Alert-kanaal
 
-Crypto board has **no automated alert channel yet** — refresh `/crypto` to see live state. The auto-detected signals appear inline as banners above the panels. If you want email alerts when funding spikes / basis dislocates / stablecoin yields explode, that's a 30-min build using the same Gmail SMTP infra as the Stocks board.
+Het crypto-board heeft **nog geen geautomatiseerd alert-kanaal** — refresh `/crypto` om live state te zien. De auto-detected signals verschijnen inline als banners boven de panels. Als je email-alerts wilt wanneer funding spiked / basis dislocates / stablecoin yields exploderen, dat is een 30-min build met dezelfde Gmail SMTP infra als het Stocks-board.

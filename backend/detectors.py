@@ -158,6 +158,25 @@ class InsiderDetector:
         # 8. Asymmetric Bet (small stake, near-zero price, fresh wallet → Paris-weather pattern)
         asymmetric_score, is_asymmetric = self._check_asymmetric_bet(trade, wallet)
         payoff_ratio = (100 / trade.price) if trade.price > 0 else 0
+
+        # 8b. Market subject classifier — Bartlett & O'Hara (Kalshi paper, 2026)
+        # show informed trading concentrates in *single-name* markets (named
+        # person/company), while *broad-based* markets (macro, crypto price,
+        # weather, sport) carry far less insider edge. We use this to weight
+        # the asymmetric signal: boost on single_name, halve on broad_based.
+        subject_class = self._classify_market_subject(trade.market_question)
+        if asymmetric_score > 0:
+            if subject_class == "single_name":
+                asymmetric_score = round(asymmetric_score * 1.3)
+            elif subject_class == "broad_based":
+                asymmetric_score = round(asymmetric_score * 0.5)
+        signals.append({
+            "signal": f"🎯 Market Subject ({subject_class})",
+            "score": 0,
+            "details": "single_name → +30% weight, broad_based → −50% weight on asymmetric",
+            "threshold": "named person/company vs macro/crypto/weather/sport",
+        })
+
         signals.append({
             "signal": "♻️ Asymmetric Bet",
             "score": asymmetric_score,
@@ -165,7 +184,7 @@ class InsiderDetector:
             "threshold": f"≥${settings.asymmetric_min_notional:.0f} stake, ≤{settings.asymmetric_max_price_cents:.0f}¢, ≥{settings.asymmetric_min_payoff_ratio:.0f}x",
         })
         if asymmetric_score > 0:
-            flags.append(f"♻️ Asymmetric bet: ${trade.notional_usd:.0f} @ {trade.price:.2f}¢ ({payoff_ratio:.0f}x payoff)")
+            flags.append(f"♻️ Asymmetric bet: ${trade.notional_usd:.0f} @ {trade.price:.2f}¢ ({payoff_ratio:.0f}x payoff) [{subject_class}]")
             severity_score += asymmetric_score
 
         # ========== DETERMINE IF SUSPICIOUS ==========
@@ -396,6 +415,75 @@ class InsiderDetector:
         elif trade.price <= 30:
             return 10
         return 0
+
+    def _classify_market_subject(self, question: str) -> str:
+        """Classify market subject as 'single_name', 'broad_based', or 'unknown'.
+
+        Source: Bartlett & O'Hara, "Adverse Selection in Prediction Markets:
+        Evidence from Kalshi" (2026, 41.6M trades). Single-name markets show
+        markedly higher informed trading; broad-based markets show very little.
+        We use this to filter the asymmetric-bet signal — bypassing dust-sized
+        broad-based bets that look insider-shaped but rarely are (Eurovision,
+        BTC daily price, Fed rates).
+
+        Heuristic, not perfect — leans toward broad_based when uncertain so
+        we don't accidentally promote macro noise to insider alerts.
+        """
+        if not question:
+            return "unknown"
+        q = question.lower()
+
+        broad_keywords = [
+            # Crypto / asset prices
+            "bitcoin", "btc", "ethereum", "eth", "solana", "sol", "ripple", "xrp",
+            "price of", "above $", "below $", "reach $", "hit $",
+            # Macro
+            "fed ", "interest rate", "rate cut", "rate hike", "fomc", "jobs report",
+            "unemployment", "cpi", "inflation", "gdp", "recession", "yield curve",
+            "s&p", "nasdaq", "dow ", "russell ",
+            # Weather / contests / sport
+            "temperature", "rainfall", "snowfall", "weather", "high temp", "low temp",
+            "world cup", "champions league", "super bowl", "nba ", "nfl ", "mlb ",
+            "olympics", "eurovision", "grand prix", "f1 ",
+        ]
+        for kw in broad_keywords:
+            if kw in q:
+                return "broad_based"
+
+        # Single-name signals: a person or specific company. We look for
+        # capitalized proper nouns in the original question (not q.lower()).
+        # Anything question that names a specific human or company is a
+        # single-name market.
+        single_keywords = [
+            # Named persons / titles
+            "trump", "biden", "obama", "harris", "vance", "pence", "musk", "bezos",
+            "putin", "xi ", "macron", "merkel", "modi", "netanyahu", "maduro", "lula",
+            "be elected", "win the election", "win the primary", "win the nomination",
+            "be impeached", "be convicted", "be indicted", "be charged", "resign",
+            "step down", "be fired", "be removed",
+            # Specific companies (a hint, not exhaustive)
+            "tesla", "apple", "microsoft", "amazon", "meta", "google", "alphabet",
+            "openai", "anthropic", "nvidia", "gamestop",
+            # CEO succession
+            "ceo of", "next ceo",
+        ]
+        for kw in single_keywords:
+            if kw in q:
+                return "single_name"
+
+        # Capitalized proper-noun heuristic: a "Will <ProperNoun>..." question
+        # almost always names a specific entity. Only fire if the question
+        # opens with a Polymarket-style trigger word — guards against false
+        # positives on prose that happens to start with a capital.
+        words = question.split()
+        if not words or words[0] not in {"Will", "Does", "Is", "Has", "Can", "Should"}:
+            return "unknown"
+        stopwords = {"Will", "Does", "Is", "Has", "Can", "Should", "What", "Who", "When", "Which", "How", "The", "A", "An", "On", "By", "There", "Any"}
+        for w in words[1:8]:
+            if len(w) >= 3 and w[0].isupper() and w not in stopwords and w.isalpha():
+                return "single_name"
+
+        return "unknown"
 
     def _check_asymmetric_bet(self, trade: Trade, wallet: WalletProfile) -> Tuple[float, bool]:
         """

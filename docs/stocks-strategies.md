@@ -1,258 +1,258 @@
-# Stocks — Strategy Playbook
+# Stocks — Strategie-playbook
 
-Strategies for the **/stocks** dashboard. Currently manual execution — no broker integration yet. The dashboard surfaces signals; user makes the trade.
+Strategieën voor het **/stocks** dashboard. Momenteel handmatige uitvoering — nog geen broker-integratie. Het dashboard surfacet signals; jij plaatst de trade.
 
 ---
 
-## Data sources at a glance
+## Databronnen in één oogopslag
 
-| Strategy | Source | Status | Cost |
+| Strategie | Bron | Status | Kosten |
 |---|---|---|---|
-| Squeeze setups (SI, days-to-cover) | yfinance (Yahoo) | ✅ Reliable | Free |
-| Politician trades | Quiver public + disk cache | 🟡 Intermittent (cached) | Free |
-| Form 4 insider transactions | SEC EDGAR full-text search | ✅ Reliable | Free |
-| 13D/13G activist filings | SEC EDGAR full-text search | ✅ Reliable | Free |
-| WSB ticker buzz | Reddit JSON via Fly.io proxy | ✅ Reliable | Free |
-| Earnings calendar | Not integrated | ❌ | Would be free (yfinance) |
-| M&A spreads | Not integrated | ❌ | Bloomberg required |
+| Squeeze setups (SI, days-to-cover) | yfinance (Yahoo) | ✅ Betrouwbaar | Gratis |
+| Politicus-trades | Quiver public + disk cache | 🟡 Wisselvallig (cached) | Gratis |
+| Form 4 insider-transacties | SEC EDGAR full-text search | ✅ Betrouwbaar | Gratis |
+| 13D/13G activist filings | SEC EDGAR full-text search | ✅ Betrouwbaar | Gratis |
+| WSB ticker buzz | Reddit JSON via Fly.io proxy | ✅ Betrouwbaar | Gratis |
+| Earnings-kalender | Niet geïntegreerd | ❌ | Zou gratis zijn (yfinance) |
+| M&A spreads | Niet geïntegreerd | ❌ | Bloomberg vereist |
 
-The politician feed is the only non-trivial dependency. See Strategy 2 for the disk-cache fallback that keeps it working through Quiver's rate-limit windows.
+De politicus-feed is de enige niet-triviale dependency. Zie Strategie 2 voor de disk-cache fallback die het werkend houdt door Quiver's rate-limit windows heen.
 
 ---
 
-## Strategy 1: Short Squeeze Plays
-**Data source:** yfinance (short interest %, days-to-cover, float) + Quiver (politician/insider buying as confirmation)
+## Strategie 1: Short Squeeze plays
+**Databron:** yfinance (short interest %, days-to-cover, float) + Quiver (politicus/insider buying als bevestiging)
 
-**Logic:** When short interest exceeds 25-30% of float AND a single holder crosses the 10% ownership threshold, you have the structural setup for a Section 16-driven squeeze. Avis (CAR) was the canonical 2026 example: SI 49% + Pentwater 39% economic interest → stock went from $99 to $713 in a month.
+**Logica:** Wanneer short interest hoger is dan 25-30% van de float EN één enkele houder de 10% ownership-drempel overschrijdt, heb je de structurele setup voor een Section 16-gedreven squeeze. Avis (CAR) was hét canonieke 2026-voorbeeld: SI 49% + Pentwater 39% economic interest → aandeel ging van $99 naar $713 in een maand.
 
 **Trigger:**
-- Short interest ≥ 25% of float
-- One holder owns ≥ 10% (recent 13D/13G filing)
-- Days to cover ≥ 5 days (low buying-back capacity)
-- Recent positive catalyst or insider/politician buying on the same name
+- Short interest ≥ 25% van float
+- Eén houder bezit ≥ 10% (recente 13D/13G filing)
+- Days to cover ≥ 5 dagen (lage buying-back-capaciteit)
+- Recente positieve catalyst of insider/politicus-buying op dezelfde naam
 
-**Edge:** When shorts have to cover and one holder is constrained from selling, supply collapses. The holder can still sell INTO the squeeze for legitimate reasons (Section 16 short-swing-profit rules apply, but most accounts can structure around it).
+**Edge:** Wanneer shorts moeten coveren en één houder beperkt is in verkopen, klapt het aanbod in. De houder kan nog wel IN de squeeze verkopen om legitieme redenen (Section 16 short-swing-profit regels gelden, maar de meeste accounts kunnen daar omheen structureren).
 
-**Risk:** Squeezes are unpredictable in timing. Position sizing matters — ATM call spreads or small share positions, never naked calls.
+**Risico:** Squeezes zijn onvoorspelbaar in timing. Position sizing telt — ATM call spreads of kleine share-posities, nooit naked calls.
 
-**Currently surfaced on dashboard:** ✅ Squeeze Setups panel scores by SI + politician activity.
+**Momenteel op dashboard:** ✅ Squeeze Setups panel scoort op SI + politicus-activiteit.
 
 ---
 
-## Strategy 2: Politician Following ("Pelosi Tracker")
+## Strategie 2: Politicus volgen ("Pelosi Tracker")
 
-### Data source — the messy reality
+### Databron — de rommelige realiteit
 
-Free congressional-trading APIs are increasingly gated in 2026. What we use today, in priority order:
+Gratis congressional-trading APIs zijn in 2026 steeds vaker afgeschermd. Wat we vandaag gebruiken, in volgorde van prioriteit:
 
-1. **Quiver Quantitative public endpoint** (`/beta/live/congresstrading`) — free, no auth required, but **rate-limited per IP with random windows**. From our VPS we sometimes get 200 OK with the full feed (~1000 most recent trades), sometimes 401 "Auth not provided". No way to predict — we just retry.
+1. **Quiver Quantitative public endpoint** (`/beta/live/congresstrading`) — gratis, geen auth nodig, maar **rate-limited per IP met willekeurige windows**. Vanaf onze VPS krijgen we soms 200 OK met de volledige feed (~1000 meest recente trades), soms 401 "Auth not provided". Geen manier om te voorspellen — we proberen gewoon opnieuw.
 
-2. **Disk-persisted snapshot** (`data/politician_trades_cache.json`) — every successful Quiver fetch writes to disk. When all live sources fail, we serve the snapshot. Disclosures move slowly (PTRs file 30-45 days late), so a 1-7 day stale snapshot is 99% identical to today's data. This is what makes the Politicians panels actually reliable despite Quiver's flakiness.
+2. **Disk-persisted snapshot** (`data/politician_trades_cache.json`) — elke succesvolle Quiver fetch wordt naar disk geschreven. Wanneer alle live bronnen falen, serveren we de snapshot. Disclosures bewegen langzaam (PTRs worden 30-45 dagen te laat ingediend), dus een 1-7 dagen oude snapshot is voor 99% identiek aan de data van vandaag. Dit is wat de Politicus-panels eigenlijk betrouwbaar maakt ondanks Quiver's flakiness.
 
-3. **Finnhub paid plan** — `FINNHUB_API_KEY` env var. **Their free tier dropped congressional-trading in 2026**, requires $59/mo paid plan now. Code keeps it as fallback.
+3. **Finnhub paid plan** — `FINNHUB_API_KEY` env var. **Hun free tier liet congressional-trading vallen in 2026**, vereist nu $59/mo paid plan. Code houdt het als fallback.
 
-4. **Quiver paid plan** ($10/mo, `QUIVER_API_KEY` env var) — cheapest reliable paid option if you ever need guaranteed uptime. Code uses it first if set.
+4. **Quiver paid plan** ($10/mo, `QUIVER_API_KEY` env var) — goedkoopste betrouwbare betaalde optie als je ooit gegarandeerde uptime nodig hebt. Code gebruikt het eerst indien gezet.
 
-### Why this matters
+### Waarom dit ertoe doet
 
-When you see politician data on the dashboard, it's coming from one of: a Quiver fetch from the last few hours OR the disk snapshot. The dashboard doesn't currently surface "data is X hours stale" but the helper `get_politician_cache_age_hours()` is wired up and ready for a UI badge.
+Wanneer je politicus-data op het dashboard ziet, komt die uit één van: een Quiver-fetch van de afgelopen uren OF de disk snapshot. Het dashboard surfacet momenteel niet "data is X uur oud" maar de helper `get_politician_cache_age_hours()` is klaar voor een UI-badge.
 
-If the politician panels are completely empty, that means: Quiver public has been blocking us continuously AND we never had a successful initial fetch to seed the disk cache. Solution: wait an hour and retry, or pay Quiver $10/mo.
+Als de politicus-panels volledig leeg zijn, betekent dat: Quiver public blokkeert ons continu EN we hebben nooit een succesvolle initiële fetch gehad om de disk cache te seeden. Oplossing: wacht een uur en probeer opnieuw, of betaal Quiver $10/mo.
 
-### Logic
+### Logica
 
-Members of Congress consistently outperform broader markets. Studies put their alpha at 6-12% vs SPY annually. Disclosure delay is up to 45 days — but the trades that disclose late often still have legs.
+Leden van het Congres outperformen consistent de bredere markten. Studies plaatsen hun alpha op 6-12% vs SPY jaarlijks. Disclosure delay is tot 45 dagen — maar de trades die laat openbaar worden hebben vaak nog steeds legs.
 
-**Reliability tiers** (the dashboard surfaces these so you don't chase noise):
-- 🟢 **Reliable** — 20+ trades AND beats SPY ≥55%. Track record is statistically meaningful.
-- 🟡 **Moderate** — 10-19 trades. Meaningful but not bulletproof.
-- 🟠 **Weak** — 5-9 trades. Interesting, small sample.
-- 🔴 **Small sample** — <5 trades. α numbers are noise.
+**Reliability tiers** (het dashboard surfacet deze zodat je geen ruis najaagt):
+- 🟢 **Reliable** — 20+ trades EN beats SPY ≥55%. Track record is statistisch betekenisvol.
+- 🟡 **Moderate** — 10-19 trades. Betekenisvol maar niet kogelvrij.
+- 🟠 **Weak** — 5-9 trades. Interessant, kleine sample.
+- 🔴 **Small sample** — <5 trades. α-cijfers zijn ruis.
 
-A 2-trade politician with +25% α is one good Apple buy, not skill. Don't be fooled by the leaderboard sort.
+Een politicus met 2 trades en +25% α is één goede Apple-aankoop, geen skill. Laat je niet misleiden door de leaderboard sort.
 
-**Currently confirmed reliable** (as of April 2026):
-- **Markwayne Mullin** (R-OK, Senate Banking Cmte) — 99 trades, +11.4% α, beats SPY 61%. Real signal.
-- **Tim Moore** (R-NC) — 15 trades, +8.3% α, beats SPY 80%.
+**Momenteel bevestigd betrouwbaar** (per april 2026):
+- **Markwayne Mullin** (R-OK, Senate Banking Cmte) — 99 trades, +11,4% α, beats SPY 61%. Echt signal.
+- **Tim Moore** (R-NC) — 15 trades, +8,3% α, beats SPY 80%.
 
 **Trigger:**
-- 🟢 or 🟡 reliability politician makes a new disclosed trade
-- Trade is a **purchase** (sales noisier — could be rebalancing)
-- Amount range ≥ $50,001-$100,000 bracket
-- Within 7 days of disclosure (older = priced-in)
+- 🟢 of 🟡 reliability politicus doet een nieuwe disclosed trade
+- Trade is een **purchase** (sales zijn rumoeriger — kan rebalancing zijn)
+- Bedrag-range ≥ $50.001-$100.000 bracket
+- Binnen 7 dagen na disclosure (ouder = al ingeprijsd)
 
-**Edge:** Information asymmetry. Members of Congress sit on legislative + intel committees that move markets. Their staff too.
+**Edge:** Informatie-asymmetrie. Leden van het Congres zitten in legislative + intel committees die markten bewegen. Hun staf ook.
 
-**Watch closely feature:** Click ☆ next to a politician on /stocks to add them to your personal watchlist. Watched politicians:
-- Get pinned to top of the table with green tint
-- Trigger an **email alert** to `ALERT_EMAIL` (or `GMAIL_ADDRESS` fallback) when they file a new trade
-- Scheduler checks every 30 min; dedup state in `data/politicians_seen.json` prevents repeat alerts
+**Watch closely feature:** Klik ☆ naast een politicus op /stocks om hen aan je persoonlijke watchlist toe te voegen. Watched politici:
+- Worden bovenaan de tabel gepind met groene tint
+- Triggeren een **email-alert** naar `ALERT_EMAIL` (of `GMAIL_ADDRESS` fallback) wanneer ze een nieuwe trade indienen
+- Scheduler checkt elke 30 min; dedup state in `data/politicians_seen.json` voorkomt dubbele alerts
 
-**Top 5 Portfolios drill-down:** Below the Top Politicians table, a separate panel shows the 5 highest-α politicians with collapsible per-rep portfolio views. For each:
-- Per-ticker NET BUY / NET SELL / MIXED rollup (last 180 days)
-- Recent disclosures table (newest first, last 20)
-- External link-outs to **Capitol Trades** and **Quiver** for the full archival view
-- First politician auto-expanded so the panel is never empty-looking
+**Top 5 Portfolios drill-down:** Onder de Top Politicians tabel toont een apart panel de 5 politici met de hoogste α met inklapbare per-rep portfolio views. Voor elk:
+- Per-ticker NET BUY / NET SELL / MIXED rollup (laatste 180 dagen)
+- Recente disclosures-tabel (nieuwste eerst, laatste 20)
+- Externe link-outs naar **Capitol Trades** en **Quiver** voor het volledige archief
+- Eerste politicus auto-uitgeklapt zodat het panel nooit leeg ogend is
 
-**External links per politician:** Always available regardless of feed state — Capitol Trades has the cleanest UX:
-- `https://www.capitoltrades.com/politicians?search=<name>` — full disclosed history, sector breakdown, P&L
-- `https://www.quiverquant.com/congresstrading/politician/<Name>` — trade history with ExcessReturn vs SPY
-- `https://efdsearch.senate.gov/search/` — official Senate PTRs (rough UI, authoritative)
+**Externe links per politicus:** Altijd beschikbaar ongeacht feed-status — Capitol Trades heeft de schoonste UX:
+- `https://www.capitoltrades.com/politicians?search=<name>` — volledige disclosed history, sector breakdown, P&L
+- `https://www.quiverquant.com/congresstrading/politician/<Name>` — trade history met ExcessReturn vs SPY
+- `https://efdsearch.senate.gov/search/` — officiële Senate PTRs (ruwe UI, gezaghebbend)
 
-**Currently surfaced on dashboard:** ✅ Top Politicians table (reliability tiers + ☆ stars) + Top 5 Portfolios panel (collapsible drill-down) + Recent Politician Trades feed (filterable).
+**Momenteel op dashboard:** ✅ Top Politicians tabel (reliability tiers + ☆ stars) + Top 5 Portfolios panel (inklapbare drill-down) + Recent Politician Trades feed (filterbaar).
 
 ---
 
-## Strategy 3: Insider Buying (Form 4)
-**Data source:** SEC EDGAR Form 4 filings (free RSS feed, not yet integrated)
+## Strategie 3: Insider Buying (Form 4)
+**Databron:** SEC EDGAR Form 4 filings (gratis RSS feed, nog niet geïntegreerd)
 
-**Logic:** Corporate officers and directors must disclose stock transactions within 2 business days. Insider **buying** is a much stronger signal than insider selling (selling has many reasons; buying has one — they think it's going up). Particularly powerful: cluster buys (multiple insiders buying within a few weeks) and CEO purchases of $100k+.
+**Logica:** Bestuurders en directeuren van bedrijven moeten aandelentransacties binnen 2 werkdagen disclosen. Insider **buying** is een veel sterker signal dan insider selling (verkopen heeft veel redenen; kopen heeft er één — ze denken dat het omhoog gaat). Bijzonder krachtig: cluster buys (meerdere insiders die binnen een paar weken kopen) en CEO-aankopen van $100k+.
 
 **Trigger:**
 - Form 4 "P" (purchase) filing
-- Amount ≥ $100,000
-- Cluster: 3+ insiders buying within 30 days
-- Buyer is C-suite (CEO, CFO) — board members carry less signal
+- Bedrag ≥ $100.000
+- Cluster: 3+ insiders die kopen binnen 30 dagen
+- Koper is C-suite (CEO, CFO) — board members hebben minder signal
 
-**Edge:** Insiders have legal information advantage on company performance. They can't trade on material non-public information but they can act on their general read of the business.
+**Edge:** Insiders hebben een legaal informatievoordeel over bedrijfsprestaties. Ze mogen niet handelen op material non-public information maar wel op hun algemene lezing van het bedrijf.
 
-**Currently surfaced:** ✅ SEC Form 4 panel on /stocks shows recent filings with link-through to filing detail (purchase vs sale visible there).
+**Momenteel op dashboard:** ✅ SEC Form 4 panel op /stocks toont recente filings met click-through naar filing-details (purchase vs sale daar zichtbaar).
 
 ---
 
-## Strategy 4: 13D/13G Activist Filings
-**Data source:** SEC EDGAR 13D/13G filings (free, RSS available)
+## Strategie 4: 13D/13G Activist Filings
+**Databron:** SEC EDGAR 13D/13G filings (gratis, RSS beschikbaar)
 
-**Logic:** Any party crossing 5% ownership in a public company must file a 13D (active intent) or 13G (passive). 13D is the activist signal — the filer plans to push for change (board seats, M&A, divestitures). Stock typically pops 5-15% on filing.
+**Logica:** Iedere partij die 5% ownership in een beursgenoteerd bedrijf overschrijdt moet een 13D (active intent) of 13G (passive) indienen. 13D is het activist signal — de filer wil pushen voor verandering (board seats, M&A, divestitures). Aandeel popt typisch 5-15% bij filing.
 
 **Trigger:**
-- New 13D filing (not amendment)
-- Filer is a known activist fund (Pershing Square, Elliott, Starboard, Engine, Trian, ValueAct, etc.)
+- Nieuwe 13D filing (geen amendment)
+- Filer is een bekend activist fund (Pershing Square, Elliott, Starboard, Engine, Trian, ValueAct, etc.)
 - Stake ≥ 7%
 
-**Edge:** Activist campaigns extract value over months. Buying alongside a credible activist is asymmetric — they do the work, you ride the move.
+**Edge:** Activist-campagnes halen waarde over maanden. Naast een geloofwaardige activist meekopen is asymmetrisch — zij doen het werk, jij rijdt mee op de move.
 
-**Currently surfaced:** ✅ 13D/13G panel on /stocks. Activist filings (Pershing Square, Elliott, Starboard, Engine, Trian, ValueAct, Icahn, Third Point, Jana, ValueAct, Ancora, Macellum, Scopia, Irenic) auto-flagged with a star and ranked first.
-
----
-
-## Strategy 5: Post-Earnings Drift
-**Data source:** earnings calendar + price action 1d post-release
-
-**Logic:** Stocks that beat earnings continue drifting up for 30-90 days. Stocks that miss continue drifting down. Despite being one of the most documented anomalies in finance (since the 1960s), it persists because retail closes positions too early and institutions can't pile in fast enough on small/mid caps.
-
-**Trigger:**
-- Earnings beat: actual EPS > consensus by ≥10%
-- Day-after price reaction ≥ +5% on volume ≥ 2× average
-- Buy at close of day-1, hold 30-60 days
-
-**Edge:** Persistent behavioral anomaly. Best on small/mid caps where coverage is thin.
-
-**Currently surfaced:** ❌ Would need earnings calendar API + an automated post-earnings price scan.
+**Momenteel op dashboard:** ✅ 13D/13G panel op /stocks. Activist filings (Pershing Square, Elliott, Starboard, Engine, Trian, ValueAct, Icahn, Third Point, Jana, ValueAct, Ancora, Macellum, Scopia, Irenic) auto-flagged met een ster en als eerste gerangschikt.
 
 ---
 
-## Strategy 6: M&A Spread Arbitrage
-**Data source:** Manual — major M&A announcements
+## Strategie 5: Post-Earnings Drift
+**Databron:** earnings-kalender + price action 1d na release
 
-**Logic:** When Company A announces it'll acquire Company B at $X/share, B's stock typically trades at a 1-5% discount to $X until deal close. Deal closes → you collect the spread. Deal breaks → you take a 10-30% hit.
+**Logica:** Aandelen die earnings beaten driften door omhoog voor 30-90 dagen. Aandelen die missen driften door omlaag. Ondanks dat het een van de best-gedocumenteerde anomalieën in finance is (sinds de jaren '60), blijft het bestaan omdat retail posities te vroeg sluit en instituties niet snel genoeg kunnen instappen op small/mid caps.
 
 **Trigger:**
-- All-cash deal with announced terms
-- Spread ≥ 2% (annualized depends on close timeline)
-- No major regulatory red flags
-- Both companies are US-listed
+- Earnings beat: actual EPS > consensus met ≥10%
+- Day-after price reaction ≥ +5% op volume ≥ 2× gemiddeld
+- Koop op close van dag-1, hold 30-60 dagen
 
-**Edge:** Predictable resolution event. Returns are bounded but consistent (~5-12% annualized when deals close as expected).
+**Edge:** Persistente gedragsanomalie. Werkt het beste op small/mid caps waar coverage dun is.
 
-**Risk:** Deal breaks are catastrophic for this strategy. Diversification across 5-10 deals is essential.
-
-**Currently surfaced:** ❌ Manual — would need M&A news feed + tracking spread evolution.
+**Momenteel op dashboard:** ❌ Zou earnings-kalender API + een geautomatiseerde post-earnings price scan vereisen.
 
 ---
 
-## Strategy 6.5: WSB Sentiment / Retail Flow
-**Data source:** r/wallstreetbets JSON API (free, no auth). Reddit blocks Hetzner / data-center IPs so we route through the Fly.io trade-proxy in Tokyo (`/reddit/{subreddit}/{sort}`).
+## Strategie 6: M&A Spread Arbitrage
+**Databron:** Handmatig — grote M&A-aankondigingen
 
-**Logic:** WSB is the canonical retail-flow leading indicator. When a ticker accumulates buzz (upvotes + comments) within 24h, retail money is moving. The 2021 GME / AMC squeezes, the 2024 NVDA run, the Avis (CAR) squeeze in April 2026 — all visible on WSB before mainstream coverage. Many WSB pumps fail; this is signal not gospel.
+**Logica:** Wanneer Bedrijf A aankondigt Bedrijf B over te nemen voor $X/share, handelt B's aandeel typisch op een 1-5% korting op $X tot deal close. Deal sluit → jij pakt de spread. Deal breekt → jij neemt een 10-30% klap.
 
 **Trigger:**
-- Ticker buzz score (upvotes + comments/2 across hot+new posts) ≥ 5,000
-- Multiple distinct posts mentioning the ticker
-- Combine with another signal (squeeze setup, recent news, earnings) before acting
+- All-cash deal met aangekondigde voorwaarden
+- Spread ≥ 2% (geannualiseerd hangt af van close timeline)
+- Geen grote regulatory red flags
+- Beide bedrijven zijn US-listed
 
-**The combo signal — Watchlist × WSB overlap:**
-A ticker on your stock watchlist (Squeeze Setups) that also appears in WSB buzz is the strongest combination we have — high short interest + retail attention = AVIS pattern setup. Surfaced on the dashboard with a 🔥 badge and orange left-border. Email alert fires whenever this overlap appears.
+**Edge:** Voorspelbaar resolution event. Returns zijn begrensd maar consistent (~5-12% geannualiseerd wanneer deals sluiten zoals verwacht).
 
-**Spike detection:**
-Scheduler checks every 30 min. Spike fires when:
-- Ticker buzz ≥ 3× prior observation AND ≥3,000 buzz, OR
-- Brand-new ticker entering the list with ≥5,000 buzz
+**Risico:** Deal breaks zijn catastrofaal voor deze strategie. Diversificatie over 5-10 deals is essentieel.
 
-State persists in `data/wsb_buzz_state.json` so each spike alerts once per move (next observation becomes the new baseline).
-
-**AI agent integration:**
-The Polymarket AI agent now receives the top-10 WSB buzz tickers in its 15-min cycle prompt. If a Polymarket market exists on a hot WSB ticker (earnings, price levels, election outcomes), the agent can incorporate WSB momentum as a soft signal.
-
-**Edge:** Front-running the retail wave when it aligns with fundamentals. Ride 1-3 days, exit before euphoria breaks.
-
-**Risk:** WSB pumps die fast and unpredictably. Position size like a moonshot, not a core trade.
-
-**Currently surfaced:** ✅ Three layers:
-1. WSB Ticker Buzz + Hot Posts panels on /stocks (refresh 10 min)
-2. 🔥 cross-reference badge on Squeeze Setups when ticker overlaps WSB buzz
-3. Email alerts (spike detection + watchlist overlap) every 30 min
+**Momenteel op dashboard:** ❌ Handmatig — zou M&A news feed + spread evolution tracking vereisen.
 
 ---
 
-## Strategy 7: Special Situations (Spinoffs, Tender Offers)
-**Data source:** Spin-Off Research, manual press release tracking
+## Strategie 6.5: WSB sentiment / Retail flow
+**Databron:** r/wallstreetbets JSON API (gratis, geen auth). Reddit blokkeert Hetzner / data-center IPs dus we routen via de Fly.io trade-proxy in Tokio (`/reddit/{subreddit}/{sort}`).
 
-**Logic:** Spinoffs are systematically under-covered for the first 6 months because the parent company's holders dump them (mandate mismatch). Empirically, spinoffs outperform the market by 10%+ in the year following separation.
+**Logica:** WSB is dé canonieke retail-flow leading indicator. Wanneer een ticker buzz opbouwt (upvotes + comments) binnen 24u, beweegt retail-geld. De 2021 GME / AMC squeezes, de 2024 NVDA-run, de Avis (CAR) squeeze in april 2026 — allemaal zichtbaar op WSB vóór mainstream coverage. Veel WSB-pumps falen; dit is signal, geen evangelie.
 
 **Trigger:**
-- Newly spun-off company within first 90 days of trading
-- Heavy initial selling pressure (down 10%+ from spin-off date)
+- Ticker buzz score (upvotes + comments/2 over hot+new posts) ≥ 5.000
+- Meerdere onderscheiden posts die de ticker noemen
+- Combineer met een ander signal (squeeze setup, recent nieuws, earnings) voordat je actie onderneemt
+
+**Het combo-signal — Watchlist × WSB overlap:**
+Een ticker op je stock-watchlist (Squeeze Setups) die ook in WSB-buzz verschijnt is de sterkste combinatie die we hebben — high short interest + retail attention = AVIS-patroon setup. Op het dashboard met een 🔥 badge en oranje linkerrand. Email alert vuurt zodra deze overlap verschijnt.
+
+**Spike-detectie:**
+Scheduler checkt elke 30 min. Spike vuurt wanneer:
+- Ticker buzz ≥ 3× vorige observatie EN ≥3.000 buzz, OF
+- Brand-new ticker die de lijst betreedt met ≥5.000 buzz
+
+State persisteert in `data/wsb_buzz_state.json` zodat elke spike één keer alert per move (volgende observatie wordt de nieuwe baseline).
+
+**AI agent integratie:**
+De Polymarket AI-agent ontvangt nu de top-10 WSB buzz tickers in zijn 15-min cycle prompt. Als er een Polymarket-markt bestaat op een hete WSB-ticker (earnings, prijsniveaus, verkiezingsuitkomsten), kan de agent WSB-momentum incorporeren als zacht signal.
+
+**Edge:** Front-runnen van de retail-golf wanneer die aansluit op fundamentals. Rij 1-3 dagen mee, exit voordat de euforie breekt.
+
+**Risico:** WSB-pumps sterven snel en onvoorspelbaar. Position size als een moonshot, niet een core trade.
+
+**Momenteel op dashboard:** ✅ Drie lagen:
+1. WSB Ticker Buzz + Hot Posts panels op /stocks (refresh 10 min)
+2. 🔥 cross-reference badge op Squeeze Setups wanneer ticker overlapt met WSB-buzz
+3. Email alerts (spike-detectie + watchlist-overlap) elke 30 min
+
+---
+
+## Strategie 7: Special Situations (Spinoffs, Tender Offers)
+**Databron:** Spin-Off Research, handmatige press release tracking
+
+**Logica:** Spinoffs worden systematisch onder-gecovered de eerste 6 maanden omdat houders van het moederbedrijf ze dumpen (mandate mismatch). Empirisch outperformen spinoffs de markt met 10%+ in het jaar na separatie.
+
+**Trigger:**
+- Net afgesplitst bedrijf binnen eerste 90 dagen handelen
+- Zware initiële verkoopdruk (10%+ omlaag vanaf spin-off datum)
 - Profitable underlying business
-- Clean balance sheet
+- Schone balans
 
-**Edge:** Forced selling creates undervaluation. Joel Greenblatt wrote the book on this ("You Can Be a Stock Market Genius").
+**Edge:** Geforceerde verkoop creëert ondergewaardeerdheid. Joel Greenblatt schreef het boek hierover ("You Can Be a Stock Market Genius").
 
-**Currently surfaced:** ❌ Manual.
-
----
-
-## Implementation Roadmap
-
-### Currently live on dashboard
-- ✅ Strategy 1 (Squeeze Setups) — ticker watchlist + yfinance SI score + 🔥 WSB cross-reference
-- ✅ Strategy 2 (Politician Following) — Finnhub feed + reliability tiers + ☆ watchlist + email alerts
-- ✅ Strategy 3 (Insider Buying / Form 4) — SEC EDGAR full-text search, click-through to filings
-- ✅ Strategy 4 (13D/13G) — SEC EDGAR with activist auto-flagging
-- ✅ Strategy 6.5 (WSB Sentiment) — buzz panel + spike alerts + watchlist overlap + agent integration
-
-### Not yet integrated
-- Strategy 5 (Post-Earnings Drift) — needs earnings calendar API + price scanner.
-- Strategy 6 (M&A Spreads) — Bloomberg / news feed required, harder to automate.
-- Strategy 7 (Spinoffs) — manual research strategy, not great candidate for automation.
+**Momenteel op dashboard:** ❌ Handmatig.
 
 ---
 
-## Alert channel summary
+## Implementatie-roadmap
 
-The Stocks board uses **email** (Gmail SMTP via `GMAIL_APP_PASSWORD`) for low-volume high-signal alerts — the Telegram channel is reserved for the Polymarket bot's firehose (cycle thinking, trade fills, resolutions). Set `ALERT_EMAIL` in `.env` for a different destination, or leave unset to use `GMAIL_ADDRESS`.
+### Momenteel live op dashboard
+- ✅ Strategie 1 (Squeeze Setups) — ticker watchlist + yfinance SI score + 🔥 WSB cross-reference
+- ✅ Strategie 2 (Politicus volgen) — Finnhub feed + reliability tiers + ☆ watchlist + email alerts
+- ✅ Strategie 3 (Insider Buying / Form 4) — SEC EDGAR full-text search, click-through naar filings
+- ✅ Strategie 4 (13D/13G) — SEC EDGAR met activist auto-flagging
+- ✅ Strategie 6.5 (WSB sentiment) — buzz panel + spike alerts + watchlist overlap + agent integratie
 
-Active alert types:
-- 📢 Watched politician files a new trade (every 30 min check)
-- 🦍 WSB ticker buzz spike (every 30 min check)
-- 🔥 Watchlist ticker × WSB overlap (every 30 min check)
+### Nog niet geïntegreerd
+- Strategie 5 (Post-Earnings Drift) — heeft earnings-kalender API + price scanner nodig.
+- Strategie 6 (M&A Spreads) — Bloomberg / news feed vereist, lastiger te automatiseren.
+- Strategie 7 (Spinoffs) — handmatige research-strategie, geen sterke kandidaat voor automatisering.
 
 ---
 
-## Risk discipline (manual execution)
+## Alert-kanaal samenvatting
 
-- **Max position size:** 5% of total stock book per single name
-- **Stop-loss:** 15% from entry, no exceptions
-- **Holding period:** strategy-specific (squeeze = days-weeks, drift = 30-60 days, spinoff = 6-12 months)
-- **No naked options** — only spreads, defined-risk
-- **Track everything** in a spreadsheet or via the dashboard manual log
+Het Stocks-board gebruikt **email** (Gmail SMTP via `GMAIL_APP_PASSWORD`) voor low-volume high-signal alerts — het Telegram-kanaal is gereserveerd voor de firehose van de Polymarket-bot (cycle thinking, trade fills, resolutions). Zet `ALERT_EMAIL` in `.env` voor een andere bestemming, of laat unset om `GMAIL_ADDRESS` te gebruiken.
+
+Actieve alerttypes:
+- 📢 Watched politicus dient een nieuwe trade in (elke 30 min check)
+- 🦍 WSB ticker buzz spike (elke 30 min check)
+- 🔥 Watchlist ticker × WSB overlap (elke 30 min check)
+
+---
+
+## Risicodiscipline (handmatige uitvoering)
+
+- **Max position size:** 5% van het totale stock book per enkele naam
+- **Stop-loss:** 15% vanaf entry, geen uitzonderingen
+- **Holding period:** strategie-specifiek (squeeze = dagen-weken, drift = 30-60 dagen, spinoff = 6-12 maanden)
+- **Geen naked options** — alleen spreads, defined-risk
+- **Track alles** in een spreadsheet of via de dashboard manual log
