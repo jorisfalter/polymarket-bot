@@ -497,12 +497,10 @@ async def lifespan(app: FastAPI):
         minutes=30,  # Watch for new trades from starred politicians
         id='politician_alert_job'
     )
-    scheduler.add_job(
-        check_wsb_alerts,
-        'interval',
-        minutes=30,  # WSB buzz spikes + watchlist overlap
-        id='wsb_alert_job'
-    )
+    # WSB email alerts disabled per user request (2026-05-08) — emails were
+    # too noisy. The function check_wsb_alerts() is kept intact and the live
+    # /api/stocks/wsb-watchlist-overlap endpoint still works for on-demand
+    # checks from the dashboard.
     scheduler.add_job(
         run_weekly_trade_analysis,
         'cron',
