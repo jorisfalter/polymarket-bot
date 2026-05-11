@@ -26,9 +26,14 @@ Polymarket agent runs three **books**: Core ($5-10), Asymmetric/longshot ($1-2 a
 ## Working directories
 
 - **Local dev (Mac)**: `/Users/joris/Projects/polymarket`
-- **VPS prod**: `/opt/polymarket-insider` on Hetzner (`ssh root@100.102.30.80` via Tailscale, or hostname `ubuntu-4gb-nbg1-1`)
+- **VPS prod**: `/opt/polymarket-insider` on Hetzner. Owned by `app:app`. Two SSH paths work:
+  - `ssh app@100.102.30.80` — standard per VPS inventory; this is the "Termius/Claude access" user (has own `/home/app/.claude/` with credentials + memory)
+  - `ssh root@100.102.30.80` — works too for sysadmin tasks
+  - Tailscale IP `100.102.30.80` only; public IP `91.98.202.189` is firewalled on port 22
 - **Python venv**: `./venv/bin/python` (Python 3.10 on Mac). There is no `python` in PATH on the Mac — always use the venv.
-- **Public URL**: `https://polymarket.ai-tigers.com` (Cloudflare → cloudflared tunnel → VPS port 8000). **Never modify Caddy for external routing** — external traffic comes through cloudflared.
+- **Public URL**: `https://polymarket.ai-tigers.com` (Cloudflare → cloudflared tunnel → VPS `127.0.0.1:8000`). **Never modify Caddy for external routing** — external traffic comes through cloudflared.
+- **Container name**: `polymarket-insider-insider-detector` (Docker Compose project name + service name).
+- **Tmux session on VPS**: `polymarket` (per inventory; useful for long-running things).
 
 ## Entry points
 
@@ -314,6 +319,7 @@ curl -s https://polymarket.ai-tigers.com/api/stocks/watchlist | jq
 
 ## Pointers — read these when context demands it
 
+In this repo:
 - `docs/trading-philosophy.md` — why this exists, three-board structure
 - `docs/polymarket-strategies.md` — strategies 1-7 detail
 - `docs/stocks-strategies.md` — stocks board logic
@@ -321,3 +327,13 @@ curl -s https://polymarket.ai-tigers.com/api/stocks/watchlist | jq
 - `docs/trade-audit-workflow.md` — how to use the audit button + historical findings
 - `docs/research/` — research notes (single-name-vs-broad-based, Paris weather, 0xricker, etc.)
 - `frontend/playbook.html` — Dutch playbook in production
+
+On the VPS — fleet-wide ops docs at `/opt/vps-mgmt-docs/docs/`:
+- `ai-onboarding.md` — onboarding for any AI agent working on the VPS
+- `inventory.md` — every app, container, mount, backup location (polymarket-insider is registered here)
+- `runbooks.md` — operational procedures across apps
+- `deployment-standard.md` — fleet deploy convention (loopback ports + cloudflared)
+- `command-log.md`, `change-log.md`, `audit-log.md` — append entries here when doing notable ops work
+- `00-operating-protocol.md` — read this first when working on VPS
+
+When making non-trivial changes on the VPS, log them in `command-log.md` so other agents (and future-you) see the history.
