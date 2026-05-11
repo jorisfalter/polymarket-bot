@@ -245,36 +245,36 @@ Email alerts off (per user); dashboard only.
 
 ## Deploy procedure
 
-**Standard flow: `git push origin main` → GitHub Actions auto-deploys.**
+**Current reality: manual SSH + git pull. GitHub Actions is broken.**
 
-`.github/workflows/deploy.yml` does:
-1. Tailscale auth (so the runner can reach the VPS)
-2. SSH to `/opt/polymarket-insider`
-3. `git fetch origin && git reset --hard origin/main` (any local VPS changes get wiped)
-4. Forces `NOTIFICATION_MIN_SEVERITY="high"` in `.env`
-5. `docker compose build --no-cache insider-detector && docker compose up -d insider-detector`
-6. Installs/refreshes a cron for daily notification audit
+There is a workflow at `.github/workflows/deploy.yml` (Tailscale auth → SSH → `git reset --hard origin/main` → `docker compose up -d`), but it has been failing since **2026-03-28** because the GitHub repo secrets `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET` are empty/expired. Last successful run was before that date. To revive it, mint new Tailscale OAuth credentials and add them to GitHub repo secrets.
 
-**Implications**:
-- Anything not in git gets erased on next deploy. Don't leave files on the VPS expecting them to survive (use rsync only for ephemeral debugging).
-- The deploy is one-way: GitHub `main` → VPS. Never edit code on the VPS — your changes will be lost.
-- `git stash -u` was a manual habit from before Actions existed; not needed anymore since `git reset --hard` handles it.
+**Until that's fixed, deploy is two steps:**
 
-**Verifying a deploy**:
 ```bash
-gh run list --limit 3                      # check last GH Actions run status
-ssh root@100.102.30.80 'cd /opt/polymarket-insider && git log --oneline -1 && docker compose ps'
-```
+# 1. From local (Mac):
+git push origin main
 
-Fallback manual deploy (only if GH Actions is broken):
-```bash
+# 2. From local, deploy to VPS:
 ssh root@100.102.30.80
 cd /opt/polymarket-insider
 git fetch origin && git reset --hard origin/main
 docker compose up -d --build
+docker compose logs -f --tail=50    # verify startup
 ```
 
-The user expects: "build and deploy" unless told otherwise. If you ship code → `git push` and verify the GH Actions run.
+**Implications**:
+- `git push` alone does NOT deploy. You must SSH + pull. The user often expects auto-deploy ("build and deploy") — be explicit that you've done both steps.
+- The VPS has occasional stale untracked files from manual debugging. `git reset --hard` is safer than `git pull` because it wipes those.
+- Never edit code directly on the VPS. The next deploy will wipe it.
+
+**Verifying a deploy**:
+```bash
+ssh root@100.102.30.80 'cd /opt/polymarket-insider && git log --oneline -1 && docker compose ps'
+curl -s https://polymarket.ai-tigers.com/api/stats | jq .total_alerts   # smoke test
+```
+
+The user expects: "build and deploy" unless told otherwise. If you ship code → push **and** SSH-deploy, then verify.
 
 ---
 
