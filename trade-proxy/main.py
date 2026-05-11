@@ -212,6 +212,23 @@ def check_market_tradeable(token_id: str, amount_usd: float = 0) -> tuple:
         uma_status = (m.get("umaResolutionStatus") or "").lower()
         if uma_status in ("disputed", "challenged", "proposed", "resolved"):
             return False, f"UMA {uma_status} (no orders accepted)"
+        # Resolution-window check. 2026-05-08/09: 25 of 46 order_version_mismatch
+        # failures were on markets resolving same-day ("Bitcoin > $78k on May 8",
+        # "Iran peace deal by May 8"). Polymarket's CLOB starts rejecting orders
+        # ~1h before resolution while Gamma's `acceptingOrders` flag hasn't
+        # flipped yet — version_mismatch becomes a generic "too late" signal.
+        # Refuse early so we don't burn 4 retries on doomed orders.
+        end_date = m.get("endDate") or m.get("endDateIso")
+        if end_date:
+            try:
+                from datetime import datetime as _dt
+                end_dt = _dt.fromisoformat(str(end_date).replace("Z", "+00:00"))
+                now = _dt.now(end_dt.tzinfo) if end_dt.tzinfo else _dt.utcnow()
+                hours_left = (end_dt - now).total_seconds() / 3600
+                if hours_left < 1:
+                    return False, f"market resolves in {hours_left:.1f}h (too close — CLOB likely rejecting already)"
+            except Exception:
+                pass  # bad date format, proceed
         # Order minimum (in USD-equivalent). Multi-outcome neg_risk markets
         # typically require $5+; standard binaries accept $1.
         order_min = float(m.get("orderMinSize") or 0)

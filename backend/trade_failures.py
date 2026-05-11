@@ -9,7 +9,7 @@ Each entry captures the full context at time of failure so we don't have
 to query Polymarket later (where state may have moved on).
 """
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 import httpx
@@ -36,6 +36,8 @@ KNOWN_MODES = {
     "exposure_cap": "total exposure cap reached",
     "slot_cap": "max positions cap reached",
     "duplicate_position": "already hold this market",
+    "circuit_breaker": "skipped — token failed ≥2× in past hour",
+    "too_close_to_resolution": "market resolves within 1h, CLOB rejecting",
     "unknown": "no known mode matched — needs investigation",
 }
 
@@ -113,6 +115,10 @@ def classify_error(error: str) -> str:
         return "duplicate_position"
     if "above per-trade" in e or "exceeds per-trade" in e:
         return "above_per_trade_cap"
+    if "resolves in" in e and ("too close" in e or "h (" in e):
+        return "too_close_to_resolution"
+    if "circuit breaker" in e or "2+ failures" in e:
+        return "circuit_breaker"
     if "order_version_mismatch" in e:
         return "unknown"  # The whole point — these need triage
     return "unknown"
@@ -134,6 +140,36 @@ def list_failures(limit: int = 200, untriaged_only: bool = False) -> List[Dict]:
             continue
     out.reverse()
     return out[:limit]
+
+
+def get_recently_failed_tokens(window_min: int = 60, min_count: int = 2) -> set:
+    """Return token_ids that have failed `min_count`+ times in the last
+    `window_min` minutes. Used by ai_agent._execute_trades as a circuit
+    breaker — once a market has burned 2+ attempts in the past hour, skip
+    it for next hour rather than re-burning quota on the same broken order.
+
+    Root cause we're working around: order_version_mismatch from Polymarket
+    can be persistent (not just transient) — markets near resolution, or in
+    weird intermediate states, will keep rejecting. The trade-proxy retry
+    handles transient cases (1.5s/3s/6s backoff) but a 4× retry that all
+    fail means it's persistent and the bot will just keep re-finding the
+    market every 15-min cycle. 2026-05-08/09: 22 of 50 failures came from
+    two markets the bot kept rediscovering.
+    """
+    cutoff = datetime.utcnow() - timedelta(minutes=window_min)
+    counts: Dict[str, int] = {}
+    for f in list_failures(limit=500):
+        tid = f.get("token_id")
+        if not tid:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(f["timestamp"]).replace("Z", ""))
+        except Exception:
+            continue
+        if ts < cutoff:
+            continue
+        counts[tid] = counts.get(tid, 0) + 1
+    return {tid for tid, c in counts.items() if c >= min_count}
 
 
 async def triage_failures(limit: int = 50) -> Dict:

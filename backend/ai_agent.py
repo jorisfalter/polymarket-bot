@@ -1042,6 +1042,21 @@ class AITradingAgent:
                 if token_id and journal.has_open_position(token_id):
                     logger.info(f"Agent trade skipped: token_id {token_id[:16]} already in journal")
                     continue
+
+                # Failure circuit-breaker: if this token has burned ≥2 failed
+                # attempts in the past hour, skip it. The trade-proxy retry
+                # (1.5s/3s/6s × 4) handles transient order_version_mismatch
+                # but cannot fix persistent rejection (market near resolution,
+                # weird intermediate state, or Polymarket-side issue). Without
+                # this, the agent keeps re-finding the same market every 15-min
+                # cycle and burns through API quota on identical doomed orders.
+                # 2026-05-08/09 incident: 22 of 50 failures were two markets
+                # being rediscovered + retried 11× each within 24h.
+                from .trade_failures import get_recently_failed_tokens
+                recently_failed = get_recently_failed_tokens(window_min=60, min_count=2)
+                if token_id in recently_failed:
+                    logger.info(f"Agent trade skipped: token {token_id[:16]} hit circuit breaker (2+ failures in past hour)")
+                    continue
                 if not token_id:
                     logger.warning(f"Could not resolve token for {market_question[:30]} (ID: {market_id})")
                     err = f"could not resolve token ID for market {market_id[:20]}"
