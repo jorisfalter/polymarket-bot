@@ -1518,10 +1518,22 @@ async def list_agent_ideas(
     limit: int = Query(100, le=500),
     status: Optional[str] = Query(None, description="open / acted / archived / dismissed"),
     market_type: Optional[str] = Query(None, description="stocks / crypto / polymarket / macro"),
+    verdict: Optional[str] = Query(None, description="actionable / monitor / dismiss"),
 ):
     """List ideas surfaced by the daily research agent, most recent first."""
     from .research_agent import list_ideas
-    return list_ideas(limit=limit, status=status, market_type=market_type)
+    return list_ideas(limit=limit, status=status, market_type=market_type, verdict=verdict)
+
+
+@app.get("/api/research/verdicts")
+async def list_agent_verdicts(limit: int = Query(50, le=200)):
+    """List ideas that the judge marked as actionable or monitor — i.e. the
+    decision-relevant subset of the feed. Drops 'dismiss' and un-judged."""
+    from .research_agent import list_ideas
+    all_actionable = list_ideas(limit=limit, verdict="actionable")
+    all_monitor = list_ideas(limit=limit, verdict="monitor")
+    # Sort by discovered_at desc; actionable first, then monitor (already two lists)
+    return {"actionable": all_actionable, "monitor": all_monitor}
 
 
 @app.post("/api/research/run-now")

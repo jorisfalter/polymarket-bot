@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=18">
+    <link rel="stylesheet" href="/static/styles.css?v=19">
     <script src="/static/theme.js?v=2"></script>
     <style>
         .agent-ideas-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
@@ -54,6 +54,32 @@
         .source-line { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
         .source-line a { color: var(--accent-secondary); text-decoration: none; }
         .source-line a:hover { text-decoration: underline; }
+
+        /* Judge / Verdicts section */
+        .verdicts-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .verdicts-panel h2 { font-size: 16px; margin: 0 0 6px 0; color: var(--text-primary); }
+        .verdict-card { padding: 14px; margin-bottom: 12px; background: var(--bg-tertiary); border-radius: 8px; border-left: 4px solid var(--accent-success, #5bdb89); }
+        .verdict-card.monitor { border-left-color: #ffd95e; }
+        .verdict-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+        .verdict-ticker { font-size: 17px; font-weight: 700; color: var(--text-primary); }
+        .verdict-badge { font-size: 10px; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+        .verdict-badge.actionable { background: rgba(91,219,137,0.22); color: var(--accent-success, #5bdb89); }
+        .verdict-badge.monitor { background: rgba(255,217,94,0.22); color: #ffd95e; }
+        .verdict-action { font-size: 14px; color: var(--text-primary); line-height: 1.5; margin: 6px 0; font-weight: 500; }
+        .verdict-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px 12px; font-size: 11px; color: var(--text-secondary); margin: 8px 0; }
+        .verdict-meta div { display: flex; flex-direction: column; }
+        .verdict-meta-label { color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
+        .verdict-meta-val { color: var(--text-primary); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+        .verdict-why { font-size: 12px; color: var(--text-secondary); line-height: 1.4; margin: 6px 0; font-style: italic; }
+        .verdict-risks { font-size: 11px; color: var(--accent-danger, #ff6b6b); margin-top: 6px; }
+        .verdict-cta { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+        .verdict-cta a, .verdict-cta button { font-size: 11px; padding: 6px 12px; border-radius: 5px; text-decoration: none; cursor: pointer; font-family: inherit; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary); }
+        .verdict-cta a.primary, .verdict-cta button.primary { background: var(--accent-primary); color: var(--bg-primary); border-color: var(--accent-primary); font-weight: 600; }
+        .verdict-cta a:hover, .verdict-cta button:hover { opacity: 0.85; }
+        .verdict-confidence { font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .verdict-source-line { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+        .verdict-source-line a { color: var(--accent-secondary); }
+
         .research-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         @media (max-width: 1024px) { .research-grid { grid-template-columns: 1fr; } }
         .panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; }
@@ -120,6 +146,15 @@
                 <a href="/" class="sub-link">Detection</a>
                 <a href="/strategy" class="sub-link">Engine</a>
             </div>
+            <!-- Verdicts (judge AI: which ideas are actionable now) -->
+            <div class="verdicts-panel">
+                <h2>⚖️ Verdicts <span class="count" id="verdicts-count">0</span></h2>
+                <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">
+                    Per top-idea kijkt een tweede LLM-laag naar de live market state (Polymarket Gamma, yfinance, crypto spot+funding) en de bot's portfolio. Output is <b>advisory</b> — geen auto-trades. Acties die hier verschijnen heb je nu of binnenkort iets aan.
+                </p>
+                <div id="verdicts-list"><div class="empty">Loading...</div></div>
+            </div>
+
             <!-- Agent ideas feed (LLM scan across newsletters/reddit/youtube/RSS) -->
             <div class="agent-ideas-panel">
                 <div class="agent-ideas-header">
@@ -433,11 +468,77 @@
             }
         }
 
+        // ─── Verdicts (judge AI) ───
+        async function loadVerdicts() {
+            try {
+                const res = await fetch('/api/research/verdicts');
+                const data = await res.json();
+                renderVerdicts(data);
+            } catch (e) {
+                document.getElementById('verdicts-list').innerHTML =
+                    '<div class="empty">Verdict fetch failed: ' + e.message + '</div>';
+            }
+        }
+
+        function renderVerdicts(data) {
+            const actionable = data.actionable || [];
+            const monitor = data.monitor || [];
+            const total = actionable.length + monitor.length;
+            document.getElementById('verdicts-count').textContent = total;
+            const el = document.getElementById('verdicts-list');
+            if (!total) {
+                el.innerHTML = '<div class="empty">Nog geen verdicts. Trigger een Research run en de judge geeft direct advies.</div>';
+                return;
+            }
+            const cards = [];
+            for (const it of actionable) cards.push(renderVerdictCard(it, 'actionable'));
+            for (const it of monitor) cards.push(renderVerdictCard(it, 'monitor'));
+            el.innerHTML = cards.join('');
+        }
+
+        function renderVerdictCard(idea, verdict) {
+            const j = idea.judgement || {};
+            const ticker = idea.ticker_or_event || '?';
+            const url = j.target_market_url || idea.source_url || '';
+            const conf = j.confidence != null ? `${Math.round(j.confidence * 100)}%` : '?';
+            const stake = j.stake_usd != null ? `$${j.stake_usd}` : '—';
+            const entry = j.entry_price != null ? `${j.entry_price}` : '—';
+            const mt = (idea.market_type || 'macro').toLowerCase();
+            const srcTitle = idea.source_title ? ` — ${escapeHtml(idea.source_title.substring(0, 80))}` : '';
+            return `<div class="verdict-card ${verdict}">
+                <div class="verdict-header">
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <span class="market-tag ${mt}">${escapeHtml(idea.market_type || 'macro')}</span>
+                        <span class="verdict-ticker">${escapeHtml(ticker)}</span>
+                        <span class="verdict-badge ${verdict}">${verdict}</span>
+                    </div>
+                    <span class="verdict-confidence">conf ${conf}</span>
+                </div>
+                <div class="verdict-action">→ ${escapeHtml(j.suggested_action || idea.thesis || '')}</div>
+                <div class="verdict-meta">
+                    <div><span class="verdict-meta-label">Stake</span><span class="verdict-meta-val">${stake}</span></div>
+                    <div><span class="verdict-meta-label">Entry</span><span class="verdict-meta-val">${entry}</span></div>
+                    <div><span class="verdict-meta-label">Conviction</span><span class="verdict-meta-val">${'★'.repeat(idea.conviction || 0)}</span></div>
+                </div>
+                ${j.why ? `<div class="verdict-why">${escapeHtml(j.why)}</div>` : ''}
+                ${j.risks ? `<div class="verdict-risks">⚠️ ${escapeHtml(j.risks)}</div>` : ''}
+                <div class="verdict-cta">
+                    ${url ? `<a class="primary" href="${escapeHtml(url)}" target="_blank">Open market →</a>` : ''}
+                    <button onclick="markAgentIdea('${idea.id}','acted'); loadVerdicts(); loadAgentIdeas();">✓ Acted</button>
+                    <button onclick="markAgentIdea('${idea.id}','archived'); loadVerdicts(); loadAgentIdeas();">📁 Archive</button>
+                    <button onclick="markAgentIdea('${idea.id}','dismissed'); loadVerdicts(); loadAgentIdeas();">✗ Dismiss</button>
+                </div>
+                <div class="verdict-source-line">via <b>${escapeHtml(idea.source || '?')}</b>${srcTitle}</div>
+            </div>`;
+        }
+
+        loadVerdicts();
         loadAgentIdeas();
         loadNewsletters();
         loadIdeas();
         setInterval(loadNewsletters, 60000);
         setInterval(loadAgentIdeas, 90000);
+        setInterval(loadVerdicts, 90000);
     </script>
 </body>
 </html>
