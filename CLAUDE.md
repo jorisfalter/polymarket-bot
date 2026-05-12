@@ -23,6 +23,18 @@ Polymarket agent runs three **books**: Core ($5-10), Asymmetric/longshot ($1-2 a
 
 ---
 
+## Before you start editing — sync check
+
+This project is worked on from **two machines** (Mac + VPS), both running Claude Code, both able to push to GitHub. Always run this at session start, on whichever side you're on:
+
+```bash
+git fetch origin && git status -sb
+```
+
+If `ahead` or `behind` is non-zero, resolve before editing — otherwise you're at risk of diverging branches and lost work. Cheap to check, expensive to recover from.
+
+---
+
 ## Working directories
 
 - **Local dev (Mac)**: `/Users/joris/Projects/polymarket`
