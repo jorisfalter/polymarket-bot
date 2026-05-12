@@ -507,6 +507,12 @@ async def lifespan(app: FastAPI):
         day_of_week='mon', hour=8, minute=0,  # Mondays 08:00 UTC — Telegram digest of last 30d
         id='weekly_trade_analysis_job'
     )
+    scheduler.add_job(
+        run_research_agent,
+        'cron',
+        hour=6, minute=0,  # Daily 06:00 UTC — scan newsletters/reddit/youtube/RSS for ideas
+        id='research_agent_job'
+    )
     scheduler.start()
 
     # Initial scan
@@ -1501,6 +1507,41 @@ async def delete_research_idea(ts: str):
     return {"ok": True}
 
 
+# Research agent — daily LLM-driven scan across newsletters, Reddit, YouTube,
+# RSS for actionable trading ideas. Separate from the manual ideas inbox above.
+@app.get("/api/research/agent-ideas")
+async def list_agent_ideas(
+    limit: int = Query(100, le=500),
+    status: Optional[str] = Query(None, description="open / acted / archived / dismissed"),
+    market_type: Optional[str] = Query(None, description="stocks / crypto / polymarket / macro"),
+):
+    """List ideas surfaced by the daily research agent, most recent first."""
+    from .research_agent import list_ideas
+    return list_ideas(limit=limit, status=status, market_type=market_type)
+
+
+@app.post("/api/research/run-now")
+async def trigger_research_run():
+    """Manually trigger the daily research agent. Returns the summary +
+    sends the Telegram digest. Used by the dashboard button (when present)
+    or for testing after deploys."""
+    from .research_agent import run_daily
+    summary = await run_daily()
+    return summary
+
+
+@app.patch("/api/research/agent-ideas/{idea_id}/status")
+async def patch_agent_idea_status(idea_id: str, payload: Dict):
+    """Mark an agent-surfaced idea as acted / archived / dismissed.
+    Body: {status: 'open'|'acted'|'archived'|'dismissed'}."""
+    new_status = (payload.get("status") or "").strip()
+    if new_status not in {"open", "acted", "archived", "dismissed"}:
+        return {"ok": False, "error": "invalid status"}
+    from .research_agent import update_idea_status
+    ok = update_idea_status(idea_id, new_status)
+    return {"ok": ok}
+
+
 @app.get("/agent")
 async def serve_agent():
     return FileResponse(
@@ -1849,6 +1890,22 @@ async def run_weekly_trade_analysis():
                     f"net ${analysis.get('total_pnl', 0):+.2f}")
     except Exception as e:
         logger.error(f"Weekly trade analysis failed: {e}")
+
+
+async def run_research_agent():
+    """Scheduler job: daily 06:00 UTC research scan. Ingests newsletters,
+    Reddit, YouTube, RSS — filters via LLM, dedupes, ranks. Persists top 10
+    ideas and pushes a Telegram digest with the top 5."""
+    from .research_agent import run_daily
+    try:
+        summary = await run_daily()
+        logger.info(
+            f"Research agent: {summary.get('ingested', 0)} items ingested → "
+            f"{summary.get('filtered', 0)} ideas → top {summary.get('top', 0)} "
+            f"({summary.get('ms', 0)}ms)"
+        )
+    except Exception as e:
+        logger.error(f"Research agent failed: {e}")
 
 
 @app.get("/api/playbook")

@@ -29,10 +29,35 @@ TWITTER_ACCOUNTS = [
     "NatashaBertrand",   # CNN national security
 ]
 
-# RSS feeds for newsletters
+# RSS feeds for newsletters. Substack auto-publishes every newsletter as RSS
+# at <name>.substack.com/feed — that's the simplest way to grab full content
+# without IMAP login. We keep RSS for sources that publish web-first; Gmail
+# IMAP is for senders that send via email only (Bloomberg, Stratechery passport).
 RSS_FEEDS = [
-    ("https://eventwaves.substack.com/feed", "EventWaves (Polymarket Insiders)"),
-    ("https://www.axios.com/feeds/feed.rss", "Axios (Breaking News)"),
+    # Prediction markets
+    ("https://eventwaves.substack.com/feed", "EventWaves"),
+    # Macro / multi-asset
+    ("https://www.axios.com/feeds/feed.rss", "Axios"),
+    ("https://doomberg.substack.com/feed", "Doomberg"),
+    ("https://thediff.substack.com/feed", "The Diff"),
+    ("https://www.netinterest.co/feed", "Net Interest"),
+    ("https://www.fabricatedknowledge.com/feed", "Net Capital / Fabricated Knowledge"),
+    ("https://www.apricitas.io/feed", "Apricitas"),
+    ("https://capitalemployed.substack.com/feed", "Liberty's Highlights"),
+    ("https://drillingcapital.substack.com/feed", "Drilling Capital"),
+    # Equity / short research
+    ("https://thebearcave.substack.com/feed", "The Bear Cave"),
+    ("https://hindenburgresearch.com/feed", "Hindenburg Research"),
+    ("https://hntrbrk.com/feed", "Hunterbrook"),
+    # Valuation / classics
+    ("http://aswathdamodaran.blogspot.com/feeds/posts/default?alt=rss", "Damodaran"),
+    # Crypto
+    ("https://newsletter.bankless.com/feed", "Bankless"),
+    ("https://thedefiant.io/feed", "The Defiant"),
+    ("https://www.dlnews.com/arc/outboundfeeds/rss/", "DLNews"),
+    # Geopolitics / DC
+    ("https://www.slowboring.com/feed", "Slow Boring"),
+    ("https://sinocism.com/feed", "Sinocism"),
 ]
 
 _twitter_client = None
@@ -144,19 +169,80 @@ async def fetch_rss_intel() -> List[Dict]:
 
 
 NEWSLETTER_SENDERS = [
+    # ───── Macro / multi-asset ─────
     # Matt Levine — Money Stuff (Bloomberg)
     "noreply@news.bloomberg.com",
     "noreply@mail.bloombergbusiness.com",  # legacy
-    # EventWaves
-    "eventwaves@substack.com",
-    # Stratechery (Ben Thompson) — sends via their own platform
+    # Stratechery (Ben Thompson)
     "ben@stratechery.com",
     "noreply@stratechery.passport.online",
-    # The Diff (Byrne Hobart) — Substack
+    # Substack-based macro
     "thediff@substack.com",
     "byrnehobart@substack.com",
-    # Doomberg — Substack
     "doomberg@substack.com",
+    "apricitas@substack.com",
+    "lynalden@substack.com",
+    "capitalemployed@substack.com",     # Liberty's Highlights
+    "netinterest@substack.com",          # Marc Rubinstein
+    "fabricatedknowledge@substack.com",  # Net Capital / Doug O'Laughlin
+    "drillingcapital@substack.com",
+    # ───── Prediction markets ─────
+    "eventwaves@substack.com",
+    # ───── Equity / short research ─────
+    "bearcave@substack.com",
+    "edwin@thebearcave.com",
+    "hindenburg@hindenburgresearch.com",
+    "research@muddywatersresearch.com",
+    "hunterbrook@hntrbrk.com",
+    "acquired@substack.com",
+    # ───── Crypto ─────
+    "bankless@substack.com",
+    "newsletter@bankless.com",
+    "delphidigital@substack.com",
+    "members@delphidigital.io",
+    "milkroad@substack.com",
+    "thedefiant@substack.com",
+    "dlnews@substack.com",
+    # ───── Politics / geopolitics ─────
+    "semafor@semafor.com",
+    "flagship@semafor.com",
+    "principals@semafor.com",
+    "slowboring@substack.com",
+    "sinocism@substack.com",
+]
+
+
+# Friendly label mapping — keep in sync with NEWSLETTER_SENDERS additions.
+# Lowercased substring → friendly label. Order matters; specific before generic.
+SENDER_LABELS = [
+    ("money stuff", "Matt Levine"),
+    ("matt levine", "Matt Levine"),
+    ("doomberg", "Doomberg"),
+    ("stratechery", "Stratechery"),
+    ("thediff", "The Diff"),
+    ("byrnehobart", "The Diff"),
+    ("apricitas", "Apricitas"),
+    ("lynalden", "Lyn Alden"),
+    ("capitalemployed", "Liberty's Highlights"),
+    ("netinterest", "Net Interest"),
+    ("fabricatedknowledge", "Net Capital"),
+    ("drillingcapital", "Drilling Capital"),
+    ("eventwaves", "EventWaves"),
+    ("bearcave", "The Bear Cave"),
+    ("hindenburg", "Hindenburg"),
+    ("muddywaters", "Muddy Waters"),
+    ("hunterbrook", "Hunterbrook"),
+    ("hntrbrk", "Hunterbrook"),
+    ("acquired", "Acquired"),
+    ("bankless", "Bankless"),
+    ("delphi", "Delphi"),
+    ("milkroad", "Milk Road"),
+    ("thedefiant", "The Defiant"),
+    ("dlnews", "DLNews"),
+    ("semafor", "Semafor"),
+    ("slowboring", "Slow Boring"),
+    ("sinocism", "Sinocism"),
+    ("bloomberg", "Bloomberg"),
 ]
 
 
@@ -204,23 +290,17 @@ async def fetch_gmail_newsletters() -> List[Dict]:
                     import re
                     body = re.sub(r"\s+", " ", body).strip()[:30000]
 
-                    # Friendly source label — Matt Levine, Doomberg, etc. instead
-                    # of cryptic "noreply@..." prefixes. Match on subject keywords
-                    # since multiple senders share the same noreply@ prefix.
+                    # Friendly source label — try subject first (more reliable
+                    # for Bloomberg "Money Stuff" since multiple senders share
+                    # the same noreply@ prefix), then fall back to sender.
                     subj_lower = (subject or "").lower()
-                    if "money stuff" in subj_lower or "matt levine" in subj_lower:
-                        source_label = "Matt Levine"
-                    elif "doomberg" in subj_lower or "doomberg" in sender.lower():
-                        source_label = "Doomberg"
-                    elif "stratechery" in sender.lower():
-                        source_label = "Stratechery"
-                    elif "thediff" in sender.lower() or "byrnehobart" in sender.lower():
-                        source_label = "The Diff"
-                    elif "eventwaves" in sender.lower():
-                        source_label = "EventWaves"
-                    elif "bloomberg" in sender.lower():
-                        source_label = "Bloomberg"
-                    else:
+                    sender_lower = sender.lower()
+                    source_label = None
+                    for needle, label in SENDER_LABELS:
+                        if needle in subj_lower or needle in sender_lower:
+                            source_label = label
+                            break
+                    if not source_label:
                         source_label = sender.split("@")[0]
 
                     results.append({

@@ -254,3 +254,61 @@ async def cross_reference_watchlist(stock_watchlist: List[str]) -> List[Dict]:
         if t["ticker"] in watchlist_upper:
             overlaps.append(t)
     return overlaps
+
+
+# Subreddits the research agent scans daily. Mix of equity-DD, options,
+# crypto, and algorithmic. Order = priority for tie-breaks.
+RESEARCH_SUBREDDITS = [
+    "wallstreetbets",        # buzz / squeeze candidates
+    "SecurityAnalysis",      # value DD
+    "investing",             # broader equity discussion
+    "stocks",                # mainstream stock chatter
+    "algotrading",           # quant + systematic
+    "options",               # flow-aware traders
+    "CryptoCurrency",        # crypto general
+    "ethfinance",            # ETH-specific DD
+]
+
+
+async def fetch_multi_subreddit_intel(
+    subreddits: Optional[List[str]] = None,
+    per_sub: int = 15,
+    min_score: int = 50,
+) -> List[Dict]:
+    """Pull top-scoring recent posts from a list of subreddits and return
+    them flat for the research-agent to filter.
+
+    Returns: list of {source, title, body, score, num_comments, url, ts, sub}.
+    `source` is "r/<sub>" so it merges cleanly with intel_feeds output.
+
+    `min_score` filters out dead posts. WSB gets noisier so we'll get top-N
+    by score regardless; DD subs are quieter and even score=20 can be signal.
+    """
+    import asyncio
+    subreddits = subreddits or RESEARCH_SUBREDDITS
+    tasks = [fetch_subreddit_posts(s, "hot", limit=per_sub * 2) for s in subreddits]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    out: List[Dict] = []
+    for sub, posts in zip(subreddits, results):
+        if isinstance(posts, Exception) or not posts:
+            continue
+        # Filter mod-pinned threads and below-score noise, then take top N
+        filtered = [
+            p for p in posts
+            if not p.get("is_pinned") and (p.get("score") or 0) >= min_score
+        ]
+        filtered.sort(key=lambda p: p.get("score") or 0, reverse=True)
+        for p in filtered[:per_sub]:
+            out.append({
+                "source": f"r/{sub}",
+                "sub": sub,
+                "title": p.get("title", "")[:300],
+                "body": p.get("selftext_preview", "")[:1500],
+                "score": p.get("score", 0),
+                "num_comments": p.get("num_comments", 0),
+                "url": p.get("url", ""),
+                "ts": p.get("created_utc", 0),
+                "flair": p.get("flair", ""),
+            })
+    return out

@@ -10,6 +10,32 @@
     <link rel="stylesheet" href="/static/styles.css?v=17">
     <script src="/static/theme.js?v=2"></script>
     <style>
+        .agent-ideas-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .agent-ideas-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+        .agent-ideas-header h2 { font-size: 16px; margin: 0; color: var(--text-primary); }
+        .agent-ideas-header .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+        .pill { background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-secondary); padding: 4px 10px; border-radius: 14px; font-size: 11px; cursor: pointer; font-family: inherit; }
+        .pill.active { background: var(--accent-primary); color: var(--bg-primary); border-color: var(--accent-primary); font-weight: 600; }
+        .run-now-btn { background: var(--accent-secondary); color: var(--bg-primary); border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+        .run-now-btn:hover { opacity: 0.85; }
+        .run-now-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .agent-idea-card { padding: 12px; margin-bottom: 10px; background: var(--bg-tertiary); border-left: 3px solid var(--accent-purple); border-radius: 6px; }
+        .agent-idea-top { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+        .market-tag { font-size: 10px; padding: 2px 7px; border-radius: 3px; font-weight: 600; text-transform: uppercase; }
+        .market-tag.stocks { background: rgba(91,219,137,0.15); color: var(--accent-success); }
+        .market-tag.crypto { background: rgba(255,165,0,0.15); color: #ffa500; }
+        .market-tag.polymarket { background: rgba(0,212,255,0.15); color: var(--accent-secondary); }
+        .market-tag.macro { background: rgba(170,102,255,0.15); color: var(--accent-purple); }
+        .ticker-name { font-size: 15px; color: var(--text-primary); font-weight: 700; margin-bottom: 4px; }
+        .conviction-stars { color: #ffd95e; letter-spacing: 1px; font-size: 13px; }
+        .thesis-line { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 6px; }
+        .why-now-line { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-style: italic; }
+        .agent-idea-actions { display: flex; gap: 6px; margin-top: 8px; }
+        .action-btn { background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: inherit; }
+        .action-btn:hover { background: var(--bg-secondary); border-color: var(--accent-primary); color: var(--text-primary); }
+        .source-line { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+        .source-line a { color: var(--accent-secondary); text-decoration: none; }
+        .source-line a:hover { text-decoration: underline; }
         .research-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         @media (max-width: 1024px) { .research-grid { grid-template-columns: 1fr; } }
         .panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; }
@@ -75,6 +101,24 @@
                 <a href="/playbook" class="sub-link">Playbook</a>
                 <a href="/" class="sub-link">Detection</a>
                 <a href="/strategy" class="sub-link">Engine</a>
+            </div>
+            <!-- Agent ideas (daily LLM scan across newsletters/reddit/youtube/RSS) -->
+            <div class="agent-ideas-panel">
+                <div class="agent-ideas-header">
+                    <h2>🤖 Agent Ideas <span class="count" id="agent-ideas-count">0</span></h2>
+                    <div class="pills">
+                        <button class="pill active" data-filter="all" onclick="filterAgent('all', this)">All</button>
+                        <button class="pill" data-filter="stocks" onclick="filterAgent('stocks', this)">Stocks</button>
+                        <button class="pill" data-filter="crypto" onclick="filterAgent('crypto', this)">Crypto</button>
+                        <button class="pill" data-filter="polymarket" onclick="filterAgent('polymarket', this)">Polymarket</button>
+                        <button class="pill" data-filter="macro" onclick="filterAgent('macro', this)">Macro</button>
+                    </div>
+                    <button class="run-now-btn" id="run-now-btn" onclick="runResearchNow()">▶ Run now</button>
+                </div>
+                <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">
+                    Dagelijks om 06:00 UTC scant de research agent newsletters, Reddit, YouTube en RSS. LLM filtert noise, dedupliceert per ticker/event, en surface't de top 10. Klik <b>Run now</b> om het direct te starten.
+                </p>
+                <div id="agent-ideas"><div class="empty">Loading...</div></div>
             </div>
             <div class="research-grid">
                 <!-- Newsletter feed -->
@@ -200,9 +244,95 @@
             loadIdeas();
         }
 
+        // ─── Agent ideas (daily LLM research) ───
+        let agentFilter = 'all';
+
+        async function loadAgentIdeas() {
+            try {
+                const qs = agentFilter === 'all'
+                    ? '?status=open'
+                    : `?status=open&market_type=${agentFilter}`;
+                const res = await fetch('/api/research/agent-ideas' + qs);
+                const items = await res.json();
+                renderAgentIdeas(items);
+            } catch (e) {
+                document.getElementById('agent-ideas').innerHTML =
+                    '<div class="empty">Fetch failed: ' + e.message + '</div>';
+            }
+        }
+
+        function renderAgentIdeas(items) {
+            document.getElementById('agent-ideas-count').textContent = items.length;
+            const el = document.getElementById('agent-ideas');
+            if (!items.length) {
+                el.innerHTML = '<div class="empty">Nog geen ideeën. Klik "Run now" of wacht tot 06:00 UTC.</div>';
+                return;
+            }
+            el.innerHTML = items.map(it => {
+                const stars = '★'.repeat(it.conviction || 0) + '☆'.repeat(5 - (it.conviction || 0));
+                const mt = (it.market_type || 'macro').toLowerCase();
+                const url = it.source_url
+                    ? `<a href="${escapeHtml(it.source_url)}" target="_blank">link</a>`
+                    : '';
+                const sourceTitle = it.source_title
+                    ? ` — ${escapeHtml(it.source_title.substring(0, 80))}`
+                    : '';
+                return `<div class="agent-idea-card">
+                    <div class="agent-idea-top">
+                        <span class="market-tag ${mt}">${escapeHtml(it.market_type || 'macro')}</span>
+                        <span class="conviction-stars">${stars}</span>
+                    </div>
+                    <div class="ticker-name">${escapeHtml(it.ticker_or_event || '?')}</div>
+                    <div class="thesis-line">${escapeHtml(it.thesis || '')}</div>
+                    ${it.why_now ? `<div class="why-now-line">Why now: ${escapeHtml(it.why_now)}</div>` : ''}
+                    <div class="source-line">via <b>${escapeHtml(it.source || '?')}</b>${sourceTitle} ${url}</div>
+                    <div class="agent-idea-actions">
+                        <button class="action-btn" onclick="markAgentIdea('${it.id}','acted')">✓ Acted</button>
+                        <button class="action-btn" onclick="markAgentIdea('${it.id}','archived')">📁 Archive</button>
+                        <button class="action-btn" onclick="markAgentIdea('${it.id}','dismissed')">✗ Dismiss</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function filterAgent(filter, btn) {
+            agentFilter = filter;
+            document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            loadAgentIdeas();
+        }
+
+        async function markAgentIdea(id, status) {
+            await fetch(`/api/research/agent-ideas/${id}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            loadAgentIdeas();
+        }
+
+        async function runResearchNow() {
+            const btn = document.getElementById('run-now-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Running... (~1-2 min)';
+            try {
+                const res = await fetch('/api/research/run-now', { method: 'POST' });
+                const summary = await res.json();
+                alert(`Ingested ${summary.ingested}, filtered to ${summary.filtered} ideas, top ${summary.top}. (${summary.ms}ms)`);
+                loadAgentIdeas();
+            } catch (e) {
+                alert('Run failed: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '▶ Run now';
+            }
+        }
+
+        loadAgentIdeas();
         loadNewsletters();
         loadIdeas();
         setInterval(loadNewsletters, 60000);
+        setInterval(loadAgentIdeas, 90000);
     </script>
 </body>
 </html>

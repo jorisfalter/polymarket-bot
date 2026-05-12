@@ -44,3 +44,7 @@ python-telegram-bot>=21.0
 gspread>=6.0.0
 google-auth>=2.0.0
 
+# Research agent — ingestion
+feedparser>=6.0.0          # robust RSS/Atom parsing for intel_feeds
+youtube-transcript-api>=0.6.2  # free transcript fetch, no auth
+
