@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=17">
+    <link rel="stylesheet" href="/static/styles.css?v=18">
     <script src="/static/theme.js?v=2"></script>
     <style>
         .agent-ideas-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
@@ -19,8 +19,26 @@
         .run-now-btn { background: var(--accent-secondary); color: var(--bg-primary); border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
         .run-now-btn:hover { opacity: 0.85; }
         .run-now-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .stats-bar { display: flex; gap: 12px; margin-bottom: 16px; padding: 12px 16px; background: var(--bg-tertiary); border-radius: 8px; flex-wrap: wrap; }
+        .stat-block { display: flex; flex-direction: column; gap: 2px; }
+        .stat-num { font-size: 20px; font-weight: 700; color: var(--accent-primary); font-family: 'JetBrains Mono', monospace; }
+        .stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-block.subtle .stat-num { color: var(--text-secondary); font-size: 16px; }
+        .day-header { display: flex; align-items: baseline; justify-content: space-between; margin: 18px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+        .day-header h3 { font-size: 13px; color: var(--text-primary); margin: 0; font-weight: 600; }
+        .day-header .day-count { font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .show-all-toggle { font-size: 11px; color: var(--accent-secondary); cursor: pointer; user-select: none; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--border-color); background: transparent; font-family: inherit; }
+        .show-all-toggle.active { background: var(--bg-tertiary); color: var(--text-primary); }
         .agent-idea-card { padding: 12px; margin-bottom: 10px; background: var(--bg-tertiary); border-left: 3px solid var(--accent-purple); border-radius: 6px; }
-        .agent-idea-top { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+        .agent-idea-card.status-acted { border-left-color: var(--accent-success, #5bdb89); opacity: 0.85; }
+        .agent-idea-card.status-archived { border-left-color: var(--text-muted); opacity: 0.55; }
+        .agent-idea-card.status-dismissed { border-left-color: var(--accent-danger, #ff6b6b); opacity: 0.45; }
+        .status-badge { font-size: 10px; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .status-badge.status-acted { background: rgba(91,219,137,0.18); color: var(--accent-success, #5bdb89); }
+        .status-badge.status-archived { background: rgba(150,150,150,0.18); color: var(--text-muted); }
+        .status-badge.status-dismissed { background: rgba(255,107,107,0.18); color: var(--accent-danger, #ff6b6b); }
+        .agent-idea-time { font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .agent-idea-top { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; align-items: center; }
         .market-tag { font-size: 10px; padding: 2px 7px; border-radius: 3px; font-weight: 600; text-transform: uppercase; }
         .market-tag.stocks { background: rgba(91,219,137,0.15); color: var(--accent-success); }
         .market-tag.crypto { background: rgba(255,165,0,0.15); color: #ffa500; }
@@ -102,22 +120,30 @@
                 <a href="/" class="sub-link">Detection</a>
                 <a href="/strategy" class="sub-link">Engine</a>
             </div>
-            <!-- Agent ideas (daily LLM scan across newsletters/reddit/youtube/RSS) -->
+            <!-- Agent ideas feed (LLM scan across newsletters/reddit/youtube/RSS) -->
             <div class="agent-ideas-panel">
                 <div class="agent-ideas-header">
-                    <h2>🤖 Agent Ideas <span class="count" id="agent-ideas-count">0</span></h2>
+                    <h2>🤖 Agent Ideas Feed</h2>
                     <div class="pills">
-                        <button class="pill active" data-filter="all" onclick="filterAgent('all', this)">All</button>
+                        <button class="pill active" data-filter="all" onclick="filterAgent('all', this)">All markets</button>
                         <button class="pill" data-filter="stocks" onclick="filterAgent('stocks', this)">Stocks</button>
                         <button class="pill" data-filter="crypto" onclick="filterAgent('crypto', this)">Crypto</button>
                         <button class="pill" data-filter="polymarket" onclick="filterAgent('polymarket', this)">Polymarket</button>
                         <button class="pill" data-filter="macro" onclick="filterAgent('macro', this)">Macro</button>
                     </div>
+                    <button class="show-all-toggle" id="show-all-toggle" onclick="toggleShowAll()">+ Show archived</button>
                     <button class="run-now-btn" id="run-now-btn" onclick="runResearchNow()">▶ Run now</button>
                 </div>
                 <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">
-                    Dagelijks om 06:00 UTC scant de research agent newsletters, Reddit, YouTube en RSS. LLM filtert noise, dedupliceert per ticker/event, en surface't de top 10. Klik <b>Run now</b> om het direct te starten.
+                    Hedge-fund-style scan over newsletters, Reddit, YouTube en RSS. LLM filtert noise, dedupliceert per ticker/event, ranked op novelty × actionability × conviction. <b>Manueel triggeren</b> — klik <b>Run now</b> (~2-3 min).
                 </p>
+                <div class="stats-bar" id="stats-bar">
+                    <div class="stat-block"><div class="stat-num" id="stat-today">—</div><div class="stat-label">Today</div></div>
+                    <div class="stat-block"><div class="stat-num" id="stat-yesterday">—</div><div class="stat-label">Yesterday</div></div>
+                    <div class="stat-block"><div class="stat-num" id="stat-week">—</div><div class="stat-label">Last 7 days</div></div>
+                    <div class="stat-block subtle"><div class="stat-num" id="stat-acted">—</div><div class="stat-label">Acted on</div></div>
+                    <div class="stat-block subtle"><div class="stat-num" id="stat-total">—</div><div class="stat-label">Total ever</div></div>
+                </div>
                 <div id="agent-ideas"><div class="empty">Loading...</div></div>
             </div>
             <div class="research-grid">
@@ -244,61 +270,140 @@
             loadIdeas();
         }
 
-        // ─── Agent ideas (daily LLM research) ───
+        // ─── Agent ideas feed (LLM research) ───
         let agentFilter = 'all';
+        let showAll = false;  // when true, include archived/dismissed
 
         async function loadAgentIdeas() {
             try {
-                const qs = agentFilter === 'all'
-                    ? '?status=open'
-                    : `?status=open&market_type=${agentFilter}`;
+                // Always fetch everything; filter client-side. Cheap because list is small.
+                const qs = agentFilter === 'all' ? '?limit=500' : `?limit=500&market_type=${agentFilter}`;
                 const res = await fetch('/api/research/agent-ideas' + qs);
                 const items = await res.json();
-                renderAgentIdeas(items);
+                renderStats(items);
+                renderAgentFeed(items);
             } catch (e) {
                 document.getElementById('agent-ideas').innerHTML =
                     '<div class="empty">Fetch failed: ' + e.message + '</div>';
             }
         }
 
-        function renderAgentIdeas(items) {
-            document.getElementById('agent-ideas-count').textContent = items.length;
+        function _dateKey(iso) {
+            // Group by UTC date so days line up with the daily research run.
+            return (iso || '').substring(0, 10);
+        }
+
+        function _dayLabel(yyyymmdd) {
+            if (!yyyymmdd) return 'Onbekend';
+            const today = new Date().toISOString().substring(0, 10);
+            const yest = new Date(Date.now() - 86400000).toISOString().substring(0, 10);
+            if (yyyymmdd === today) return `${yyyymmdd} · Vandaag`;
+            if (yyyymmdd === yest) return `${yyyymmdd} · Gisteren`;
+            const d = new Date(yyyymmdd + 'T00:00:00Z');
+            const wd = ['Zo','Ma','Di','Wo','Do','Vr','Za'][d.getUTCDay()];
+            return `${yyyymmdd} · ${wd}`;
+        }
+
+        function renderStats(items) {
+            const today = new Date().toISOString().substring(0, 10);
+            const yest = new Date(Date.now() - 86400000).toISOString().substring(0, 10);
+            const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().substring(0, 10);
+            let tCount = 0, yCount = 0, wCount = 0, actedCount = 0;
+            for (const it of items) {
+                const dk = _dateKey(it.discovered_at);
+                if (dk === today) tCount++;
+                if (dk === yest) yCount++;
+                if (dk >= weekAgo) wCount++;
+                if (it.status === 'acted') actedCount++;
+            }
+            document.getElementById('stat-today').textContent = tCount;
+            document.getElementById('stat-yesterday').textContent = yCount;
+            document.getElementById('stat-week').textContent = wCount;
+            document.getElementById('stat-acted').textContent = actedCount;
+            document.getElementById('stat-total').textContent = items.length;
+        }
+
+        function renderAgentFeed(items) {
             const el = document.getElementById('agent-ideas');
-            if (!items.length) {
-                el.innerHTML = '<div class="empty">Nog geen ideeën. Klik "Run now" of wacht tot 06:00 UTC.</div>';
+            // Client-side filter for status
+            const visible = showAll
+                ? items
+                : items.filter(it => it.status !== 'archived' && it.status !== 'dismissed');
+            if (!visible.length) {
+                el.innerHTML = `<div class="empty">Geen ideeën zichtbaar${showAll ? '' : ' (toggle "Show archived" om alles te zien)'}. Klik "Run now" om de eerste scan te starten.</div>`;
                 return;
             }
-            el.innerHTML = items.map(it => {
-                const stars = '★'.repeat(it.conviction || 0) + '☆'.repeat(5 - (it.conviction || 0));
-                const mt = (it.market_type || 'macro').toLowerCase();
-                const url = it.source_url
-                    ? `<a href="${escapeHtml(it.source_url)}" target="_blank">link</a>`
-                    : '';
-                const sourceTitle = it.source_title
-                    ? ` — ${escapeHtml(it.source_title.substring(0, 80))}`
-                    : '';
-                return `<div class="agent-idea-card">
-                    <div class="agent-idea-top">
-                        <span class="market-tag ${mt}">${escapeHtml(it.market_type || 'macro')}</span>
-                        <span class="conviction-stars">${stars}</span>
-                    </div>
-                    <div class="ticker-name">${escapeHtml(it.ticker_or_event || '?')}</div>
-                    <div class="thesis-line">${escapeHtml(it.thesis || '')}</div>
-                    ${it.why_now ? `<div class="why-now-line">Why now: ${escapeHtml(it.why_now)}</div>` : ''}
-                    <div class="source-line">via <b>${escapeHtml(it.source || '?')}</b>${sourceTitle} ${url}</div>
-                    <div class="agent-idea-actions">
-                        <button class="action-btn" onclick="markAgentIdea('${it.id}','acted')">✓ Acted</button>
-                        <button class="action-btn" onclick="markAgentIdea('${it.id}','archived')">📁 Archive</button>
-                        <button class="action-btn" onclick="markAgentIdea('${it.id}','dismissed')">✗ Dismiss</button>
-                    </div>
-                </div>`;
+            // Group by day key (newest first — items are already reversed from API)
+            const groups = new Map();
+            for (const it of visible) {
+                const dk = _dateKey(it.discovered_at);
+                if (!groups.has(dk)) groups.set(dk, []);
+                groups.get(dk).push(it);
+            }
+            const sortedDays = Array.from(groups.keys()).sort().reverse();
+            const html = sortedDays.map(day => {
+                const dayItems = groups.get(day);
+                const headerHtml = `<div class="day-header"><h3>${escapeHtml(_dayLabel(day))}</h3><span class="day-count">${dayItems.length} idea${dayItems.length === 1 ? '' : 's'}</span></div>`;
+                const cards = dayItems.map(it => renderIdeaCard(it)).join('');
+                return headerHtml + cards;
             }).join('');
+            el.innerHTML = html;
+        }
+
+        function renderIdeaCard(it) {
+            const stars = '★'.repeat(it.conviction || 0) + '☆'.repeat(5 - (it.conviction || 0));
+            const mt = (it.market_type || 'macro').toLowerCase();
+            const url = it.source_url
+                ? `<a href="${escapeHtml(it.source_url)}" target="_blank">link</a>`
+                : '';
+            const sourceTitle = it.source_title
+                ? ` — ${escapeHtml(it.source_title.substring(0, 80))}`
+                : '';
+            const status = it.status || 'open';
+            const statusBadge = status !== 'open'
+                ? `<span class="status-badge status-${status}">${status}</span>`
+                : '';
+            // Local time on the card (HH:MM)
+            const t = it.discovered_at
+                ? new Date(it.discovered_at.endsWith('Z') ? it.discovered_at : it.discovered_at + 'Z')
+                : null;
+            const tLabel = t ? t.toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' }) : '';
+            return `<div class="agent-idea-card status-${status}">
+                <div class="agent-idea-top">
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <span class="market-tag ${mt}">${escapeHtml(it.market_type || 'macro')}</span>
+                        ${statusBadge}
+                    </div>
+                    <span class="conviction-stars">${stars}</span>
+                </div>
+                <div class="ticker-name">${escapeHtml(it.ticker_or_event || '?')}</div>
+                <div class="thesis-line">${escapeHtml(it.thesis || '')}</div>
+                ${it.why_now ? `<div class="why-now-line">Why now: ${escapeHtml(it.why_now)}</div>` : ''}
+                <div class="source-line">
+                    <span class="agent-idea-time">${tLabel}</span> · via <b>${escapeHtml(it.source || '?')}</b>${sourceTitle} ${url}
+                </div>
+                ${status === 'open' ? `<div class="agent-idea-actions">
+                    <button class="action-btn" onclick="markAgentIdea('${it.id}','acted')">✓ Acted</button>
+                    <button class="action-btn" onclick="markAgentIdea('${it.id}','archived')">📁 Archive</button>
+                    <button class="action-btn" onclick="markAgentIdea('${it.id}','dismissed')">✗ Dismiss</button>
+                </div>` : `<div class="agent-idea-actions">
+                    <button class="action-btn" onclick="markAgentIdea('${it.id}','open')">↺ Reopen</button>
+                </div>`}
+            </div>`;
         }
 
         function filterAgent(filter, btn) {
             agentFilter = filter;
             document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
             btn.classList.add('active');
+            loadAgentIdeas();
+        }
+
+        function toggleShowAll() {
+            showAll = !showAll;
+            const btn = document.getElementById('show-all-toggle');
+            btn.classList.toggle('active', showAll);
+            btn.textContent = showAll ? '− Hide archived' : '+ Show archived';
             loadAgentIdeas();
         }
 
