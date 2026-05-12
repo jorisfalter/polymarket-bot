@@ -288,7 +288,7 @@ def _format_digest(ideas: List[Dict]) -> str:
         if why:
             lines.append(f"  <i>Why now:</i> {why}")
         lines.append(f"  <i>via {src}</i>")
-    lines.append("\n→ Dashboard: https://polymarket.ai-tigers.com/ideas")
+    lines.append("\n→ Dashboard: https://polymarket.ai-tigers.com/research")
     return "\n".join(lines)
 
 
