@@ -51,8 +51,7 @@ RSS_FEEDS = [
     ("https://hntrbrk.com/feed", "Hunterbrook"),
     # Valuation / classics
     ("http://aswathdamodaran.blogspot.com/feeds/posts/default?alt=rss", "Damodaran"),
-    # Crypto
-    ("https://newsletter.bankless.com/feed", "Bankless"),
+    # Crypto (Bankless newsletter.bankless.com had no public RSS — relies on Gmail IMAP)
     ("https://thedefiant.io/feed", "The Defiant"),
     ("https://www.dlnews.com/arc/outboundfeeds/rss/", "DLNews"),
     # Geopolitics / DC

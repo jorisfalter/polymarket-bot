@@ -24,15 +24,15 @@ from loguru import logger
 
 
 # (channel_id, friendly_label). Channel IDs are stable; channel handles are not.
+# Two earlier IDs (Real Vision UC9Jzcw..., Wendover UC2hCmG...) 404'd on RSS —
+# possibly renamed. Drop them; add back when verified via youtube.com/feeds/videos.xml.
 CHANNELS = [
     ("UCASM0XgcQk5SkbMtb1jQQVw", "Patrick Boyle"),       # macro + market structure
     ("UCUMZ7gohGI9HcU9VNsr2FJQ", "Bloomberg Odd Lots"),  # macro / commodities
     ("UCV0qA-eDDICsRR9rPcnG7tw", "Joseph Wang"),         # ex-Fed plumbing
     ("UCb1emEjPgZ_NA4ZX_qZJqxg", "Bankless HQ"),         # crypto / DeFi
     ("UCFp1vaKzpfvoGai0vE5VJ0w", "Coin Bureau"),         # crypto majors
-    ("UC9JzcwIzwoZ4CD-DJrf-yew", "Real Vision"),         # macro + crypto pros
-    ("UC2hCmGUKxhMNJYDjuKw-2_g", "Wendover-style finance"),  # placeholder
-    ("UCp0hYYBW6IMayGgR-WeoCvQ", "TLDR News (UK/Global)"),   # geopolitics signal
+    ("UCp0hYYBW6IMayGgR-WeoCvQ", "TLDR News"),           # geopolitics signal
 ]
 
 
@@ -76,12 +76,26 @@ async def _fetch_channel_videos(channel_id: str, since_hours: int = 48) -> List[
 
 
 def _fetch_transcript_sync(video_id: str) -> Optional[str]:
-    """Blocking call — used inside asyncio.to_thread."""
+    """Blocking call — used inside asyncio.to_thread.
+
+    youtube-transcript-api v1.x switched from static
+    `YouTubeTranscriptApi.get_transcript(video_id)` to instance
+    `YouTubeTranscriptApi().fetch(video_id)`. We support both so we
+    don't break if requirements.txt pins differ between dev and prod."""
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
-        # Prefer English; YouTube auto-translates if needed
-        parts = YouTubeTranscriptApi.get_transcript(video_id, languages=["en", "en-US"])
-        # Concatenate; cap at ~25k chars (long pods can be 80k+)
+        parts = None
+        # New API (v1.x)
+        if hasattr(YouTubeTranscriptApi, "fetch") and not hasattr(YouTubeTranscriptApi, "get_transcript"):
+            inst = YouTubeTranscriptApi()
+            fetched = inst.fetch(video_id, languages=["en", "en-US"])
+            # fetched is a FetchedTranscript with .snippets list, each .text
+            parts = [{"text": s.text} for s in fetched.snippets]
+        else:
+            # Legacy API (v0.x) — static method returning list of dicts
+            parts = YouTubeTranscriptApi.get_transcript(video_id, languages=["en", "en-US"])
+        if not parts:
+            return None
         text = " ".join(p.get("text", "") for p in parts)
         return text[:25000]
     except Exception as e:
