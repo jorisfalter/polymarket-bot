@@ -298,11 +298,13 @@ async def judge_idea(idea: Dict) -> Dict:
         except Exception:
             verdict["stake_usd"] = None
     verdict["judged_at"] = datetime.utcnow().isoformat()
-    # If polymarket and we found a market but the LLM didn't include URL, fill it
-    if not verdict.get("target_market_url"):
-        matches = ctx.get("polymarket_matches") or []
-        if matches and matches[0].get("url"):
-            verdict["target_market_url"] = matches[0]["url"]
+    # Do NOT auto-fill target_market_url from the Gamma search results.
+    # Gamma's full-text search is fuzzy — querying "FSK KKR private credit"
+    # can return a Rihanna×GTA-VI market because of partial token overlap.
+    # Only trust the URL if the LLM explicitly produced one (it had the
+    # full polymarket_matches context and chose to cite one). If the user
+    # wants the source URL on the card, the UI already falls back to
+    # idea.source_url for that.
     return verdict
 
 
