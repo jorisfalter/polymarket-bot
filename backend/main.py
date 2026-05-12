@@ -507,10 +507,16 @@ async def lifespan(app: FastAPI):
         day_of_week='mon', hour=8, minute=0,  # Mondays 08:00 UTC — Telegram digest of last 30d
         id='weekly_trade_analysis_job'
     )
-    # Research agent runs manually only — per user preference (matches the
-    # same manual-vs-cron pattern as Triage / Learn from History / Audit).
-    # Function lives in this file (run_research_agent) and the /api/research/
-    # endpoints; trigger from the dashboard ▶ Run now button.
+    # Research agent runs twice daily — morning + evening sweep across
+    # newsletters/reddit/youtube/RSS. Manual ▶ Run now button on /research
+    # also works. (Different from Triage/Learn/Audit which are manual-only —
+    # those need human judgment to act on; this is generative discovery.)
+    scheduler.add_job(
+        run_research_agent,
+        'cron',
+        hour='6,18', minute=0,  # 06:00 + 18:00 UTC = ~08:00 + ~20:00 CEST
+        id='research_agent_job'
+    )
     scheduler.start()
 
     # Initial scan
