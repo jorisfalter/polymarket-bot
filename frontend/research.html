@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=20">
+    <link rel="stylesheet" href="/static/styles.css?v=21">
     <script src="/static/theme.js?v=2"></script>
     <style>
         .agent-ideas-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
@@ -55,15 +55,26 @@
         .source-line a { color: var(--accent-secondary); text-decoration: none; }
         .source-line a:hover { text-decoration: underline; }
 
-        /* Kanban per day */
+        /* Kanban per pipeline stage */
         .kanban-scroll { overflow-x: auto; padding-bottom: 12px; -webkit-overflow-scrolling: touch; }
         .kanban-row { display: flex; gap: 14px; min-width: max-content; padding: 4px; }
-        .kanban-col { flex: 0 0 300px; max-width: 300px; background: var(--bg-tertiary); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+        .kanban-col { flex: 0 0 290px; max-width: 290px; background: var(--bg-tertiary); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
         .kanban-col-header { position: sticky; top: 0; background: var(--bg-tertiary); padding-bottom: 8px; border-bottom: 1px solid var(--border-color); margin-bottom: 4px; }
-        .kanban-col-header .day-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-        .kanban-col-header .day-counts { font-size: 10px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+        .kanban-col-header .stage-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .kanban-col-header .stage-subtitle { font-size: 10px; color: var(--text-muted); margin-top: 3px; line-height: 1.3; }
+        .kanban-col-header .stage-counts { font-size: 10px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+        /* Per-stage accent on column header */
+        .kanban-col.stage-raw .kanban-col-header { border-bottom-color: var(--accent-purple); }
+        .kanban-col.stage-validated .kanban-col-header { border-bottom-color: #ffd95e; }
+        .kanban-col.stage-staked .kanban-col-header { border-bottom-color: var(--accent-secondary); }
+        .kanban-col.stage-implement .kanban-col-header { border-bottom-color: var(--accent-success, #5bdb89); }
         .kanban-section-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 2px 2px; }
         .kcard { padding: 10px; background: var(--bg-secondary); border-radius: 6px; border-left: 3px solid var(--accent-purple); font-size: 12px; line-height: 1.4; }
+        .kcard.stage-raw { border-left-color: var(--accent-purple); }
+        .kcard.stage-validated { border-left-color: #ffd95e; background: rgba(255,217,94,0.05); }
+        .kcard.stage-staked { border-left-color: var(--accent-secondary); background: rgba(0,212,255,0.05); }
+        .kcard.stage-implement { border-left-color: var(--accent-success, #5bdb89); background: rgba(91,219,137,0.07); }
+        .kcard.stage-rejected { border-left-color: var(--text-muted); opacity: 0.5; }
         .kcard.v-actionable { border-left-color: var(--accent-success, #5bdb89); background: rgba(91,219,137,0.08); }
         .kcard.v-monitor { border-left-color: #ffd95e; background: rgba(255,217,94,0.06); }
         .kcard.s-acted { opacity: 0.7; }
@@ -78,6 +89,9 @@
         .kcard-ticker { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 3px; }
         .kcard-thesis { font-size: 11px; color: var(--text-secondary); line-height: 1.4; }
         .kcard-action { font-size: 11px; color: var(--text-primary); margin-top: 4px; }
+        .kcard-meta-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: 10px; margin-top: 6px; font-family: 'JetBrains Mono', monospace; }
+        .kcard-meta-grid > span:nth-child(odd) { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+        .kcard-meta-grid > span:nth-child(even) { color: var(--text-primary); }
         .kcard-confidence { font-size: 10px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
         .kcard-risks { font-size: 10px; color: var(--accent-danger, #ff6b6b); margin-top: 3px; }
         .kcard-source { font-size: 9px; color: var(--text-muted); margin-top: 5px; }
@@ -194,7 +208,7 @@
                     <button class="run-now-btn" id="run-now-btn" onclick="runResearchNow()">▶ Run now</button>
                 </div>
                 <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">
-                    Elke kolom = één dag (links = vandaag, rechts terug in de tijd). Per dag: bovenaan ⚡ <b>actionable</b> (judge zegt: trade nu), eronder 👀 <b>monitor</b>, dan de ruwe ideeën. Scroll horizontaal voor history. Auto-run 2× per dag (06:00 + 18:00 UTC). <b>Run now</b> voor directe sweep (~2-3 min).
+                    Vier-stage pipeline. <b>Scout</b> ingest't dagelijks (newsletters/reddit/youtube/RSS). <b>Skeptic</b> valideert tegen live markt. <b>Stakes</b> bepaalt sizing. <b>Trader</b> schrijft het concrete plan. Auto-run 2× per dag, of <b>Run now</b> voor een directe sweep (~3 min).
                 </p>
                 <div class="stats-bar" id="stats-bar">
                     <div class="stat-block"><div class="stat-num" id="stat-today">—</div><div class="stat-label">Today</div></div>
@@ -383,53 +397,61 @@
             document.getElementById('stat-total').textContent = items.length;
         }
 
+        // Stage-based kanban. Each column = one pipeline stage.
+        const STAGES = [
+            { key: 'raw',        title: '🔍 Ideas',     subtitle: 'Scout surfaced' },
+            { key: 'validated',  title: '✅ Validated', subtitle: 'Skeptic approved' },
+            { key: 'staked',     title: '💰 Stakes',    subtitle: 'Sizing assigned' },
+            { key: 'implement',  title: '🎯 Implement', subtitle: 'Ready trade plan' },
+        ];
+
         function renderKanban(items) {
             const el = document.getElementById('kanban-row');
             const visible = showAll
                 ? items
-                : items.filter(it => it.status !== 'archived' && it.status !== 'dismissed');
+                : items.filter(it => it.status !== 'archived' && it.status !== 'dismissed' && it.stage !== 'rejected');
             if (!visible.length) {
                 el.innerHTML = `<div class="empty">Geen ideeën zichtbaar${showAll ? '' : ' (toggle "Show archived" om alles te zien)'}. Klik "Run now" voor de eerste scan.</div>`;
                 return;
             }
-            // Group by day (UTC) — newest first
-            const groups = new Map();
+            // Bucket by stage
+            const buckets = {};
+            for (const s of STAGES) buckets[s.key] = [];
+            buckets.rejected = [];
             for (const it of visible) {
-                const dk = _dateKey(it.discovered_at);
-                if (!groups.has(dk)) groups.set(dk, []);
-                groups.get(dk).push(it);
+                const stage = it.stage || 'raw';
+                if (buckets[stage]) buckets[stage].push(it);
+                else buckets.raw.push(it);
             }
-            const sortedDays = Array.from(groups.keys()).sort().reverse();
-            el.innerHTML = sortedDays.map(day => renderKanbanColumn(day, groups.get(day))).join('');
+            // Within each stage: most recent first (already reversed by API)
+            const cols = STAGES.map(s => renderStageColumn(s, buckets[s.key]));
+            if (showAll && buckets.rejected.length) {
+                cols.push(renderStageColumn(
+                    { key: 'rejected', title: '✗ Rejected', subtitle: 'Skeptic rejected' },
+                    buckets.rejected
+                ));
+            }
+            el.innerHTML = cols.join('');
         }
 
-        function _verdict(it) {
-            return (it.verdict || (it.judgement || {}).verdict || '').toLowerCase();
-        }
-
-        function renderKanbanColumn(dayKey, dayItems) {
-            const actionable = dayItems.filter(it => _verdict(it) === 'actionable');
-            const monitor = dayItems.filter(it => _verdict(it) === 'monitor');
-            const other = dayItems.filter(it => !['actionable','monitor'].includes(_verdict(it)));
-            const dayCounts = `${dayItems.length} ${dayItems.length === 1 ? 'idea' : 'ideas'} · ${actionable.length}⚡ · ${monitor.length}👀`;
-            const section = (label, list, klass) => {
-                if (!list.length) return '';
-                return `<div class="kanban-section-label">${label}</div>` +
-                       list.map(it => renderKanbanCard(it, klass)).join('');
-            };
-            return `<div class="kanban-col">
+        function renderStageColumn(stage, items) {
+            const cards = items.length
+                ? items.map(it => renderKanbanCard(it, stage.key)).join('')
+                : '<div class="empty-col">Niks in deze kolom</div>';
+            return `<div class="kanban-col stage-${stage.key}">
                 <div class="kanban-col-header">
-                    <div class="day-title">${escapeHtml(_dayLabel(dayKey))}</div>
-                    <div class="day-counts">${dayCounts}</div>
+                    <div class="stage-title">${stage.title}</div>
+                    <div class="stage-subtitle">${stage.subtitle}</div>
+                    <div class="stage-counts">${items.length} ${items.length === 1 ? 'idea' : 'ideas'}</div>
                 </div>
-                ${section('⚡ Actionable', actionable, 'v-actionable')}
-                ${section('👀 Monitor', monitor, 'v-monitor')}
-                ${section('🤖 Ideas', other, '')}
+                ${cards}
             </div>`;
         }
 
-        function renderKanbanCard(it, verdictClass) {
-            const j = it.judgement || {};
+        function renderKanbanCard(it, stageKey) {
+            const sk = it.skeptic || {};
+            const st = it.stakes || {};
+            const tr = it.trader || {};
             const mt = (it.market_type || 'macro').toLowerCase();
             const stars = '★'.repeat(it.conviction || 0);
             const status = it.status || 'open';
@@ -438,11 +460,37 @@
                 : null;
             const tLabel = t ? t.toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' }) : '';
             const ticker = it.ticker_or_event || '?';
-            const action = j.suggested_action
-                ? `<div class="kcard-action">→ ${escapeHtml(j.suggested_action.substring(0, 140))}</div>` : '';
-            const conf = j.confidence != null ? `<span class="kcard-confidence">${Math.round(j.confidence * 100)}%</span>` : '';
-            const risks = j.risks ? `<div class="kcard-risks">⚠ ${escapeHtml(j.risks.substring(0, 100))}</div>` : '';
-            const marketUrl = j.target_market_url;
+
+            // Stage-specific content: each column shows the role's output
+            let bodyLines = '';
+            if (stageKey === 'implement') {
+                const action = tr.action_summary || tr.exit_triggers || '';
+                bodyLines = `
+                    <div class="kcard-action">→ ${escapeHtml((action).substring(0, 140))}</div>
+                    <div class="kcard-meta-grid">
+                        <span>Stake</span><span>$${st.stake_usd ?? '—'}</span>
+                        <span>Entry</span><span>${tr.entry_price ?? '—'}</span>
+                        <span>Exit</span><span>${escapeHtml((tr.exit_triggers || '').substring(0, 30))}</span>
+                    </div>`;
+            } else if (stageKey === 'staked') {
+                bodyLines = `
+                    <div class="kcard-thesis">${escapeHtml((sk.strong_thesis || it.thesis || '').substring(0, 140))}</div>
+                    <div class="kcard-action">💰 Stake $${st.stake_usd ?? '—'} — ${escapeHtml((st.rationale || '').substring(0, 100))}</div>`;
+            } else if (stageKey === 'validated') {
+                bodyLines = `
+                    <div class="kcard-thesis">${escapeHtml((sk.strong_thesis || it.thesis || '').substring(0, 160))}</div>
+                    ${sk.devils_advocate ? `<div class="kcard-risks">⚠ ${escapeHtml(sk.devils_advocate.substring(0, 100))}</div>` : ''}`;
+            } else if (stageKey === 'rejected') {
+                bodyLines = `
+                    <div class="kcard-thesis">${escapeHtml((it.thesis || '').substring(0, 100))}</div>
+                    <div class="kcard-risks">✗ ${escapeHtml((sk.rejected_reason || '').substring(0, 120))}</div>`;
+            } else { // raw
+                bodyLines = `
+                    <div class="kcard-thesis">${escapeHtml((it.thesis || '').substring(0, 160))}</div>
+                    ${it.why_now ? `<div class="kcard-action" style="font-style:italic;">${escapeHtml(it.why_now.substring(0,100))}</div>` : ''}`;
+            }
+
+            const marketUrl = tr.target_market_url;
             const sourceUrl = it.source_url;
             const linkHtml = marketUrl
                 ? `<a class="primary" href="${escapeHtml(marketUrl)}" target="_blank">Open market →</a>`
@@ -452,19 +500,15 @@
                    <button onclick="markAgentIdea('${it.id}','archived');loadAgentIdeas();">📁</button>
                    <button onclick="markAgentIdea('${it.id}','dismissed');loadAgentIdeas();">✗</button>`
                 : `<button onclick="markAgentIdea('${it.id}','open');loadAgentIdeas();">↺</button>`;
-            const thesisText = (j.suggested_action ? '' : (it.thesis || '')).substring(0, 160);
-            const thesisLine = thesisText
-                ? `<div class="kcard-thesis">${escapeHtml(thesisText)}</div>` : '';
-            return `<div class="kcard ${verdictClass} s-${status}">
+
+            return `<div class="kcard stage-${stageKey} s-${status}">
                 <div class="kcard-top">
                     <span class="kcard-tag ${mt}">${escapeHtml(it.market_type || 'macro')}</span>
                     <span class="kcard-stars">${stars}</span>
                 </div>
                 <div class="kcard-ticker">${escapeHtml(ticker)}</div>
-                ${thesisLine}
-                ${action}
-                ${risks}
-                <div class="kcard-source">${tLabel} · ${escapeHtml(it.source || '?')} ${conf}</div>
+                ${bodyLines}
+                <div class="kcard-source">${tLabel} · ${escapeHtml(it.source || '?')}</div>
                 <div class="kcard-actions">
                     ${linkHtml}
                     ${actionBtns}

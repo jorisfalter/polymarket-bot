@@ -258,9 +258,8 @@ async def _dedupe_and_rank(ideas: List[Dict]) -> List[Dict]:
 # ──────────────────────────────────────────────────────────────────────
 
 def _persist(ideas: List[Dict]) -> List[Dict]:
-    """Append each idea as a row with id + discovered_at + status. Returns
-    the same list with the id field populated, so downstream judge can
-    update by id."""
+    """Append each idea as a row with id + discovered_at + status + stage.
+    Returns the same list with id/stage populated."""
     IDEAS_PATH.parent.mkdir(parents=True, exist_ok=True)
     now = datetime.utcnow().isoformat()
     rows = []
@@ -269,7 +268,8 @@ def _persist(ideas: List[Dict]) -> List[Dict]:
             row = {
                 "id": uuid.uuid4().hex[:12],
                 "discovered_at": now,
-                "status": "open",  # open / acted / archived / dismissed
+                "status": "open",       # open / acted / archived / dismissed
+                "stage": "raw",         # raw / validated / staked / implement / rejected
                 **idea,
             }
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -277,8 +277,9 @@ def _persist(ideas: List[Dict]) -> List[Dict]:
     return rows
 
 
-def update_idea_judgement(idea_id: str, judgement: Dict) -> bool:
-    """Rewrite the JSONL in place with the judgement attached to the row."""
+def update_idea_pipeline(idea_id: str, fields: Dict) -> bool:
+    """Update an idea row with new pipeline fields (skeptic/stakes/trader/stage).
+    Rewrites the file in place — fine while the JSONL stays small."""
     if not IDEAS_PATH.exists():
         return False
     rows = []
@@ -291,8 +292,7 @@ def update_idea_judgement(idea_id: str, judgement: Dict) -> bool:
         except json.JSONDecodeError:
             continue
         if row.get("id") == idea_id:
-            row["judgement"] = judgement
-            row["verdict"] = judgement.get("verdict")  # denormalized for fast filter
+            row.update(fields)
             found = True
         rows.append(row)
     if not found:
@@ -307,48 +307,43 @@ def _format_digest(ideas: List[Dict]) -> str:
     if not ideas:
         return "📭 <b>Research digest</b> — geen nieuwe ideeën vandaag."
     today = datetime.utcnow().strftime("%Y-%m-%d")
-    # Surface actionable verdicts first if the judgement has run
-    actionable = [i for i in ideas if (i.get("judgement") or {}).get("verdict") == "actionable"]
-    monitor = [i for i in ideas if (i.get("judgement") or {}).get("verdict") == "monitor"]
-    rest = [i for i in ideas if (i.get("judgement") or {}).get("verdict") in (None, "dismiss")]
-
-    lines = [f"📰 <b>Research digest — {today}</b>",
-             f"{len(ideas)} ideas surfaced · {len(actionable)} actionable · {len(monitor)} watching"]
-
-    if actionable:
-        lines.append("\n🎯 <b>ACTIONABLE NOW</b>")
-        for i, idea in enumerate(actionable[:5], start=1):
+    by_stage = {s: [i for i in ideas if i.get("stage") == s]
+                for s in ("implement", "staked", "validated", "rejected")}
+    lines = [
+        f"🔬 <b>Research pipeline — {today}</b>",
+        f"{len(ideas)} ideas door pipeline · "
+        f"{len(by_stage['implement'])}🎯 · {len(by_stage['staked'])}💰 · "
+        f"{len(by_stage['validated'])}✅ · {len(by_stage['rejected'])}❌",
+    ]
+    if by_stage["implement"]:
+        lines.append("\n🎯 <b>READY TO TRADE</b>")
+        for i, idea in enumerate(by_stage["implement"][:5], start=1):
             ticker = idea.get("ticker_or_event") or "?"
-            j = idea.get("judgement") or {}
-            action = (j.get("suggested_action") or "")[:200]
-            url = j.get("target_market_url") or ""
+            tr = idea.get("trader") or {}
+            st = idea.get("stakes") or {}
+            url = tr.get("target_market_url") or ""
             url_part = f' <a href="{url}">[market]</a>' if url else ""
             lines.append(f"\n<b>{i}. {ticker}</b>{url_part}")
-            lines.append(f"  → {action}")
-            if j.get("stake_usd"):
-                lines.append(f"  <i>Stake:</i> ${j['stake_usd']} @ {j.get('entry_price','?')}")
-            risks = (j.get("risks") or "")[:120]
-            if risks:
-                lines.append(f"  <i>Risk:</i> {risks}")
-
-    if monitor:
-        lines.append(f"\n👀 <b>WATCHING ({len(monitor)})</b>")
-        for idea in monitor[:5]:
+            lines.append(f"  → {(tr.get('action_summary') or '')[:180]}")
+            stake = st.get("stake_usd")
+            entry = tr.get("entry_price")
+            if stake or entry:
+                lines.append(f"  <i>Stake:</i> ${stake} @ entry {entry}")
+            ex = tr.get("exit_triggers")
+            if ex:
+                lines.append(f"  <i>Exit:</i> {ex[:120]}")
+    if by_stage["staked"]:
+        lines.append(f"\n💰 <b>STAKED ({len(by_stage['staked'])})</b>")
+        for idea in by_stage["staked"][:5]:
             ticker = idea.get("ticker_or_event") or "?"
-            j = idea.get("judgement") or {}
-            lines.append(f"  • {ticker} — {(j.get('suggested_action') or '')[:120]}")
-
-    if not actionable and not monitor and rest:
-        # No judgement ran or all dismissed — show raw top 5
-        lines.append("\nTop 5 surfaced:")
-        for i, idea in enumerate(rest[:5], start=1):
-            mt = (idea.get("market_type") or "?").upper()
+            st = idea.get("stakes") or {}
+            lines.append(f"  • {ticker} — ${st.get('stake_usd')} ({(st.get('rationale') or '')[:80]})")
+    if by_stage["validated"]:
+        lines.append(f"\n✅ <b>VALIDATED ({len(by_stage['validated'])})</b>")
+        for idea in by_stage["validated"][:5]:
             ticker = idea.get("ticker_or_event") or "?"
-            conv = "★" * int(idea.get("conviction") or 0)
-            thesis = (idea.get("thesis") or "")[:160]
-            lines.append(f"\n<b>{i}. [{mt}] {ticker}</b> {conv}")
-            lines.append(f"  {thesis}")
-
+            sk = idea.get("skeptic") or {}
+            lines.append(f"  • {ticker} — {(sk.get('strong_thesis') or '')[:100]}")
     lines.append("\n→ Dashboard: https://polymarket.ai-tigers.com/research")
     return "\n".join(lines)
 
@@ -366,55 +361,55 @@ async def _send_digest(ideas: List[Dict]) -> None:
 # ──────────────────────────────────────────────────────────────────────
 
 async def run_daily() -> Dict:
-    """Full pipeline. Returns a summary dict suitable for an API response."""
+    """Full Scout→Skeptic→Stakes→Trader pipeline. Returns summary for API."""
     started = datetime.utcnow()
     items = await _ingest_all()
     if not items:
         await _send_digest([])
-        return {"ingested": 0, "ideas": 0, "ms": 0}
+        return {"ingested": 0, "filtered": 0, "top": 0, "ms": 0, "ideas": []}
     ideas = await _filter_all(items)
     top = await _dedupe_and_rank(ideas)
 
-    # Persist FIRST (rows get ids), THEN judge — so we can update each row
-    # in place with its verdict. Decoupled from research so a judge failure
-    # doesn't kill the surfaced ideas.
-    judged: List[Dict] = []
+    # Persist first so rows get ids — then the 3-stage pipeline updates
+    # each row in place with skeptic/stakes/trader/stage fields.
+    piped: List[Dict] = []
     if top:
         persisted = _persist(top)
         try:
-            from .idea_judge import judge_many
-            judged = await judge_many(persisted, concurrency=3)
-            # Write each verdict back to the row
-            for it in judged:
-                j = it.get("judgement")
-                if j and it.get("id"):
-                    update_idea_judgement(it["id"], j)
+            from .pipeline import run_pipeline
+            piped = await run_pipeline(persisted, concurrency=2)
+            for it in piped:
+                upd = {k: it.get(k) for k in ("skeptic", "stakes", "trader", "stage") if it.get(k) is not None}
+                if upd and it.get("id"):
+                    update_idea_pipeline(it["id"], upd)
         except Exception as e:
-            logger.warning(f"judge pass failed (ideas persisted without verdicts): {e}")
-            judged = persisted  # fall back to surfacing ideas without verdicts
+            logger.warning(f"pipeline failed (ideas persisted as raw): {e}")
+            piped = persisted
 
-    await _send_digest(judged or top)
+    await _send_digest(piped or top)
     elapsed = int((datetime.utcnow() - started).total_seconds() * 1000)
 
-    # Counters for the API caller
-    actionable = sum(1 for it in judged if (it.get("judgement") or {}).get("verdict") == "actionable")
-    monitor = sum(1 for it in judged if (it.get("judgement") or {}).get("verdict") == "monitor")
+    # Counters for API + Telegram digest
+    def _count_stage(s: str) -> int:
+        return sum(1 for it in piped if it.get("stage") == s)
     return {
         "ingested": len(items),
         "filtered": len(ideas),
         "top": len(top),
-        "actionable": actionable,
-        "monitor": monitor,
+        "validated": _count_stage("validated"),
+        "staked": _count_stage("staked"),
+        "implement": _count_stage("implement"),
+        "rejected": _count_stage("rejected"),
         "ms": elapsed,
-        "ideas": judged or top,
+        "ideas": piped,
     }
 
 
 def list_ideas(limit: int = 100, status: Optional[str] = None,
                market_type: Optional[str] = None,
-               verdict: Optional[str] = None) -> List[Dict]:
+               stage: Optional[str] = None) -> List[Dict]:
     """List ideas, filterable by user-status (open/acted/...), market_type,
-    and/or judge verdict (actionable/monitor/dismiss)."""
+    and/or pipeline stage (raw/validated/staked/implement/rejected)."""
     if not IDEAS_PATH.exists():
         return []
     out: List[Dict] = []
@@ -429,10 +424,8 @@ def list_ideas(limit: int = 100, status: Optional[str] = None,
             continue
         if market_type and row.get("market_type") != market_type:
             continue
-        if verdict:
-            row_verdict = row.get("verdict") or (row.get("judgement") or {}).get("verdict")
-            if row_verdict != verdict:
-                continue
+        if stage and row.get("stage") != stage:
+            continue
         out.append(row)
     out.reverse()
     return out[:limit]
