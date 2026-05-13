@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=19">
+    <link rel="stylesheet" href="/static/styles.css?v=20">
     <script src="/static/theme.js?v=2"></script>
     <style>
         .agent-ideas-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
@@ -55,7 +55,40 @@
         .source-line a { color: var(--accent-secondary); text-decoration: none; }
         .source-line a:hover { text-decoration: underline; }
 
-        /* Judge / Verdicts section */
+        /* Kanban per day */
+        .kanban-scroll { overflow-x: auto; padding-bottom: 12px; -webkit-overflow-scrolling: touch; }
+        .kanban-row { display: flex; gap: 14px; min-width: max-content; padding: 4px; }
+        .kanban-col { flex: 0 0 300px; max-width: 300px; background: var(--bg-tertiary); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+        .kanban-col-header { position: sticky; top: 0; background: var(--bg-tertiary); padding-bottom: 8px; border-bottom: 1px solid var(--border-color); margin-bottom: 4px; }
+        .kanban-col-header .day-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .kanban-col-header .day-counts { font-size: 10px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+        .kanban-section-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 2px 2px; }
+        .kcard { padding: 10px; background: var(--bg-secondary); border-radius: 6px; border-left: 3px solid var(--accent-purple); font-size: 12px; line-height: 1.4; }
+        .kcard.v-actionable { border-left-color: var(--accent-success, #5bdb89); background: rgba(91,219,137,0.08); }
+        .kcard.v-monitor { border-left-color: #ffd95e; background: rgba(255,217,94,0.06); }
+        .kcard.s-acted { opacity: 0.7; }
+        .kcard.s-archived, .kcard.s-dismissed { opacity: 0.45; }
+        .kcard-top { display: flex; justify-content: space-between; gap: 6px; align-items: center; margin-bottom: 4px; }
+        .kcard-tag { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 600; text-transform: uppercase; }
+        .kcard-tag.stocks { background: rgba(91,219,137,0.15); color: var(--accent-success); }
+        .kcard-tag.crypto { background: rgba(255,165,0,0.15); color: #ffa500; }
+        .kcard-tag.polymarket { background: rgba(0,212,255,0.15); color: var(--accent-secondary); }
+        .kcard-tag.macro { background: rgba(170,102,255,0.15); color: var(--accent-purple); }
+        .kcard-stars { font-size: 10px; color: #ffd95e; letter-spacing: 0.5px; }
+        .kcard-ticker { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 3px; }
+        .kcard-thesis { font-size: 11px; color: var(--text-secondary); line-height: 1.4; }
+        .kcard-action { font-size: 11px; color: var(--text-primary); margin-top: 4px; }
+        .kcard-confidence { font-size: 10px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .kcard-risks { font-size: 10px; color: var(--accent-danger, #ff6b6b); margin-top: 3px; }
+        .kcard-source { font-size: 9px; color: var(--text-muted); margin-top: 5px; }
+        .kcard-source a { color: var(--accent-secondary); }
+        .kcard-actions { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+        .kcard-actions button, .kcard-actions a { font-size: 9px; padding: 3px 8px; border-radius: 3px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer; font-family: inherit; text-decoration: none; }
+        .kcard-actions a.primary { background: var(--accent-primary); color: var(--bg-primary); border-color: var(--accent-primary); font-weight: 600; }
+        .kcard-actions button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+        .empty-col { font-size: 11px; color: var(--text-muted); font-style: italic; text-align: center; padding: 8px; }
+
+        /* Legacy verdicts-panel styles kept for backward compat (not used in new layout) */
         .verdicts-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
         .verdicts-panel h2 { font-size: 16px; margin: 0 0 6px 0; color: var(--text-primary); }
         .verdict-card { padding: 14px; margin-bottom: 12px; background: var(--bg-tertiary); border-radius: 8px; border-left: 4px solid var(--accent-success, #5bdb89); }
@@ -146,19 +179,10 @@
                 <a href="/" class="sub-link">Detection</a>
                 <a href="/strategy" class="sub-link">Engine</a>
             </div>
-            <!-- Verdicts (judge AI: which ideas are actionable now) -->
-            <div class="verdicts-panel">
-                <h2>⚖️ Verdicts <span class="count" id="verdicts-count">0</span></h2>
-                <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">
-                    Per top-idea kijkt een tweede LLM-laag naar de live market state (Polymarket Gamma, yfinance, crypto spot+funding) en de bot's portfolio. Output is <b>advisory</b> — geen auto-trades. Acties die hier verschijnen heb je nu of binnenkort iets aan.
-                </p>
-                <div id="verdicts-list"><div class="empty">Loading...</div></div>
-            </div>
-
-            <!-- Agent ideas feed (LLM scan across newsletters/reddit/youtube/RSS) -->
+            <!-- Research kanban: per-day columns with actionable verdicts on top, monitor next, raw ideas below -->
             <div class="agent-ideas-panel">
                 <div class="agent-ideas-header">
-                    <h2>🤖 Agent Ideas Feed</h2>
+                    <h2>🔬 Research Kanban</h2>
                     <div class="pills">
                         <button class="pill active" data-filter="all" onclick="filterAgent('all', this)">All markets</button>
                         <button class="pill" data-filter="stocks" onclick="filterAgent('stocks', this)">Stocks</button>
@@ -170,7 +194,7 @@
                     <button class="run-now-btn" id="run-now-btn" onclick="runResearchNow()">▶ Run now</button>
                 </div>
                 <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">
-                    Hedge-fund-style scan over newsletters, Reddit, YouTube en RSS. LLM filtert noise, dedupliceert per ticker/event, ranked op novelty × actionability × conviction. Auto-run <b>2× per dag</b> (06:00 + 18:00 UTC). Of klik <b>Run now</b> voor een directe sweep (~2-3 min).
+                    Elke kolom = één dag (links = vandaag, rechts terug in de tijd). Per dag: bovenaan ⚡ <b>actionable</b> (judge zegt: trade nu), eronder 👀 <b>monitor</b>, dan de ruwe ideeën. Scroll horizontaal voor history. Auto-run 2× per dag (06:00 + 18:00 UTC). <b>Run now</b> voor directe sweep (~2-3 min).
                 </p>
                 <div class="stats-bar" id="stats-bar">
                     <div class="stat-block"><div class="stat-num" id="stat-today">—</div><div class="stat-label">Today</div></div>
@@ -179,7 +203,9 @@
                     <div class="stat-block subtle"><div class="stat-num" id="stat-acted">—</div><div class="stat-label">Acted on</div></div>
                     <div class="stat-block subtle"><div class="stat-num" id="stat-total">—</div><div class="stat-label">Total ever</div></div>
                 </div>
-                <div id="agent-ideas"><div class="empty">Loading...</div></div>
+                <div class="kanban-scroll">
+                    <div class="kanban-row" id="kanban-row"><div class="empty">Loading...</div></div>
+                </div>
             </div>
             <div class="research-grid">
                 <!-- Newsletter feed -->
@@ -305,20 +331,19 @@
             loadIdeas();
         }
 
-        // ─── Agent ideas feed (LLM research) ───
+        // ─── Research kanban (LLM ideas + judge verdicts, day-grouped) ───
         let agentFilter = 'all';
         let showAll = false;  // when true, include archived/dismissed
 
         async function loadAgentIdeas() {
             try {
-                // Always fetch everything; filter client-side. Cheap because list is small.
                 const qs = agentFilter === 'all' ? '?limit=500' : `?limit=500&market_type=${agentFilter}`;
                 const res = await fetch('/api/research/agent-ideas' + qs);
                 const items = await res.json();
                 renderStats(items);
-                renderAgentFeed(items);
+                renderKanban(items);
             } catch (e) {
-                document.getElementById('agent-ideas').innerHTML =
+                document.getElementById('kanban-row').innerHTML =
                     '<div class="empty">Fetch failed: ' + e.message + '</div>';
             }
         }
@@ -358,17 +383,16 @@
             document.getElementById('stat-total').textContent = items.length;
         }
 
-        function renderAgentFeed(items) {
-            const el = document.getElementById('agent-ideas');
-            // Client-side filter for status
+        function renderKanban(items) {
+            const el = document.getElementById('kanban-row');
             const visible = showAll
                 ? items
                 : items.filter(it => it.status !== 'archived' && it.status !== 'dismissed');
             if (!visible.length) {
-                el.innerHTML = `<div class="empty">Geen ideeën zichtbaar${showAll ? '' : ' (toggle "Show archived" om alles te zien)'}. Klik "Run now" om de eerste scan te starten.</div>`;
+                el.innerHTML = `<div class="empty">Geen ideeën zichtbaar${showAll ? '' : ' (toggle "Show archived" om alles te zien)'}. Klik "Run now" voor de eerste scan.</div>`;
                 return;
             }
-            // Group by day key (newest first — items are already reversed from API)
+            // Group by day (UTC) — newest first
             const groups = new Map();
             for (const it of visible) {
                 const dk = _dateKey(it.discovered_at);
@@ -376,54 +400,75 @@
                 groups.get(dk).push(it);
             }
             const sortedDays = Array.from(groups.keys()).sort().reverse();
-            const html = sortedDays.map(day => {
-                const dayItems = groups.get(day);
-                const headerHtml = `<div class="day-header"><h3>${escapeHtml(_dayLabel(day))}</h3><span class="day-count">${dayItems.length} idea${dayItems.length === 1 ? '' : 's'}</span></div>`;
-                const cards = dayItems.map(it => renderIdeaCard(it)).join('');
-                return headerHtml + cards;
-            }).join('');
-            el.innerHTML = html;
+            el.innerHTML = sortedDays.map(day => renderKanbanColumn(day, groups.get(day))).join('');
         }
 
-        function renderIdeaCard(it) {
-            const stars = '★'.repeat(it.conviction || 0) + '☆'.repeat(5 - (it.conviction || 0));
+        function _verdict(it) {
+            return (it.verdict || (it.judgement || {}).verdict || '').toLowerCase();
+        }
+
+        function renderKanbanColumn(dayKey, dayItems) {
+            const actionable = dayItems.filter(it => _verdict(it) === 'actionable');
+            const monitor = dayItems.filter(it => _verdict(it) === 'monitor');
+            const other = dayItems.filter(it => !['actionable','monitor'].includes(_verdict(it)));
+            const dayCounts = `${dayItems.length} ${dayItems.length === 1 ? 'idea' : 'ideas'} · ${actionable.length}⚡ · ${monitor.length}👀`;
+            const section = (label, list, klass) => {
+                if (!list.length) return '';
+                return `<div class="kanban-section-label">${label}</div>` +
+                       list.map(it => renderKanbanCard(it, klass)).join('');
+            };
+            return `<div class="kanban-col">
+                <div class="kanban-col-header">
+                    <div class="day-title">${escapeHtml(_dayLabel(dayKey))}</div>
+                    <div class="day-counts">${dayCounts}</div>
+                </div>
+                ${section('⚡ Actionable', actionable, 'v-actionable')}
+                ${section('👀 Monitor', monitor, 'v-monitor')}
+                ${section('🤖 Ideas', other, '')}
+            </div>`;
+        }
+
+        function renderKanbanCard(it, verdictClass) {
+            const j = it.judgement || {};
             const mt = (it.market_type || 'macro').toLowerCase();
-            const url = it.source_url
-                ? `<a href="${escapeHtml(it.source_url)}" target="_blank">link</a>`
-                : '';
-            const sourceTitle = it.source_title
-                ? ` — ${escapeHtml(it.source_title.substring(0, 80))}`
-                : '';
+            const stars = '★'.repeat(it.conviction || 0);
             const status = it.status || 'open';
-            const statusBadge = status !== 'open'
-                ? `<span class="status-badge status-${status}">${status}</span>`
-                : '';
-            // Local time on the card (HH:MM)
             const t = it.discovered_at
                 ? new Date(it.discovered_at.endsWith('Z') ? it.discovered_at : it.discovered_at + 'Z')
                 : null;
             const tLabel = t ? t.toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' }) : '';
-            return `<div class="agent-idea-card status-${status}">
-                <div class="agent-idea-top">
-                    <div style="display:flex;gap:8px;align-items:center;">
-                        <span class="market-tag ${mt}">${escapeHtml(it.market_type || 'macro')}</span>
-                        ${statusBadge}
-                    </div>
-                    <span class="conviction-stars">${stars}</span>
+            const ticker = it.ticker_or_event || '?';
+            const action = j.suggested_action
+                ? `<div class="kcard-action">→ ${escapeHtml(j.suggested_action.substring(0, 140))}</div>` : '';
+            const conf = j.confidence != null ? `<span class="kcard-confidence">${Math.round(j.confidence * 100)}%</span>` : '';
+            const risks = j.risks ? `<div class="kcard-risks">⚠ ${escapeHtml(j.risks.substring(0, 100))}</div>` : '';
+            const marketUrl = j.target_market_url;
+            const sourceUrl = it.source_url;
+            const linkHtml = marketUrl
+                ? `<a class="primary" href="${escapeHtml(marketUrl)}" target="_blank">Open market →</a>`
+                : (sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank">Source →</a>` : '');
+            const actionBtns = status === 'open'
+                ? `<button onclick="markAgentIdea('${it.id}','acted');loadAgentIdeas();">✓</button>
+                   <button onclick="markAgentIdea('${it.id}','archived');loadAgentIdeas();">📁</button>
+                   <button onclick="markAgentIdea('${it.id}','dismissed');loadAgentIdeas();">✗</button>`
+                : `<button onclick="markAgentIdea('${it.id}','open');loadAgentIdeas();">↺</button>`;
+            const thesisText = (j.suggested_action ? '' : (it.thesis || '')).substring(0, 160);
+            const thesisLine = thesisText
+                ? `<div class="kcard-thesis">${escapeHtml(thesisText)}</div>` : '';
+            return `<div class="kcard ${verdictClass} s-${status}">
+                <div class="kcard-top">
+                    <span class="kcard-tag ${mt}">${escapeHtml(it.market_type || 'macro')}</span>
+                    <span class="kcard-stars">${stars}</span>
                 </div>
-                <div class="ticker-name">${escapeHtml(it.ticker_or_event || '?')}</div>
-                <div class="thesis-line">${escapeHtml(it.thesis || '')}</div>
-                ${it.why_now ? `<div class="why-now-line">Why now: ${escapeHtml(it.why_now)}</div>` : ''}
-                <div class="source-line">
-                    <span class="agent-idea-time">${tLabel}</span> · via <b>${escapeHtml(it.source || '?')}</b>${sourceTitle} ${url}
+                <div class="kcard-ticker">${escapeHtml(ticker)}</div>
+                ${thesisLine}
+                ${action}
+                ${risks}
+                <div class="kcard-source">${tLabel} · ${escapeHtml(it.source || '?')} ${conf}</div>
+                <div class="kcard-actions">
+                    ${linkHtml}
+                    ${actionBtns}
                 </div>
-                ${status === 'open' ? `<div class="agent-idea-actions">
-                    <button class="action-btn" onclick="markAgentIdea('${it.id}','acted')">✓ Acted</button>
-                    <button class="action-btn" onclick="markAgentIdea('${it.id}','archived')">📁 Archive</button>
-                    <button class="action-btn" onclick="markAgentIdea('${it.id}','dismissed')">✗ Dismiss</button>
-                </div>` : `<div class="agent-idea-actions">
-                    <button class="action-btn" onclick="markAgentIdea('${it.id}','open')">↺ Reopen</button>
-                </div>`}
             </div>`;
         }
 
@@ -468,18 +513,9 @@
             }
         }
 
-        // ─── Verdicts (judge AI) ───
-        async function loadVerdicts() {
-            try {
-                const res = await fetch('/api/research/verdicts');
-                const data = await res.json();
-                renderVerdicts(data);
-            } catch (e) {
-                document.getElementById('verdicts-list').innerHTML =
-                    '<div class="empty">Verdict fetch failed: ' + e.message + '</div>';
-            }
-        }
-
+        // Legacy verdicts loader (no longer used — kanban renders verdicts inline).
+        // Kept as no-op so any cached pages calling it don't 404.
+        async function loadVerdicts() { /* moved into renderKanban */ }
         function renderVerdicts(data) {
             const actionable = data.actionable || [];
             const monitor = data.monitor || [];
@@ -532,13 +568,11 @@
             </div>`;
         }
 
-        loadVerdicts();
-        loadAgentIdeas();
+        loadAgentIdeas();   // kanban (includes verdicts inline)
         loadNewsletters();
         loadIdeas();
         setInterval(loadNewsletters, 60000);
         setInterval(loadAgentIdeas, 90000);
-        setInterval(loadVerdicts, 90000);
     </script>
 </body>
 </html>
