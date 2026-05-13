@@ -123,11 +123,30 @@ class PolymarketClient:
             return []
     
     async def get_market(self, market_id: str) -> Optional[Dict[str, Any]]:
-        """Get single market details"""
+        """Get single market details by conditionId (the 0x-prefixed hex).
+
+        Polymarket changed the Gamma endpoint sometime around 2026-05-09:
+        the path-based form `/markets/{hex_id}` now returns 422
+        ("id is invalid"). The internal numeric `id` still works in the
+        path, but we don't have that — we have the conditionId. So we use
+        the query-param form `/markets?conditionId={hex}&limit=1` which
+        returns an array (possibly empty) and pick the first match.
+
+        This bug was silently breaking ai_agent + paper_trader + copy_trader
+        + strategy_engine for 4 days before we noticed (2026-05-13). All
+        their pre-flight market lookups returned None, which short-circuited
+        every trade decision.
+        """
+        if not market_id:
+            return None
         try:
-            response = await self.client.get(f"{self.gamma_url}/markets/{market_id}")
+            response = await self.client.get(
+                f"{self.gamma_url}/markets",
+                params={"conditionId": market_id, "limit": 1},
+            )
             response.raise_for_status()
-            return response.json()
+            data = response.json() or []
+            return data[0] if isinstance(data, list) and data else None
         except Exception as e:
             logger.error(f"Error fetching market {market_id}: {e}")
             return None
