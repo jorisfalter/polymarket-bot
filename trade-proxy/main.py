@@ -240,6 +240,69 @@ def check_market_tradeable(token_id: str, amount_usd: float = 0) -> tuple:
         return True, "metadata unreachable"
 
 
+def _build_failure_diagnostics(client, token_id: str, neg_risk: bool, midpoint: float) -> dict:
+    """Build a rich snapshot of WHY a trade likely failed. Only called on the
+    failure path so it doesn't slow successful trades.
+
+    Captures: orderbook depth (top 3 asks/bids), gamma metadata flags,
+    multi-outcome status, time-to-resolution. Persisted into trade_failures
+    so we can pattern-match later (e.g. 'all version_mismatch happens on
+    neg_risk markets with <5 asks').
+    """
+    diag = {"neg_risk": neg_risk, "midpoint": midpoint, "token_id": token_id[:20]}
+    # Orderbook depth
+    try:
+        book = client.get_order_book(token_id)
+        if book:
+            asks = list(getattr(book, "asks", []) or [])
+            bids = list(getattr(book, "bids", []) or [])
+            # py-clob-client returns asks high→low, cheapest at end
+            asks_sorted = sorted(asks, key=lambda x: float(x.price))[:3]
+            bids_sorted = sorted(bids, key=lambda x: -float(x.price))[:3]
+            diag["best_ask"] = float(asks_sorted[0].price) if asks_sorted else None
+            diag["best_bid"] = float(bids_sorted[0].price) if bids_sorted else None
+            diag["ask_levels"] = [{"price": float(a.price), "size": float(a.size)} for a in asks_sorted]
+            diag["bid_levels"] = [{"price": float(b.price), "size": float(b.size)} for b in bids_sorted]
+            diag["ask_count_total"] = len(asks)
+            diag["bid_count_total"] = len(bids)
+    except Exception as e:
+        diag["orderbook_error"] = str(e)[:120]
+
+    # Gamma metadata snapshot
+    try:
+        import httpx
+        r = httpx.get(
+            "https://gamma-api.polymarket.com/markets",
+            params={"clob_token_ids": token_id},
+            timeout=6.0,
+        )
+        if r.status_code == 200:
+            markets = r.json() or []
+            if markets:
+                m = markets[0]
+                # Multi-outcome detection: if the market belongs to an event
+                # with several markets, version_mismatch is more likely.
+                event_markets = m.get("events", [])
+                diag["gamma"] = {
+                    "question": m.get("question", "")[:120],
+                    "accepting_orders": m.get("acceptingOrders"),
+                    "active": m.get("active"),
+                    "closed": m.get("closed"),
+                    "archived": m.get("archived"),
+                    "end_date": m.get("endDate"),
+                    "uma_status": m.get("umaResolutionStatus"),
+                    "order_min_size": m.get("orderMinSize"),
+                    "volume": m.get("volume"),
+                    "liquidity": m.get("liquidity"),
+                    "n_markets_in_event": len(event_markets) if isinstance(event_markets, list) else None,
+                    "outcomes_raw": m.get("outcomes"),
+                }
+    except Exception as e:
+        diag["gamma_error"] = str(e)[:120]
+
+    return diag
+
+
 class BuyRequest(BaseModel):
     token_id: str
     amount_usd: float
@@ -326,6 +389,11 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
         else:
             # Surface the FULL response so we can diagnose ambiguous errors
             error = (response or {}).get("errorMsg") or (response or {}).get("error") or "Unknown"
+            # Capture rich diagnostics for failure analysis. Only on failure
+            # to keep success path fast. order_version_mismatch is our prime
+            # suspect for neg-risk multi-outcome markets — these fields will
+            # let us correlate failures with market characteristics.
+            diag = _build_failure_diagnostics(client, req.token_id, neg_risk, midpoint)
             return {
                 "success": False,
                 "error": f"{error} (after {attempts} attempts)",
@@ -333,6 +401,7 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
                 "neg_risk": neg_risk,
                 "full_response": response,
                 "attempts": attempts,
+                "diagnostics": diag,
             }
 
     except Exception as e:

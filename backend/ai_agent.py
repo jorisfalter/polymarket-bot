@@ -1167,6 +1167,11 @@ class AITradingAgent:
                         error=result.error or "unknown",
                         confidence=confidence,
                         thesis=thesis,
+                        # Diagnostics blob from trade-proxy: neg_risk +
+                        # orderbook depth + gamma metadata. Lets us pattern-
+                        # match why order_version_mismatch keeps failing
+                        # (neg-risk multi-outcome events suspected).
+                        market_metadata=getattr(result, "diagnostics", None),
                     )
                     await send_telegram(f"❌ Trade failed: {market_question[:50]}\nReason: {result.error}")
 

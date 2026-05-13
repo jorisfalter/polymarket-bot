@@ -51,6 +51,7 @@ class BuyResult:
     order_id: Optional[str] = None
     error: Optional[str] = None
     timestamp: str = ""
+    diagnostics: Optional[Dict] = None  # neg_risk + orderbook + gamma snapshot on failure
 
     def __post_init__(self):
         if not self.timestamp:
@@ -337,7 +338,11 @@ class AutoSeller:
                         order_id=data.get("order_id"),
                     )
                 else:
-                    return BuyResult(success=False, token_id=token_id, amount_usd=amount_usd, price=data.get("price", 0), error=data.get("error", "Proxy error"))
+                    return BuyResult(
+                        success=False, token_id=token_id, amount_usd=amount_usd,
+                        price=data.get("price", 0), error=data.get("error", "Proxy error"),
+                        diagnostics=data.get("diagnostics"),
+                    )
         except Exception as e:
             logger.error(f"Proxy buy error: {e}")
             return BuyResult(success=False, token_id=token_id, amount_usd=amount_usd, price=0, error=str(e))
