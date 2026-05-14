@@ -100,35 +100,47 @@ def _parse_json(raw: str) -> Optional[Dict]:
 # ──────────────────────────────────────────────────────────────────────
 
 async def _polymarket_search(query: str, limit: int = 3) -> List[Dict]:
+    """Search Polymarket for open markets matching the query.
+
+    NOTE: `/markets?q=` is broken on Gamma — it ignores the q parameter and
+    returns a default list (Rihanna×GTA-VI, Jesus, etc). This poisoned every
+    polymarket_matches context until 2026-05-14, causing irrelevant URLs in
+    Trader output (e.g. an FSK stock idea getting the Rihanna market URL).
+
+    Switched to `/public-search` which is the same endpoint the polymarket.com
+    site search uses. Returns {events: [...]} with title + slug. We
+    convert to the shape this module returns.
+    """
     if not query:
         return []
-    cleaned = re.sub(r"[^a-zA-Z0-9 ]", " ", query)[:80]
+    cleaned = re.sub(r"[^a-zA-Z0-9 ]", " ", query)[:80].strip()
+    if not cleaned:
+        return []
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(
-                f"{settings.gamma_api_url}/markets",
-                params={"q": cleaned, "active": "true", "closed": "false", "limit": limit},
+                f"{settings.gamma_api_url}/public-search",
+                params={
+                    "q": cleaned,
+                    "limit_per_type": limit,
+                    "events_status": "active",
+                },
             )
             r.raise_for_status()
-            markets = r.json() or []
+            data = r.json() or {}
     except Exception as e:
         logger.debug(f"polymarket search failed: {e}")
         return []
+    events = data.get("events") or []
     out = []
-    for m in markets[:limit]:
-        prices = m.get("outcomePrices") or "[]"
-        try:
-            prices = json.loads(prices) if isinstance(prices, str) else prices
-        except Exception:
-            prices = []
+    for e in events[:limit]:
         out.append({
-            "question": m.get("question", "")[:120],
-            "slug": m.get("slug", ""),
-            "url": f"https://polymarket.com/event/{m.get('slug','')}",
-            "outcomes": m.get("outcomes"),
-            "outcome_prices": prices,
-            "end_date": m.get("endDate", "")[:19],
-            "volume": m.get("volume") or 0,
+            "question": (e.get("title") or "")[:120],
+            "slug": e.get("slug", ""),
+            "url": f"https://polymarket.com/event/{e.get('slug','')}",
+            "end_date": (e.get("endDate", "") or "")[:19],
+            "volume": e.get("volume") or 0,
+            "liquidity": e.get("liquidity") or 0,
         })
     return out
 
