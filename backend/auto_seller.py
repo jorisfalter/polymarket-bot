@@ -272,14 +272,19 @@ class AutoSeller:
         token_id: str,
         amount_usd: float,
         max_price: Optional[float] = None,
+        condition_id: Optional[str] = None,
     ) -> "BuyResult":
         """
         Execute a buy order. Routes through trade proxy if configured
         (to bypass Polymarket geoblock), otherwise executes directly.
+
+        condition_id (0x conditionId) enables correct Gamma pre-flight
+        in the proxy. Without it, pre-flight is skipped (still safe —
+        CLOB will reject on real issues).
         """
         # Route through proxy if configured
         if settings.trade_proxy_url:
-            return await self._proxy_buy(token_id, amount_usd, max_price)
+            return await self._proxy_buy(token_id, amount_usd, max_price, condition_id=condition_id)
 
         if not self.is_ready():
             return BuyResult(
@@ -318,8 +323,14 @@ class AutoSeller:
             logger.error(f"Buy execution error: {e}")
             return BuyResult(success=False, token_id=token_id, amount_usd=amount_usd, price=0, error=str(e))
 
-    async def _proxy_buy(self, token_id: str, amount_usd: float, max_price: Optional[float]) -> "BuyResult":
-        """Execute buy via the trade proxy (Fly.io Tokyo)."""
+    async def _proxy_buy(self, token_id: str, amount_usd: float, max_price: Optional[float],
+                          condition_id: Optional[str] = None) -> "BuyResult":
+        """Execute buy via the trade proxy (Fly.io Tokyo).
+
+        condition_id (0x-prefixed hex) lets the proxy do a working Gamma
+        pre-flight via `?condition_ids=`. Without it, pre-flight gracefully
+        degrades to "skipped" — `?clob_token_ids=` is broken on Gamma.
+        """
         import httpx
         try:
             logger.info(f"Proxy buy: ${amount_usd:.2f} of {token_id[:20]}...")
@@ -327,7 +338,12 @@ class AutoSeller:
                 r = await client.post(
                     f"{settings.trade_proxy_url}/buy",
                     headers={"Authorization": f"Bearer {settings.trade_proxy_secret}"},
-                    json={"token_id": token_id, "amount_usd": amount_usd, "max_price": max_price},
+                    json={
+                        "token_id": token_id,
+                        "amount_usd": amount_usd,
+                        "max_price": max_price,
+                        "condition_id": condition_id,
+                    },
                 )
                 data = r.json()
                 if data.get("success"):

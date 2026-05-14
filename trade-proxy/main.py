@@ -173,23 +173,28 @@ def check_orderbook_feasibility(token_id: str, expected_price: float) -> tuple:
     return True, "ok"
 
 
-def check_market_tradeable(token_id: str, amount_usd: float = 0) -> tuple:
+def check_market_tradeable(token_id: str, amount_usd: float = 0, condition_id: str = "") -> tuple:
     """Pre-flight check: is the market actually tradeable AND does our order
     meet its minimum size?
 
-    Returns (ok, reason). False reasons include: disputed UMA resolution,
-    closed/inactive/archived market, OR amount below the market-specific
-    `orderMinSize` (which Polymarket exposes per-market and varies from $1
-    on standard binaries to $5+ on multi-outcome events with 0.001 ticks).
+    Looks up market metadata via Gamma `?condition_ids=` (the only query-param
+    that actually filters — `?clob_token_ids=` is silently ignored and returns
+    the Rihanna×GTA-VI default for every call, which was poisoning this
+    function from day 1).
 
-    Polymarket's CLOB rejects size-violations with the same confusing
-    'order_version_mismatch' error as version mismatches — checking up
-    front gives us a clean diagnostic."""
+    Falls back to CLOB `/markets/{condition_id}` if Gamma fails.
+
+    Without condition_id we can't filter (Gamma `clob_token_ids=` is broken),
+    so we skip the pre-flight gracefully — CLOB will still reject orders on
+    closed/UMA/archived markets via the actual order submission.
+    """
     import httpx
+    if not condition_id:
+        return True, "no condition_id, skipping gamma pre-flight"
     try:
         r = httpx.get(
             "https://gamma-api.polymarket.com/markets",
-            params={"clob_token_ids": token_id},
+            params={"condition_ids": condition_id, "limit": 1},
             timeout=10.0,
         )
         r.raise_for_status()
@@ -240,7 +245,7 @@ def check_market_tradeable(token_id: str, amount_usd: float = 0) -> tuple:
         return True, "metadata unreachable"
 
 
-def _build_failure_diagnostics(client, token_id: str, neg_risk: bool, midpoint: float) -> dict:
+def _build_failure_diagnostics(client, token_id: str, neg_risk: bool, midpoint: float, condition_id: str = "") -> dict:
     """Build a rich snapshot of WHY a trade likely failed. Only called on the
     failure path so it doesn't slow successful trades.
 
@@ -249,7 +254,7 @@ def _build_failure_diagnostics(client, token_id: str, neg_risk: bool, midpoint: 
     so we can pattern-match later (e.g. 'all version_mismatch happens on
     neg_risk markets with <5 asks').
     """
-    diag = {"neg_risk": neg_risk, "midpoint": midpoint, "token_id": token_id[:20]}
+    diag = {"neg_risk": neg_risk, "midpoint": midpoint, "token_id_short": token_id[:20]}
     # Orderbook depth
     try:
         book = client.get_order_book(token_id)
@@ -268,12 +273,16 @@ def _build_failure_diagnostics(client, token_id: str, neg_risk: bool, midpoint: 
     except Exception as e:
         diag["orderbook_error"] = str(e)[:120]
 
-    # Gamma metadata snapshot
+    # Gamma metadata snapshot. ?clob_token_ids= is silently broken so we use
+    # ?condition_ids= which actually filters. Caller must pass condition_id.
+    if not condition_id:
+        diag["gamma_skipped"] = "no condition_id passed"
+        return diag
     try:
         import httpx
         r = httpx.get(
             "https://gamma-api.polymarket.com/markets",
-            params={"clob_token_ids": token_id},
+            params={"condition_ids": condition_id, "limit": 1},
             timeout=6.0,
         )
         if r.status_code == 200:
@@ -307,6 +316,10 @@ class BuyRequest(BaseModel):
     token_id: str
     amount_usd: float
     max_price: Optional[float] = None
+    # conditionId (0x-prefixed hex) — required for Gamma pre-flight checks
+    # since `?clob_token_ids=` is silently broken. Backward-compat: None means
+    # skip the Gamma metadata check.
+    condition_id: Optional[str] = None
 
 
 class SellRequest(BaseModel):
@@ -343,7 +356,9 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
 
         # Pre-flight: skip clearly untradeable markets so callers see a
         # useful error rather than Polymarket's confusing version_mismatch.
-        ok, reason = check_market_tradeable(req.token_id, amount_usd=req.amount_usd)
+        ok, reason = check_market_tradeable(
+            req.token_id, amount_usd=req.amount_usd, condition_id=req.condition_id or ""
+        )
         if not ok:
             logger.warning(f"Buy refused: {reason} ({req.token_id[:12]})")
             return {"success": False, "error": f"market not tradeable: {reason}"}
@@ -393,7 +408,9 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
             # to keep success path fast. order_version_mismatch is our prime
             # suspect for neg-risk multi-outcome markets — these fields will
             # let us correlate failures with market characteristics.
-            diag = _build_failure_diagnostics(client, req.token_id, neg_risk, midpoint)
+            diag = _build_failure_diagnostics(
+                client, req.token_id, neg_risk, midpoint, condition_id=req.condition_id or ""
+            )
             return {
                 "success": False,
                 "error": f"{error} (after {attempts} attempts)",

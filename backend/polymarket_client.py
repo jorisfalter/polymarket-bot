@@ -125,24 +125,26 @@ class PolymarketClient:
     async def get_market(self, market_id: str) -> Optional[Dict[str, Any]]:
         """Get single market details by conditionId (the 0x-prefixed hex).
 
-        Polymarket changed the Gamma endpoint sometime around 2026-05-09:
-        the path-based form `/markets/{hex_id}` now returns 422
-        ("id is invalid"). The internal numeric `id` still works in the
-        path, but we don't have that — we have the conditionId. So we use
-        the query-param form `/markets?conditionId={hex}&limit=1` which
-        returns an array (possibly empty) and pick the first match.
+        Gamma query-param hell (mapped 2026-05-14):
+        - `/markets/{hex_id}` (path): 422 since ~2026-05-09
+        - `?conditionId={hex}`: SILENTLY IGNORED — returns default-sorted
+          markets (Rihanna×GTA-VI). This poisoned every get_market() call
+          for two days, including yesterday's "fix".
+        - `?condition_ids={hex}` (snake_case plural): WORKS, returns a list
+          with the right single match.
 
-        This bug was silently breaking ai_agent + paper_trader + copy_trader
-        + strategy_engine for 4 days before we noticed (2026-05-13). All
-        their pre-flight market lookups returned None, which short-circuited
-        every trade decision.
+        Why this lookup matters: paper_trader, copy_trader, strategy_engine,
+        ai_agent, backtester, main.py all do pre-flight market lookups via
+        this method. When it returns Rihanna for every conditionId, every
+        pre-flight check (closed/archived/UMA/etc) is meaningless — the bot
+        was making decisions against the wrong market's metadata.
         """
         if not market_id:
             return None
         try:
             response = await self.client.get(
                 f"{self.gamma_url}/markets",
-                params={"conditionId": market_id, "limit": 1},
+                params={"condition_ids": market_id, "limit": 1},
             )
             response.raise_for_status()
             data = response.json() or []

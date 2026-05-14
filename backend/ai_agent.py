@@ -1095,11 +1095,14 @@ class AITradingAgent:
                 except Exception as e:
                     logger.debug(f"Min order size lookup failed (proceeding with original size): {e}")
 
-                # Execute real penny trade
+                # Execute real penny trade. Pass conditionId so the trade-proxy
+                # can do a correct Gamma pre-flight (`?condition_ids=`); without
+                # it, pre-flight is skipped (Gamma `?clob_token_ids=` is broken).
                 result = await auto_seller.execute_buy(
                     token_id=token_id,
                     amount_usd=amount_usd,
                     max_price=None,
+                    condition_id=market_id,
                 )
 
                 if result.success:
