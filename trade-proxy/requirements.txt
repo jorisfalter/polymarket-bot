@@ -1,5 +1,8 @@
 fastapi
 uvicorn[standard]
-py-clob-client>=0.34.6
+# Polymarket CLOB V2 SDK — V1 (py-clob-client v0.34.6) was retired when
+# Polymarket bumped EIP-712 domain version 1→2 on 2026-04-28 (CLOB V2 launch).
+# Legacy py-clob-client repo archived 2026-05-11.
+py-clob-client-v2
 loguru
 pydantic

@@ -21,12 +21,21 @@ _client = None
 
 
 def get_client():
+    """Initialize the CLOB V2 client.
+
+    Migration from py-clob-client v0.34.6 → py-clob-client-v2 on 2026-05-14
+    because the V1 SDK was permanently rejected by Polymarket after their
+    CLOB V2 launch on 2026-04-28 (EIP-712 domain version bumped 1→2).
+    The V1 package was archived 2026-05-11. Every order from V1 returned
+    `order_version_mismatch` for ~3 weeks.
+
+    Param names + signature_type=1 (proxy wallet) flow are preserved in V2.
+    """
     global _client
     if _client is not None:
         return _client
 
-    from py_clob_client.client import ClobClient
-    from py_clob_client.clob_types import ApiCreds
+    from py_clob_client_v2 import ClobClient, ApiCreds
 
     creds = ApiCreds(
         api_key=os.environ["POLY_API_KEY"],
@@ -48,7 +57,7 @@ def get_client():
     except Exception:
         pass
 
-    logger.info("CLOB client initialized")
+    logger.info("CLOB V2 client initialized")
     return _client
 
 
@@ -59,52 +68,58 @@ def verify_auth(authorization: str = Header(None)):
         raise HTTPException(401, "Unauthorized")
 
 
-def post_order_with_retry(client, order_args, options, order_type, side, max_attempts: int = 4):
-    """Submit an order with exponential backoff on order_version_mismatch.
+def post_market_order_with_retry(client, order_args, options, max_attempts: int = 4):
+    """Submit a market order via V2's create_and_post_market_order with retry.
 
-    Polymarket's neg-risk exchange occasionally rejects valid orders with
-    order_version_mismatch on first attempt — usually a transient state issue
-    in their CLOB matcher. Retrying with a fresh signed order resolves
-    ~50-70% of these. After max_attempts we give up.
+    V2 collapses V1's two-step (create_market_order + post_order) into one
+    call. Retry is kept for transient errors (network blips, momentary
+    matcher state issues) but we expect order_version_mismatch to be gone
+    now that we're on the correct EIP-712 domain version (V2).
 
     Returns (response, attempt_count) — caller checks response.get('success').
     """
     import time
-    backoff = [0, 1.5, 3, 6]  # seconds before each retry
+    backoff = [0, 1.5, 3, 6]
     last_response = None
     for attempt in range(max_attempts):
         if attempt > 0:
             time.sleep(backoff[min(attempt, len(backoff) - 1)])
-            # Re-sign the order each retry — fresh nonce, fresh timestamp
-            try:
-                from py_clob_client.clob_types import MarketOrderArgs
-                signed_order = client.create_market_order(order_args, options)
-            except Exception as e:
-                logger.warning(f"Retry {attempt}: re-signing failed: {e}")
-                continue
-        else:
-            signed_order = client.create_market_order(order_args, options)
-
         try:
-            response = client.post_order(signed_order, order_type)
+            response = client.create_and_post_market_order(
+                order_args=order_args, options=options,
+            )
             last_response = response
             if response and response.get("success"):
-                logger.info(f"Order succeeded on attempt {attempt + 1}")
+                logger.info(f"Market order succeeded on attempt {attempt + 1}")
                 return response, attempt + 1
             err = (response or {}).get("error") or (response or {}).get("errorMsg") or ""
-            if "order_version_mismatch" not in str(err).lower():
-                # Non-retryable error — return immediately
+            # Retry only on a small allowlist of transient errors. Non-retryable
+            # errors (e.g. insufficient balance, market closed) should bail fast.
+            if not _is_retryable_error(str(err)):
                 return response, attempt + 1
-            logger.info(f"Attempt {attempt + 1} hit order_version_mismatch, retrying...")
+            logger.info(f"Attempt {attempt + 1} transient error: {str(err)[:120]}, retrying...")
         except Exception as e:
-            err_str = str(e).lower()
-            if "order_version_mismatch" not in err_str:
-                # Non-retryable exception
+            err_str = str(e)
+            if not _is_retryable_error(err_str):
                 raise
-            logger.info(f"Attempt {attempt + 1} raised order_version_mismatch, retrying...")
-            last_response = {"success": False, "error": str(e)}
-
+            logger.info(f"Attempt {attempt + 1} raised: {err_str[:120]}, retrying...")
+            last_response = {"success": False, "error": err_str}
     return last_response, max_attempts
+
+
+def _is_retryable_error(err: str) -> bool:
+    """Errors worth retrying — almost-empty list since V2 fixes the main
+    chronic offender (order_version_mismatch). Keep generic transient
+    network/timing signals only."""
+    e = (err or "").lower()
+    # Keep order_version_mismatch in here defensively — if it still happens
+    # post-V2 it might mean another schema bump and we want a few retries.
+    return any(x in e for x in (
+        "order_version_mismatch",
+        "matcher unavailable",
+        "timeout",
+        "temporarily",
+    ))
 
 
 # Cache neg-risk lookups per token (immutable so safe to cache forever)
@@ -335,14 +350,14 @@ async def health():
 
 @app.get("/version")
 async def version():
-    """Return installed py-clob-client version. Useful when Polymarket bumps
-    their order schema and we get order_version_mismatch errors."""
+    """Return installed CLOB SDK version. Useful when Polymarket bumps
+    their order schema (as happened 2026-04-28 with V1→V2)."""
     try:
         import importlib.metadata as md
-        clob_v = md.version("py-clob-client")
+        clob_v = md.version("py-clob-client-v2")
+        return {"py_clob_client_v2": clob_v, "sdk_version": "v2"}
     except Exception as e:
-        clob_v = f"unknown ({e})"
-    return {"py_clob_client": clob_v}
+        return {"error": str(e)}
 
 
 @app.post("/buy")
@@ -351,8 +366,7 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
     client = get_client()
 
     try:
-        from py_clob_client.clob_types import MarketOrderArgs, OrderType, PartialCreateOrderOptions
-        from py_clob_client.order_builder.constants import BUY
+        from py_clob_client_v2 import MarketOrderArgs, OrderType, PartialCreateOrderOptions, Side
 
         # Pre-flight: skip clearly untradeable markets so callers see a
         # useful error rather than Polymarket's confusing version_mismatch.
@@ -377,17 +391,20 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
             return {"success": False, "error": f"orderbook unfavorable: {reason}"}
 
         neg_risk = is_neg_risk(req.token_id)
-        options = PartialCreateOrderOptions(neg_risk=neg_risk)
+        # V2 PartialCreateOrderOptions takes tick_size; neg_risk is still accepted
+        # but tick_size is now expected for accurate price quantization.
+        # Use 0.01 default — most binaries; 0.001 for some neg-risk multi-outcome.
+        tick_size = "0.001" if neg_risk else "0.01"
+        options = PartialCreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk)
 
+        # V2: order_type moves INTO MarketOrderArgs.
         order_args = MarketOrderArgs(
             token_id=req.token_id,
             amount=req.amount_usd,
-            side=BUY,
+            side=Side.BUY,
+            order_type=OrderType.FAK,
         )
-        # FAK + retry on order_version_mismatch (Polymarket neg-risk transient).
-        response, attempts = post_order_with_retry(
-            client, order_args, options, OrderType.FAK, BUY,
-        )
+        response, attempts = post_market_order_with_retry(client, order_args, options)
         logger.info(f"Buy response after {attempts} attempt(s): success={response.get('success') if response else 'no-response'}")
 
         if response and response.get("success"):
@@ -432,8 +449,7 @@ async def sell(req: SellRequest, authorization: str = Header(None)):
     client = get_client()
 
     try:
-        from py_clob_client.clob_types import MarketOrderArgs, OrderType, PartialCreateOrderOptions
-        from py_clob_client.order_builder.constants import SELL
+        from py_clob_client_v2 import MarketOrderArgs, OrderType, PartialCreateOrderOptions, Side
 
         ok, reason = check_market_tradeable(req.token_id)
         if not ok:
@@ -448,16 +464,16 @@ async def sell(req: SellRequest, authorization: str = Header(None)):
         amount_usd = req.shares * midpoint if midpoint > 0 else req.shares
 
         neg_risk = is_neg_risk(req.token_id)
-        options = PartialCreateOrderOptions(neg_risk=neg_risk)
+        tick_size = "0.001" if neg_risk else "0.01"
+        options = PartialCreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk)
 
         order_args = MarketOrderArgs(
             token_id=req.token_id,
             amount=amount_usd,
-            side=SELL,
+            side=Side.SELL,
+            order_type=OrderType.FAK,
         )
-        response, attempts = post_order_with_retry(
-            client, order_args, options, OrderType.FAK, SELL,
-        )
+        response, attempts = post_market_order_with_retry(client, order_args, options)
 
         if response and response.get("success"):
             order_id = response.get("orderID") or response.get("order_id")
@@ -502,7 +518,7 @@ async def balance(authorization: str = Header(None)):
     client = get_client()
 
     try:
-        from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+        from py_clob_client_v2 import BalanceAllowanceParams, AssetType
         params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL, signature_type=1)
         result = client.get_balance_allowance(params)
         raw = result.get("balance", 0) if isinstance(result, dict) else 0
