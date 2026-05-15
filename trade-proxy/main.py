@@ -166,13 +166,21 @@ def check_orderbook_feasibility(token_id: str, expected_price: float) -> tuple:
         logger.debug(f"orderbook feasibility check failed (proceeding): {e}")
         return True, "orderbook unreachable"
 
-    if not book or not getattr(book, "asks", None):
+    # V2 returns a dict with 'asks'/'bids' lists. V1 returned an OrderBookSummary
+    # object with .asks / .bids attributes. Handle both for safety.
+    asks = book.get("asks") if isinstance(book, dict) else getattr(book, "asks", None)
+    if not book or not asks:
         return False, "empty orderbook (no asks available)"
 
-    # py-clob-client returns asks high→low; cheapest ask = last entry.
+    def _ask_price(a):
+        # V2: dict {'price': '0.99', 'size': '...'} ; V1: object with .price
+        if isinstance(a, dict):
+            return float(a.get("price", 0))
+        return float(getattr(a, "price", 0))
+
     try:
-        first_ask = float(book.asks[0].price)
-        last_ask = float(book.asks[-1].price)
+        first_ask = _ask_price(asks[0])
+        last_ask = _ask_price(asks[-1])
         best_ask = min(first_ask, last_ask)
     except Exception:
         return True, "could not parse asks"
@@ -270,19 +278,20 @@ def _build_failure_diagnostics(client, token_id: str, neg_risk: bool, midpoint: 
     neg_risk markets with <5 asks').
     """
     diag = {"neg_risk": neg_risk, "midpoint": midpoint, "token_id_short": token_id[:20]}
-    # Orderbook depth
+    # Orderbook depth — V2 returns dict {asks: [{price,size}], bids: [...]}
+    def _px(x): return float(x.get("price", 0)) if isinstance(x, dict) else float(getattr(x, "price", 0))
+    def _sz(x): return float(x.get("size", 0)) if isinstance(x, dict) else float(getattr(x, "size", 0))
     try:
         book = client.get_order_book(token_id)
         if book:
-            asks = list(getattr(book, "asks", []) or [])
-            bids = list(getattr(book, "bids", []) or [])
-            # py-clob-client returns asks high→low, cheapest at end
-            asks_sorted = sorted(asks, key=lambda x: float(x.price))[:3]
-            bids_sorted = sorted(bids, key=lambda x: -float(x.price))[:3]
-            diag["best_ask"] = float(asks_sorted[0].price) if asks_sorted else None
-            diag["best_bid"] = float(bids_sorted[0].price) if bids_sorted else None
-            diag["ask_levels"] = [{"price": float(a.price), "size": float(a.size)} for a in asks_sorted]
-            diag["bid_levels"] = [{"price": float(b.price), "size": float(b.size)} for b in bids_sorted]
+            asks = list((book.get("asks") if isinstance(book, dict) else getattr(book, "asks", None)) or [])
+            bids = list((book.get("bids") if isinstance(book, dict) else getattr(book, "bids", None)) or [])
+            asks_sorted = sorted(asks, key=_px)[:3]
+            bids_sorted = sorted(bids, key=lambda x: -_px(x))[:3]
+            diag["best_ask"] = _px(asks_sorted[0]) if asks_sorted else None
+            diag["best_bid"] = _px(bids_sorted[0]) if bids_sorted else None
+            diag["ask_levels"] = [{"price": _px(a), "size": _sz(a)} for a in asks_sorted]
+            diag["bid_levels"] = [{"price": _px(b), "size": _sz(b)} for b in bids_sorted]
             diag["ask_count_total"] = len(asks)
             diag["bid_count_total"] = len(bids)
     except Exception as e:
@@ -378,7 +387,9 @@ async def buy(req: BuyRequest, authorization: str = Header(None)):
             return {"success": False, "error": f"market not tradeable: {reason}"}
 
         try:
-            midpoint = float(client.get_midpoint(req.token_id))
+            # V2 returns {'mid': '0.095'} dict; V1 returned a float string.
+            _mp = client.get_midpoint(req.token_id)
+            midpoint = float(_mp.get("mid", 0)) if isinstance(_mp, dict) else float(_mp)
         except Exception:
             midpoint = 0
 
@@ -457,7 +468,9 @@ async def sell(req: SellRequest, authorization: str = Header(None)):
             return {"success": False, "error": f"market not tradeable: {reason}"}
 
         try:
-            midpoint = float(client.get_midpoint(req.token_id))
+            # V2 returns {'mid': '0.095'} dict; V1 returned a float string.
+            _mp = client.get_midpoint(req.token_id)
+            midpoint = float(_mp.get("mid", 0)) if isinstance(_mp, dict) else float(_mp)
         except Exception:
             midpoint = 0
 
