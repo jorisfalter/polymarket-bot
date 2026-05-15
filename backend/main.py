@@ -607,12 +607,67 @@ async def auth_request_link():
 
 
 @app.get("/api/auth/verify")
-async def auth_verify(token: str = Query(...)):
-    """Consume a magic token, set the session cookie, redirect to dashboard."""
+async def auth_verify_page(token: str = Query(...)):
+    """Interstitial page for the magic link. Deliberately does NOT consume
+    the token — link prefetchers (Telegram preview crawler, email scanners,
+    antivirus) issue GET requests and would otherwise burn the single-use
+    token before the user taps it. Only the POST below consumes it; no
+    crawler issues POSTs."""
+    from html import escape
+    safe_token = escape(token)
+    html = f"""<!DOCTYPE html>
+<html lang="nl"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>Inloggen</title>
+<style>
+body{{font-family:'Sora',system-ui,sans-serif;background:#0d1117;color:#e6edf3;
+min-height:100vh;display:flex;align-items:center;justify-content:center;margin:0;padding:20px}}
+.card{{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:36px 32px;
+max-width:360px;width:100%;text-align:center}}
+.logo{{font-size:32px;margin-bottom:10px}}
+h1{{font-size:18px;margin:0 0 6px}}
+p{{font-size:13px;color:#8b949e;margin:0 0 22px;line-height:1.5}}
+button{{width:100%;background:#00d4ff;color:#0d1117;border:none;padding:13px;
+border-radius:8px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}}
+button:hover{{opacity:.9}} button:disabled{{opacity:.5}}
+.err{{color:#ff6b6b;font-size:13px;margin-top:14px}}
+</style></head><body>
+<div class="card">
+  <div class="logo">🔓</div>
+  <h1>Inloggen op je dashboard</h1>
+  <p>Tik op de knop om je sessie te starten (30 dagen geldig).</p>
+  <button id="b" onclick="go()">Log in</button>
+  <div class="err" id="e"></div>
+</div>
+<script>
+async function go(){{
+  var b=document.getElementById('b'),e=document.getElementById('e');
+  b.disabled=true;b.textContent='Bezig…';
+  try{{
+    var r=await fetch('/api/auth/verify',{{method:'POST',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{token:'{safe_token}'}})}});
+    if(r.ok){{location.href='/';}}
+    else{{e.textContent='Link verlopen of al gebruikt. Vraag een nieuwe aan.';
+      b.disabled=false;b.textContent='Log in';}}
+  }}catch(ex){{e.textContent='Netwerkfout: '+ex.message;
+    b.disabled=false;b.textContent='Log in';}}
+}}
+</script></body></html>"""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(html)
+
+
+@app.post("/api/auth/verify")
+async def auth_verify_consume(payload: Dict):
+    """Consume the magic token and set the session cookie. Only reached by
+    an explicit user tap on the interstitial — never by a link prefetcher."""
     from .auth import consume_magic_token, make_session_cookie, COOKIE_NAME
-    if not consume_magic_token(token):
-        return RedirectResponse("/login?error=expired", status_code=302)
-    resp = RedirectResponse("/", status_code=302)
+    token = (payload or {}).get("token", "")
+    if not token or not consume_magic_token(token):
+        return JSONResponse({"ok": False, "error": "expired"}, status_code=401)
+    resp = JSONResponse({"ok": True})
     resp.set_cookie(
         key=COOKIE_NAME,
         value=make_session_cookie(),

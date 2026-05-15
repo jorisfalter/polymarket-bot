@@ -118,7 +118,9 @@ async def send_magic_link() -> bool:
     )
     try:
         from .integrations import send_telegram
-        ok = await send_telegram(msg)
+        # disable_web_page_preview: stop Telegram's crawler from prefetching
+        # the link — that prefetch would consume the single-use token.
+        ok = await send_telegram(msg, disable_web_page_preview=True)
         if ok:
             logger.info("Magic-link sent to Telegram")
         else:

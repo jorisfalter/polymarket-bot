@@ -58,8 +58,15 @@ def _get_telegram_bot():
         return None
 
 
-async def send_telegram(text: str, parse_mode: str = "HTML") -> bool:
-    """Send a message to the configured Telegram chat."""
+async def send_telegram(text: str, parse_mode: str = "HTML",
+                          disable_web_page_preview: bool = False) -> bool:
+    """Send a message to the configured Telegram chat.
+
+    disable_web_page_preview: set True for messages with sensitive URLs
+    (e.g. magic-login links). Telegram's preview crawler fetches any URL
+    in a message to build a preview card — for a single-use login link
+    that crawl burns the token before the user can click it.
+    """
     if not settings.telegram_enabled or not settings.telegram_chat_id:
         return False
 
@@ -86,12 +93,14 @@ async def send_telegram(text: str, parse_mode: str = "HTML") -> bool:
                     chat_id=settings.telegram_chat_id,
                     text=chunk,
                     parse_mode=parse_mode,
+                    disable_web_page_preview=disable_web_page_preview,
                 )
         else:
             await bot.send_message(
                 chat_id=settings.telegram_chat_id,
                 text=text,
                 parse_mode=parse_mode,
+                disable_web_page_preview=disable_web_page_preview,
             )
         logger.debug("Telegram message sent")
         return True
