@@ -61,6 +61,35 @@ STOCK_KEYWORDS = [
     "oil price", "gold price", "crude oil",
 ]
 
+# Sports + esports markets — the agent must never trade these. There is no
+# insider edge on a game winner that a retail bot can capture, and the
+# asymmetric-bet pattern (genuine for weather/geopolitics) is meaningless
+# on a match. The alert-layer filter had traditional sports only; esports
+# slipped through (2026-05-15 "LoL: Hanwha vs Dplus KIA" loss).
+SPORTS_ESPORTS_KEYWORDS = [
+    # traditional sports
+    "nfl", "nba", "mlb", "nhl", "mls", "ufc", "pga", "ncaa", "nascar",
+    "football", "basketball", "baseball", "hockey", "soccer", "golf",
+    "tennis", "boxing", "mma", "wrestling", "cricket", "rugby",
+    "super bowl", "world series", "stanley cup", "champions league",
+    "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
+    "world cup", "march madness", "playoffs", "grand prix",
+    "f1", "formula 1", "wimbledon", "fifa", "uefa",
+    # esports
+    "esports", "lol:", "league of legends", "dota", "cs2", "csgo", "cs:go",
+    "counter-strike", "counter strike", "valorant", "overwatch",
+    "rocket league", "lck", "lec", "lcs", "lpl", "worlds 20",
+    "game 1 winner", "game 2 winner", "game 3 winner", "map 1", "(bo3)", "(bo5)",
+]
+
+
+def _is_sports_or_esports(market_question: str) -> bool:
+    """Hard backstop check — True if the market is a sports/esports event."""
+    if not market_question:
+        return False
+    q = market_question.lower()
+    return any(kw in q for kw in SPORTS_ESPORTS_KEYWORDS)
+
 
 def _find_near_resolution(markets: list) -> list:
     """Filter markets ending within 48h with a dominant outcome."""
@@ -988,6 +1017,15 @@ class AITradingAgent:
                     )
                     continue
 
+                # Hard backstop: never trade sports/esports markets. The prompt
+                # already says skip them, but on 2026-05-15 the LLM rationalised
+                # an esports "asymmetric insider" bet ("LoL: Hanwha vs Dplus KIA")
+                # — there is no real insider edge on a game winner, and the
+                # alert-layer sports filter had no esports keywords. Enforce here.
+                if _is_sports_or_esports(market_question):
+                    logger.info(f"Trade BLOCKED: sports/esports market — {market_question[:60]}")
+                    continue
+
                 # Enforce hard limits
                 amount_usd = min(amount_usd, settings.agent_max_per_trade)
                 # Polymarket minimum order is $1.00 — bump up if below
@@ -1321,17 +1359,51 @@ class AITradingAgent:
             if not tokens:
                 return None
 
-            # Handle exactly 2 tokens (binary market)
-            idx = 0 if outcome in ("Yes", "YES", "yes") else 1
-
+            # Dict-shaped tokens carry their own outcome label — match directly.
             if isinstance(tokens[0], dict):
                 for t in tokens:
                     if t.get("outcome", "").lower() == outcome.lower():
                         return t.get("token_id")
                 return tokens[0].get("token_id") if tokens else None
+
+            # String-list tokens: clobTokenIds[i] pairs with outcomes[i].
+            # CRITICAL: do NOT assume Yes/No. On 2026-05-15 the agent wanted
+            # "Hanwha Life Esports" but the old code did `idx = 0 if
+            # outcome=="Yes" else 1` → picked index 1 → bought Dplus KIA, the
+            # OPPOSITE team. Any multi-name market (esports, elections,
+            # "which candidate") hit this. Match the outcome name to its
+            # index in the market's `outcomes` array instead.
+            outcomes_raw = market.get("outcomes", [])
+            if isinstance(outcomes_raw, str):
+                try:
+                    outcomes = _json.loads(outcomes_raw)
+                except _json.JSONDecodeError:
+                    outcomes = []
             else:
-                # tokens is a list of token ID strings
-                return tokens[idx] if idx < len(tokens) else tokens[0] if tokens else None
+                outcomes = outcomes_raw or []
+
+            idx = None
+            ol = (outcome or "").strip().lower()
+            if outcomes and ol:
+                for i, o in enumerate(outcomes):
+                    if str(o).strip().lower() == ol:
+                        idx = i
+                        break
+                if idx is None:  # partial match — LLM may abbreviate the name
+                    for i, o in enumerate(outcomes):
+                        oo = str(o).strip().lower()
+                        if ol in oo or oo in ol:
+                            idx = i
+                            break
+            if idx is None:
+                # Fallback for binary markets when outcomes is missing/unmatched
+                idx = 0 if ol in ("yes",) else 1
+                logger.warning(
+                    f"Outcome '{outcome}' not matched in outcomes={outcomes!r} "
+                    f"for {market_question[:40]} — falling back to idx={idx}"
+                )
+
+            return tokens[idx] if idx < len(tokens) else (tokens[0] if tokens else None)
 
     def get_status(self) -> Dict:
         """Return agent status for the API."""
