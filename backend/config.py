@@ -120,6 +120,12 @@ class Settings(BaseSettings):
     telegram_chat_id: Optional[str] = None
     telegram_enabled: bool = True
 
+    # Dashboard auth — magic-link login via Telegram. If auth_secret is unset,
+    # auth is DISABLED (fail-open) so a misconfigured deploy never locks the
+    # user out. Set AUTH_SECRET in .env to enable.
+    auth_secret: Optional[str] = None
+    public_url: str = "https://polymarket.ai-tigers.com"  # base for magic-link URLs
+
     # Gmail reading (for newsletters like Matt Levine)
     gmail_address: Optional[str] = None
     gmail_app_password: Optional[str] = None     # Gmail App Password (not regular password)

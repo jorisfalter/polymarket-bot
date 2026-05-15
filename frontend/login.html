@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | Polymarket</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d1117; --panel: #161b22; --border: #30363d;
+            --text: #e6edf3; --muted: #8b949e; --accent: #00d4ff;
+            --danger: #ff6b6b; --success: #5bdb89;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Sora', sans-serif; background: var(--bg); color: var(--text);
+            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            background: var(--panel); border: 1px solid var(--border);
+            border-radius: 14px; padding: 36px 32px; max-width: 380px; width: 100%;
+            text-align: center;
+        }
+        .logo { font-size: 32px; margin-bottom: 8px; }
+        h1 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+        .sub { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 24px; }
+        button {
+            width: 100%; background: var(--accent); color: var(--bg); border: none;
+            padding: 13px; border-radius: 8px; font-family: inherit; font-size: 14px;
+            font-weight: 600; cursor: pointer;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .msg { margin-top: 18px; font-size: 13px; line-height: 1.5; }
+        .msg.ok { color: var(--success); }
+        .msg.err { color: var(--danger); }
+        .foot { margin-top: 22px; font-size: 11px; color: var(--muted); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">🔐</div>
+        <h1>Polymarket Dashboard</h1>
+        <p class="sub">Tik de knop — je krijgt een login-link in Telegram. Geldig 10 minuten.</p>
+        <button id="btn" onclick="requestLink()">Stuur me een login-link</button>
+        <div class="msg" id="msg"></div>
+        <div class="foot">Alleen de eigenaar van de gekoppelde Telegram ontvangt de link.</div>
+    </div>
+
+    <script>
+        // Surface ?error=expired from a stale/used magic link
+        const params = new URLSearchParams(location.search);
+        if (params.get('error') === 'expired') {
+            const m = document.getElementById('msg');
+            m.className = 'msg err';
+            m.textContent = 'Die link was verlopen of al gebruikt. Vraag een nieuwe aan.';
+        }
+
+        async function requestLink() {
+            const btn = document.getElementById('btn');
+            const msg = document.getElementById('msg');
+            btn.disabled = true;
+            btn.textContent = 'Versturen…';
+            msg.className = 'msg';
+            msg.textContent = '';
+            try {
+                const res = await fetch('/api/auth/request-link', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.ok) {
+                    msg.className = 'msg ok';
+                    msg.textContent = '✓ Check je Telegram en tik op de link.';
+                    btn.textContent = 'Link verstuurd';
+                } else {
+                    msg.className = 'msg err';
+                    msg.textContent = data.error || 'Versturen mislukt. Probeer opnieuw.';
+                    btn.disabled = false;
+                    btn.textContent = 'Stuur me een login-link';
+                }
+            } catch (e) {
+                msg.className = 'msg err';
+                msg.textContent = 'Netwerkfout: ' + e.message;
+                btn.disabled = false;
+                btn.textContent = 'Stuur me een login-link';
+            }
+        }
+    </script>
+</body>
+</html>

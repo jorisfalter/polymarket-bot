@@ -13,9 +13,9 @@ from typing import Dict, List, Optional
 from contextlib import asynccontextmanager
 import uuid
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -545,6 +545,91 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ==================== AUTH ====================
+
+# Paths reachable without a session: the login page, the auth endpoints
+# themselves, static assets, and the health probe. Everything else is gated.
+_AUTH_EXEMPT_PREFIXES = ("/static/", "/api/auth/")
+_AUTH_EXEMPT_EXACT = {"/login", "/healthz"}
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Gate every request behind a valid session cookie. Fail-open when no
+    AUTH_SECRET is configured so a misconfigured deploy can't lock the user
+    out of their own dashboard."""
+    from .auth import auth_enabled, verify_session_cookie, COOKIE_NAME
+
+    if not auth_enabled():
+        return await call_next(request)
+
+    path = request.url.path
+    if path in _AUTH_EXEMPT_EXACT or any(path.startswith(p) for p in _AUTH_EXEMPT_PREFIXES):
+        return await call_next(request)
+
+    cookie = request.cookies.get(COOKIE_NAME)
+    if cookie and verify_session_cookie(cookie):
+        return await call_next(request)
+
+    # Not authenticated: API callers get 401 JSON, browsers get redirected.
+    if path.startswith("/api/"):
+        return JSONResponse({"error": "unauthorized", "login": "/login"}, status_code=401)
+    return RedirectResponse("/login", status_code=302)
+
+
+@app.get("/healthz")
+async def healthz():
+    """Unauthenticated liveness probe for the Docker healthcheck."""
+    return {"ok": True}
+
+
+@app.get("/login")
+async def serve_login():
+    return FileResponse(
+        "frontend/login.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+@app.post("/api/auth/request-link")
+async def auth_request_link():
+    """Generate a magic token and send the login link to Telegram."""
+    from .auth import send_magic_link
+    ok = await send_magic_link()
+    if ok:
+        return {"ok": True, "message": "Login-link verstuurd naar Telegram."}
+    return JSONResponse(
+        {"ok": False, "error": "Kon Telegram-bericht niet versturen."},
+        status_code=502,
+    )
+
+
+@app.get("/api/auth/verify")
+async def auth_verify(token: str = Query(...)):
+    """Consume a magic token, set the session cookie, redirect to dashboard."""
+    from .auth import consume_magic_token, make_session_cookie, COOKIE_NAME
+    if not consume_magic_token(token):
+        return RedirectResponse("/login?error=expired", status_code=302)
+    resp = RedirectResponse("/", status_code=302)
+    resp.set_cookie(
+        key=COOKIE_NAME,
+        value=make_session_cookie(),
+        max_age=30 * 24 * 3600,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+    return resp
+
+
+@app.post("/api/auth/logout")
+async def auth_logout():
+    from .auth import COOKIE_NAME
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(COOKIE_NAME)
+    return resp
 
 
 # ==================== API ENDPOINTS ====================
