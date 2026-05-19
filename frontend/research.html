@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=21">
+    <link rel="stylesheet" href="/static/styles.css?v=22">
     <script src="/static/theme.js?v=2"></script>
     <style>
         .agent-ideas-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
@@ -173,7 +173,7 @@
                     <span class="logo-icon">📚</span>
                     <span class="logo-text">RESEARCH<span class="logo-highlight">FEED</span></span>
                 </div>
-                <span class="tagline">Newsletter intel + manual ideas inbox</span>
+                <span class="tagline">Dagelijkse research-pijplijn</span>
             </div>
             <div class="header-right">
                 <nav class="main-nav">
@@ -196,50 +196,29 @@
             <!-- Research kanban: per-day columns with actionable verdicts on top, monitor next, raw ideas below -->
             <div class="agent-ideas-panel">
                 <div class="agent-ideas-header">
-                    <h2>🔬 Research Kanban</h2>
+                    <h2>🔬 Research-pijplijn</h2>
                     <div class="pills">
-                        <button class="pill active" data-filter="all" onclick="filterAgent('all', this)">All markets</button>
-                        <button class="pill" data-filter="stocks" onclick="filterAgent('stocks', this)">Stocks</button>
+                        <button class="pill active" data-filter="all" onclick="filterAgent('all', this)">Alle markten</button>
+                        <button class="pill" data-filter="stocks" onclick="filterAgent('stocks', this)">Aandelen</button>
                         <button class="pill" data-filter="crypto" onclick="filterAgent('crypto', this)">Crypto</button>
                         <button class="pill" data-filter="polymarket" onclick="filterAgent('polymarket', this)">Polymarket</button>
                         <button class="pill" data-filter="macro" onclick="filterAgent('macro', this)">Macro</button>
                     </div>
-                    <button class="show-all-toggle" id="show-all-toggle" onclick="toggleShowAll()">+ Show archived</button>
-                    <button class="run-now-btn" id="run-now-btn" onclick="runResearchNow()">▶ Run now</button>
+                    <button class="show-all-toggle" id="show-all-toggle" onclick="toggleShowAll()">+ Toon gearchiveerd</button>
+                    <button class="run-now-btn" id="run-now-btn" onclick="runResearchNow()">▶ Nu draaien</button>
                 </div>
                 <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">
-                    Vier-stage pipeline. <b>Scout</b> ingest't dagelijks (newsletters/reddit/youtube/RSS). <b>Skeptic</b> valideert tegen live markt. <b>Stakes</b> bepaalt sizing. <b>Trader</b> schrijft het concrete plan. Auto-run 2× per dag, of <b>Run now</b> voor een directe sweep (~3 min).
+                    Vier-fase pijplijn. <b>Scout</b> haalt dagelijks binnen (newsletters/reddit/youtube/RSS). <b>Skeptic</b> valideert tegen de live markt. <b>Stakes</b> bepaalt de inzet. <b>Trader</b> schrijft het concrete plan. Draait automatisch 2× per dag, of klik <b>Nu draaien</b> voor een directe sweep (~3 min).
                 </p>
                 <div class="stats-bar" id="stats-bar">
-                    <div class="stat-block"><div class="stat-num" id="stat-today">—</div><div class="stat-label">Today</div></div>
-                    <div class="stat-block"><div class="stat-num" id="stat-yesterday">—</div><div class="stat-label">Yesterday</div></div>
-                    <div class="stat-block"><div class="stat-num" id="stat-week">—</div><div class="stat-label">Last 7 days</div></div>
-                    <div class="stat-block subtle"><div class="stat-num" id="stat-acted">—</div><div class="stat-label">Acted on</div></div>
-                    <div class="stat-block subtle"><div class="stat-num" id="stat-total">—</div><div class="stat-label">Total ever</div></div>
+                    <div class="stat-block"><div class="stat-num" id="stat-today">—</div><div class="stat-label">Vandaag</div></div>
+                    <div class="stat-block"><div class="stat-num" id="stat-yesterday">—</div><div class="stat-label">Gisteren</div></div>
+                    <div class="stat-block"><div class="stat-num" id="stat-week">—</div><div class="stat-label">Laatste 7 dagen</div></div>
+                    <div class="stat-block subtle"><div class="stat-num" id="stat-acted">—</div><div class="stat-label">Opgevolgd</div></div>
+                    <div class="stat-block subtle"><div class="stat-num" id="stat-total">—</div><div class="stat-label">Totaal ooit</div></div>
                 </div>
                 <div class="kanban-scroll">
                     <div class="kanban-row" id="kanban-row"><div class="empty">Loading...</div></div>
-                </div>
-            </div>
-            <div class="research-grid">
-                <!-- Newsletter feed -->
-                <div class="panel">
-                    <h2>📧 Newsletter Intel <span class="count" id="newsletter-count">0</span></h2>
-                    <div class="gmail-status" id="gmail-status">Loading...</div>
-                    <div id="newsletters"><div class="empty">Loading newsletters...</div></div>
-                </div>
-
-                <!-- Manual ideas inbox -->
-                <div class="panel">
-                    <h2>💡 Ideas Inbox <span class="count" id="ideas-count">0</span></h2>
-                    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">Paste a Matt Levine excerpt, a tweet, or your own thesis. The agent picks it up next cycle and considers it as Strategy 7 (Own Conviction).</p>
-                    <div class="idea-form">
-                        <input type="text" id="idea-title" placeholder="Title (e.g. 'Avis short squeeze Section 16 angle')" maxlength="200">
-                        <input type="text" id="idea-source" placeholder="Source (optional, e.g. 'Matt Levine 2026-04-30' or 'manual')">
-                        <textarea id="idea-body" placeholder="Paste content here..." maxlength="20000"></textarea>
-                        <button onclick="addIdea()">Add to inbox</button>
-                    </div>
-                    <div id="ideas"><div class="empty">No ideas yet.</div></div>
                 </div>
             </div>
         </div>
@@ -250,99 +229,6 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
-        }
-
-        async function loadNewsletters() {
-            try {
-                const res = await fetch('/api/intel/newsletters');
-                const items = await res.json();
-                renderNewsletters(items);
-                document.getElementById('gmail-status').textContent = items.length
-                    ? `${items.length} newsletter(s) from last 2 days`
-                    : 'No newsletters found. Set GMAIL_ADDRESS + GMAIL_APP_PASSWORD in .env on the VPS.';
-            } catch (e) {
-                document.getElementById('gmail-status').textContent = 'Newsletter fetch failed: ' + e.message;
-            }
-        }
-
-        function renderNewsletters(items) {
-            document.getElementById('newsletter-count').textContent = items.length;
-            const el = document.getElementById('newsletters');
-            if (!items.length) {
-                el.innerHTML = '<div class="empty">No newsletter emails captured.</div>';
-                return;
-            }
-            el.innerHTML = items.map((it, i) => {
-                const body = escapeHtml(it.body || it.preview || '');
-                return `<div class="newsletter-item">
-                    <div class="newsletter-meta">
-                        <span class="newsletter-source">${escapeHtml(it.source || '')}</span>
-                        <span>${escapeHtml(it.date || '')}</span>
-                    </div>
-                    <div class="newsletter-subject">${escapeHtml(it.subject || '')}</div>
-                    <div class="newsletter-body" id="nl-body-${i}">${body}</div>
-                    <button class="expand-btn" onclick="toggleExpand('nl-body-${i}', this)">▾ Show full</button>
-                </div>`;
-            }).join('');
-        }
-
-        function toggleExpand(id, btn) {
-            const el = document.getElementById(id);
-            const expanded = el.classList.toggle('expanded');
-            btn.textContent = expanded ? '▴ Collapse' : '▾ Show full';
-        }
-
-        async function loadIdeas() {
-            try {
-                const res = await fetch('/api/research/ideas');
-                const items = await res.json();
-                renderIdeas(items);
-            } catch (e) { console.error(e); }
-        }
-
-        function renderIdeas(items) {
-            document.getElementById('ideas-count').textContent = items.length;
-            const el = document.getElementById('ideas');
-            if (!items.length) {
-                el.innerHTML = '<div class="empty">No ideas yet. Add one above.</div>';
-                return;
-            }
-            el.innerHTML = items.map((it, i) => {
-                const ts = new Date(it.timestamp.endsWith('Z') ? it.timestamp : it.timestamp + 'Z').toLocaleString('en-GB');
-                const tags = (it.tags || []).map(t => `<span class="idea-tag">${escapeHtml(t)}</span>`).join('');
-                return `<div class="idea-item">
-                    <div class="idea-meta">
-                        <span>${escapeHtml(it.source || 'manual')} · ${ts}</span>
-                        <button class="delete-btn" onclick="deleteIdea('${encodeURIComponent(it.timestamp)}')">×</button>
-                    </div>
-                    <div class="idea-title">${escapeHtml(it.title || '')}</div>
-                    <div>${tags}</div>
-                    <div class="idea-body" id="idea-body-${i}">${escapeHtml(it.body || '')}</div>
-                    <button class="expand-btn" onclick="toggleExpand('idea-body-${i}', this)">▾ Show full</button>
-                </div>`;
-            }).join('');
-        }
-
-        async function addIdea() {
-            const title = document.getElementById('idea-title').value.trim();
-            const source = document.getElementById('idea-source').value.trim();
-            const body = document.getElementById('idea-body').value.trim();
-            if (!title || !body) { alert('Title and body required.'); return; }
-            await fetch('/api/research/ideas', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, source, body })
-            });
-            document.getElementById('idea-title').value = '';
-            document.getElementById('idea-source').value = '';
-            document.getElementById('idea-body').value = '';
-            loadIdeas();
-        }
-
-        async function deleteIdea(ts) {
-            if (!confirm('Delete this idea?')) return;
-            await fetch('/api/research/ideas/' + ts, { method: 'DELETE' });
-            loadIdeas();
         }
 
         // ─── Research kanban (LLM ideas + judge verdicts, day-grouped) ───
@@ -358,7 +244,7 @@
                 renderKanban(items);
             } catch (e) {
                 document.getElementById('kanban-row').innerHTML =
-                    '<div class="empty">Fetch failed: ' + e.message + '</div>';
+                    '<div class="empty">Ophalen mislukt: ' + e.message + '</div>';
             }
         }
 
@@ -399,10 +285,10 @@
 
         // Stage-based kanban. Each column = one pipeline stage.
         const STAGES = [
-            { key: 'raw',        title: '🔍 Ideas',     subtitle: 'Scout surfaced' },
-            { key: 'validated',  title: '✅ Validated', subtitle: 'Skeptic approved' },
-            { key: 'staked',     title: '💰 Stakes',    subtitle: 'Sizing assigned' },
-            { key: 'implement',  title: '🎯 Implement', subtitle: 'Ready trade plan' },
+            { key: 'raw',        title: '🔍 Ideeën',      subtitle: 'Scout opgehaald' },
+            { key: 'validated',  title: '✅ Gevalideerd', subtitle: 'Skeptic goedgekeurd' },
+            { key: 'staked',     title: '💰 Inzet',       subtitle: 'Sizing bepaald' },
+            { key: 'implement',  title: '🎯 Uitvoeren',   subtitle: 'Concreet trade-plan' },
         ];
 
         function renderKanban(items) {
@@ -411,7 +297,7 @@
                 ? items
                 : items.filter(it => it.status !== 'archived' && it.status !== 'dismissed' && it.stage !== 'rejected');
             if (!visible.length) {
-                el.innerHTML = `<div class="empty">Geen ideeën zichtbaar${showAll ? '' : ' (toggle "Show archived" om alles te zien)'}. Klik "Run now" voor de eerste scan.</div>`;
+                el.innerHTML = `<div class="empty">Geen ideeën zichtbaar${showAll ? '' : ' (zet "Toon gearchiveerd" aan om alles te zien)'}. Klik "Nu draaien" voor de eerste scan.</div>`;
                 return;
             }
             // Bucket by stage
@@ -427,7 +313,7 @@
             const cols = STAGES.map(s => renderStageColumn(s, buckets[s.key]));
             if (showAll && buckets.rejected.length) {
                 cols.push(renderStageColumn(
-                    { key: 'rejected', title: '✗ Rejected', subtitle: 'Skeptic rejected' },
+                    { key: 'rejected', title: '✗ Afgewezen', subtitle: 'Skeptic verworpen' },
                     buckets.rejected
                 ));
             }
@@ -442,10 +328,20 @@
                 <div class="kanban-col-header">
                     <div class="stage-title">${stage.title}</div>
                     <div class="stage-subtitle">${stage.subtitle}</div>
-                    <div class="stage-counts">${items.length} ${items.length === 1 ? 'idea' : 'ideas'}</div>
+                    <div class="stage-counts">${items.length} ${items.length === 1 ? 'idee' : 'ideeën'}</div>
                 </div>
                 ${cards}
             </div>`;
+        }
+
+        // Date + time label for a card: "di 19 mei 14:03"
+        function _cardDateTime(iso) {
+            if (!iso) return '';
+            const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+            return d.toLocaleString('nl-BE', {
+                weekday: 'short', day: 'numeric', month: 'short',
+                hour: '2-digit', minute: '2-digit',
+            });
         }
 
         function renderKanbanCard(it, stageKey) {
@@ -455,10 +351,7 @@
             const mt = (it.market_type || 'macro').toLowerCase();
             const stars = '★'.repeat(it.conviction || 0);
             const status = it.status || 'open';
-            const t = it.discovered_at
-                ? new Date(it.discovered_at.endsWith('Z') ? it.discovered_at : it.discovered_at + 'Z')
-                : null;
-            const tLabel = t ? t.toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' }) : '';
+            const tLabel = _cardDateTime(it.discovered_at);
             const ticker = it.ticker_or_event || '?';
 
             // Stage-specific content: each column shows the role's output
@@ -493,8 +386,8 @@
             const marketUrl = tr.target_market_url;
             const sourceUrl = it.source_url;
             const linkHtml = marketUrl
-                ? `<a class="primary" href="${escapeHtml(marketUrl)}" target="_blank">Open market →</a>`
-                : (sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank">Source →</a>` : '');
+                ? `<a class="primary" href="${escapeHtml(marketUrl)}" target="_blank">Open markt →</a>`
+                : (sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank">Bron →</a>` : '');
             const actionBtns = status === 'open'
                 ? `<button onclick="markAgentIdea('${it.id}','acted');loadAgentIdeas();">✓</button>
                    <button onclick="markAgentIdea('${it.id}','archived');loadAgentIdeas();">📁</button>
@@ -527,7 +420,7 @@
             showAll = !showAll;
             const btn = document.getElementById('show-all-toggle');
             btn.classList.toggle('active', showAll);
-            btn.textContent = showAll ? '− Hide archived' : '+ Show archived';
+            btn.textContent = showAll ? '− Verberg gearchiveerd' : '+ Toon gearchiveerd';
             loadAgentIdeas();
         }
 
@@ -543,79 +436,21 @@
         async function runResearchNow() {
             const btn = document.getElementById('run-now-btn');
             btn.disabled = true;
-            btn.textContent = '⏳ Running... (~1-2 min)';
+            btn.textContent = '⏳ Bezig... (~1-2 min)';
             try {
                 const res = await fetch('/api/research/run-now', { method: 'POST' });
                 const summary = await res.json();
-                alert(`Ingested ${summary.ingested}, filtered to ${summary.filtered} ideas, top ${summary.top}. (${summary.ms}ms)`);
+                alert(`${summary.ingested} binnengehaald, ${summary.filtered} ideeën, top ${summary.top}. (${summary.ms}ms)`);
                 loadAgentIdeas();
             } catch (e) {
-                alert('Run failed: ' + e.message);
+                alert('Run mislukt: ' + e.message);
             } finally {
                 btn.disabled = false;
-                btn.textContent = '▶ Run now';
+                btn.textContent = '▶ Nu draaien';
             }
         }
 
-        // Legacy verdicts loader (no longer used — kanban renders verdicts inline).
-        // Kept as no-op so any cached pages calling it don't 404.
-        async function loadVerdicts() { /* moved into renderKanban */ }
-        function renderVerdicts(data) {
-            const actionable = data.actionable || [];
-            const monitor = data.monitor || [];
-            const total = actionable.length + monitor.length;
-            document.getElementById('verdicts-count').textContent = total;
-            const el = document.getElementById('verdicts-list');
-            if (!total) {
-                el.innerHTML = '<div class="empty">Nog geen verdicts. Trigger een Research run en de judge geeft direct advies.</div>';
-                return;
-            }
-            const cards = [];
-            for (const it of actionable) cards.push(renderVerdictCard(it, 'actionable'));
-            for (const it of monitor) cards.push(renderVerdictCard(it, 'monitor'));
-            el.innerHTML = cards.join('');
-        }
-
-        function renderVerdictCard(idea, verdict) {
-            const j = idea.judgement || {};
-            const ticker = idea.ticker_or_event || '?';
-            const url = j.target_market_url || idea.source_url || '';
-            const conf = j.confidence != null ? `${Math.round(j.confidence * 100)}%` : '?';
-            const stake = j.stake_usd != null ? `$${j.stake_usd}` : '—';
-            const entry = j.entry_price != null ? `${j.entry_price}` : '—';
-            const mt = (idea.market_type || 'macro').toLowerCase();
-            const srcTitle = idea.source_title ? ` — ${escapeHtml(idea.source_title.substring(0, 80))}` : '';
-            return `<div class="verdict-card ${verdict}">
-                <div class="verdict-header">
-                    <div style="display:flex;gap:10px;align-items:center;">
-                        <span class="market-tag ${mt}">${escapeHtml(idea.market_type || 'macro')}</span>
-                        <span class="verdict-ticker">${escapeHtml(ticker)}</span>
-                        <span class="verdict-badge ${verdict}">${verdict}</span>
-                    </div>
-                    <span class="verdict-confidence">conf ${conf}</span>
-                </div>
-                <div class="verdict-action">→ ${escapeHtml(j.suggested_action || idea.thesis || '')}</div>
-                <div class="verdict-meta">
-                    <div><span class="verdict-meta-label">Stake</span><span class="verdict-meta-val">${stake}</span></div>
-                    <div><span class="verdict-meta-label">Entry</span><span class="verdict-meta-val">${entry}</span></div>
-                    <div><span class="verdict-meta-label">Conviction</span><span class="verdict-meta-val">${'★'.repeat(idea.conviction || 0)}</span></div>
-                </div>
-                ${j.why ? `<div class="verdict-why">${escapeHtml(j.why)}</div>` : ''}
-                ${j.risks ? `<div class="verdict-risks">⚠️ ${escapeHtml(j.risks)}</div>` : ''}
-                <div class="verdict-cta">
-                    ${url ? `<a class="primary" href="${escapeHtml(url)}" target="_blank">Open market →</a>` : ''}
-                    <button onclick="markAgentIdea('${idea.id}','acted'); loadVerdicts(); loadAgentIdeas();">✓ Acted</button>
-                    <button onclick="markAgentIdea('${idea.id}','archived'); loadVerdicts(); loadAgentIdeas();">📁 Archive</button>
-                    <button onclick="markAgentIdea('${idea.id}','dismissed'); loadVerdicts(); loadAgentIdeas();">✗ Dismiss</button>
-                </div>
-                <div class="verdict-source-line">via <b>${escapeHtml(idea.source || '?')}</b>${srcTitle}</div>
-            </div>`;
-        }
-
-        loadAgentIdeas();   // kanban (includes verdicts inline)
-        loadNewsletters();
-        loadIdeas();
-        setInterval(loadNewsletters, 60000);
+        loadAgentIdeas();   // kanban — laadt ideeën + verdicts inline
         setInterval(loadAgentIdeas, 90000);
     </script>
 </body>
