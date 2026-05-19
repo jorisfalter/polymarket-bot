@@ -91,6 +91,64 @@ def _is_sports_or_esports(market_question: str) -> bool:
     return any(kw in q for kw in SPORTS_ESPORTS_KEYWORDS)
 
 
+# Noise markets — no insider edge is possible, just retail gambling. The bot
+# kept treating Eurovision longshots and tweet-count bingo as "asymmetric
+# insider signals" (audit 2026-05-19: 3× Eurovision, 4× tweet/speech bingo).
+NOISE_KEYWORDS = [
+    "eurovision", "song contest", "grammy", "oscar", "academy award",
+    "met gala", "time person of the year", "nobel",
+    "tweets from", "number of tweets", "how many times",
+    "post between", "posts between",
+]
+# Regex-ish substrings for speech / count bingo
+NOISE_PATTERNS = [
+    'say "', "say '",        # 'Will X say "word"' — speech bingo
+    "mention \"", "mention '",
+    " tweets ", "tweet count",
+]
+
+
+def _is_noise_market(market_question: str) -> bool:
+    """True if the market is a novelty/bingo market with no tradable edge."""
+    if not market_question:
+        return False
+    q = market_question.lower()
+    if any(kw in q for kw in NOISE_KEYWORDS):
+        return True
+    if any(p in q for p in NOISE_PATTERNS):
+        return True
+    return False
+
+
+# Theme tagging for concentration limits. The audit repeatedly flagged the
+# bot piling 30-40% of exposure into one theme (Iran/Middle-East). These
+# buckets let _execute_trades refuse a trade that would over-concentrate.
+THEME_KEYWORDS = {
+    "middle-east": ["iran", "hormuz", "tehran", "uranium", "pahlavi",
+                     "ayatollah", "israel", "gaza", "hamas", "hezbollah",
+                     "lebanon", "houthi", "netanyahu"],
+    "crypto": ["bitcoin", "btc", "ethereum", "eth", "microstrategy",
+                "mstr", "solana", "crypto", "coinbase"],
+    "us-politics": ["trump", "biden", "republican", "democrat", "gop",
+                     "senate", "congress", "presidential nomination",
+                     "white house", "pardon"],
+    "fed-macro": ["fed ", "interest rate", "cpi", "inflation", "gdp",
+                   "recession", "rate cut", "rate hike", "jerome powell"],
+    "weather": ["temperature", "weather", "hurricane", "snowfall", "rain in"],
+}
+
+
+def _market_theme(market_question: str) -> str:
+    """Tag a market into a theme bucket for concentration tracking."""
+    if not market_question:
+        return "other"
+    q = market_question.lower()
+    for theme, kws in THEME_KEYWORDS.items():
+        if any(kw in q for kw in kws):
+            return theme
+    return "other"
+
+
 def _find_near_resolution(markets: list) -> list:
     """Filter markets ending within 48h with a dominant outcome."""
     now = datetime.utcnow()
@@ -1007,6 +1065,10 @@ class AITradingAgent:
                 amount_usd = float(trade.get("amount_usd", 0))
                 confidence = float(trade.get("confidence", 0))
                 thesis = trade.get("thesis", "")
+                # Strategy tag (insider/asymmetric/near-resolution/...). Lets
+                # trade_analysis report real P&L-per-strategy instead of
+                # bucketing everything as "other".
+                strategy_tag = (trade.get("strategy") or "").strip().lower() or "untagged"
 
                 # Validate market_id shape — agent occasionally truncates it
                 if market_id and not (market_id.startswith("0x") and len(market_id) == 66):
@@ -1026,6 +1088,14 @@ class AITradingAgent:
                     logger.info(f"Trade BLOCKED: sports/esports market — {market_question[:60]}")
                     continue
 
+                # Hard backstop: noise / novelty markets — Eurovision, tweet-
+                # count bingo, speech bingo, award shows. No insider edge is
+                # possible; a fresh wallet betting a longshot here is a
+                # gambler, not a tipster. (audit 2026-05-19)
+                if _is_noise_market(market_question):
+                    logger.info(f"Trade BLOCKED: noise/novelty market — {market_question[:60]}")
+                    continue
+
                 # Enforce hard limits
                 amount_usd = min(amount_usd, settings.agent_max_per_trade)
                 # Polymarket minimum order is $1.00 — bump up if below
@@ -1034,13 +1104,37 @@ class AITradingAgent:
                 if amount_usd > settings.agent_max_per_trade:
                     continue
 
-                # Check exposure: use amount_usd from journal entries (what we actually spent)
-                live_exposure = sum(p.get("amount_usd", 0) for p in self._live_positions)
-                if live_exposure + amount_usd > settings.agent_max_total_exposure:
-                    reason = f"exposure limit (${live_exposure + amount_usd:.2f} > ${settings.agent_max_total_exposure:.2f})"
+                # Check exposure. Use the JOURNAL, not _live_positions:
+                # Polymarket's API filters dust positions ($1-2 longshots), so
+                # live_exposure under-counts and the bot drifts over the $100
+                # cap (observed 2026-05-19: journal $101.25 while live showed
+                # less). The journal is what we actually spent.
+                journal_positions = journal.get_open_positions()
+                journal_exposure = sum(p.get("amount_usd", 0) or 0 for p in journal_positions)
+                if journal_exposure + amount_usd > settings.agent_max_total_exposure:
+                    reason = f"exposure limit (${journal_exposure + amount_usd:.2f} > ${settings.agent_max_total_exposure:.2f})"
                     logger.info(f"Agent trade skipped: {reason}")
                     await send_telegram(f"⏭️ Trade skipped: {market_question[:50]}\nReason: {reason}")
                     continue
+
+                # Theme-concentration cap: no single theme may exceed 30% of
+                # the total exposure cap. The audit repeatedly flagged the bot
+                # piling 30-40% into Middle-East markets — that is one
+                # correlated bet made many times, not diversification.
+                theme = _market_theme(market_question)
+                if theme != "other":
+                    theme_exposure = sum(
+                        (p.get("amount_usd", 0) or 0)
+                        for p in journal_positions
+                        if _market_theme(p.get("market_question", "")) == theme
+                    )
+                    theme_cap = settings.agent_max_total_exposure * 0.30
+                    if theme_exposure + amount_usd > theme_cap:
+                        reason = (f"theme cap '{theme}' (${theme_exposure + amount_usd:.2f} "
+                                  f"> ${theme_cap:.2f} = 30%)")
+                        logger.info(f"Agent trade skipped: {reason}")
+                        await send_telegram(f"⏭️ Trade skipped: {market_question[:50]}\nReason: {reason}")
+                        continue
 
                 # Check position count using LIVE positions
                 if len(self._live_positions) >= settings.agent_max_positions:
@@ -1145,7 +1239,10 @@ class AITradingAgent:
 
                 if result.success:
                     journal.log_entry(
-                        strategy="AI-AGENT",
+                        # Tag with the strategy the LLM attributed the trade
+                        # to (insider / asymmetric / near-resolution / ...).
+                        # Enables real P&L-per-strategy in trade_analysis.
+                        strategy=f"AI-AGENT/{strategy_tag}",
                         action="ENTER",
                         market_question=market_question,
                         market_slug="",

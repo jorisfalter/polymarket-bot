@@ -84,7 +84,8 @@ You MUST respond with raw JSON only — no markdown, no code blocks, no ``` wrap
       "outcome": "Yes or No",
       "amount_usd": 0.50,
       "confidence": 0.8,
-      "thesis": "One sentence: why this trade"
+      "strategy": "which strategy triggered this — one of: insider, smart-money, near-resolution, daily-repeating, stock-arb, auditor, inconsistency, asymmetric, own-conviction",
+      "thesis": "CONCRETE reasoning — see thesis rules below"
     }
   ],
   "thesis_updates": [
@@ -102,6 +103,18 @@ You MUST respond with raw JSON only — no markdown, no code blocks, no ``` wrap
 }
 
 For thesis_updates, use action "CREATE" for new theses, "UPDATE" to change conviction/add notes (include the same "id"), "CLOSE" when done (include "id" and "note" explaining why).
+
+THESIS RULES — every trade's "thesis" must be CONCRETE, not a template:
+- BANNED phrases: "Paris-weather asymmetric pattern", "suggests insider
+  knowledge", "asymmetric bet pattern", "unlikely outcome", "100x payoff
+  potential". These are filler — they describe the strategy, not THIS trade.
+- For insider/asymmetric trades you MUST state the specifics: which wallet
+  (address or "fresh wallet"), the exact $ amount they bet, which side/price,
+  and WHY that specific bet is a real edge here (not just "it's a longshot").
+- If you cannot name the concrete signal, you do not have a trade — skip it.
+- A thesis must not contradict itself. "X is unlikely to win" + "buying YES
+  that X wins" is incoherent — if you piggyback an insider's longshot, your
+  thesis is "the insider's $N bet says X WILL happen despite long odds".
 
 If you have no trades, return an empty trades array. That's fine — patience is a virtue.
 
