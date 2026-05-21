@@ -1852,6 +1852,23 @@ async def get_ticker_details(ticker: str):
     return stats
 
 
+@app.get("/api/stocks/politician-themes")
+async def get_politician_themes(
+    window_days: int = Query(60, ge=14, le=180),
+    min_politicians: int = Query(3, ge=2, le=10),
+):
+    """Cluster politician trades into themes (AI/semis, nuclear, defense,…).
+    Surfaces sector-rotation signal that survives the 30-45d STOCK Act
+    disclosure lag — individual trades are stale but multi-politician
+    accumulation in one theme is real signal."""
+    from .stocks_data import fetch_politician_trades
+    from .politician_themes import detect_theme_clusters
+    trades = await fetch_politician_trades(days_back=window_days + 5)
+    return detect_theme_clusters(
+        trades, window_days=window_days, min_politicians=min_politicians,
+    )
+
+
 @app.get("/api/stocks/top-politicians")
 async def get_top_politicians(min_trades: int = Query(2, le=50)):
     """Politicians ranked by mean excess return vs SPY."""

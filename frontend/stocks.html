@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=16">
+    <link rel="stylesheet" href="/static/styles.css?v=17">
     <script src="/static/theme.js?v=2"></script>
     <style>
         .board-tabs { display: flex; gap: 4px; padding: 4px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 20px; }
@@ -107,6 +107,12 @@
                     <h3>🏛️ Top Politicians (180d) <span class="sub">by avg excess return vs SPY</span></h3>
                     <div id="top-politicians-list"><div class="empty">Loading…</div></div>
                 </div>
+            </div>
+
+            <!-- Politician Theme Clusters -->
+            <div class="panel" style="margin-top: 20px;">
+                <h3>🎯 Thema-clusters (60d) <span class="sub">— ≥3 politici handelen in zelfde sector, overleeft de 30-45d STOCK Act lag</span></h3>
+                <div id="theme-clusters-list"><div class="empty">Loading…</div></div>
             </div>
 
             <!-- Top 5 Politician Portfolios -->
@@ -285,6 +291,44 @@
                 }
                 loadTopPoliticians();
             } catch (e) { alert('Failed: ' + e.message); }
+        }
+
+        // Theme clusters — accumulation/distribution across a sector by N+ politicians
+        async function loadThemeClusters() {
+            const el = document.getElementById('theme-clusters-list');
+            try {
+                const r = await fetch('/api/stocks/politician-themes?window_days=60&min_politicians=3');
+                const items = await r.json();
+                if (!items.length) {
+                    el.innerHTML = '<div class="empty">Geen clusters van ≥3 politici in dezelfde sector (laatste 60d).</div>';
+                    return;
+                }
+                el.innerHTML = `<table class="tbl">
+                    <tr><th>Thema</th><th class="num">Politici</th><th>Richting</th><th class="num">Buy/Sell</th><th>Tickers</th><th>Politici (sample)</th></tr>
+                    ${items.map(c => {
+                        const dirColor = c.net_direction === 'accumulating' ? 'pnl-positive'
+                            : c.net_direction === 'distributing' ? 'pnl-negative' : '';
+                        const dirEmoji = c.net_direction === 'accumulating' ? '📈'
+                            : c.net_direction === 'distributing' ? '📉' : '↔';
+                        const tickers = c.tickers.slice(0, 6).join(', ') + (c.tickers.length > 6 ? ` +${c.tickers.length-6}` : '');
+                        const pols = c.politicians.slice(0, 3).map(p => p.replace(/^Hon\.\s*/i,'')).join(', ');
+                        const polsExtra = c.politicians.length > 3 ? ` +${c.politicians.length-3}` : '';
+                        return `<tr>
+                            <td><b>${escapeHtml(c.theme)}</b></td>
+                            <td class="num">${c.politicians_count}</td>
+                            <td class="${dirColor}">${dirEmoji} ${escapeHtml(c.net_direction)}</td>
+                            <td class="num" style="font-size:11px;">${c.purchase_count}B / ${c.sale_count}S</td>
+                            <td style="font-size:11px;font-family:var(--font-mono);">${escapeHtml(tickers)}</td>
+                            <td style="font-size:11px;">${escapeHtml(pols)}${polsExtra}</td>
+                        </tr>`;
+                    }).join('')}
+                </table>
+                <div style="margin-top:10px;font-size:11px;color:var(--text-muted);line-height:1.5;">
+                    Themes gerangschikt op conviction (politicus-count × richting-skew). <b>Accumulating</b> = duidelijk meer koop dan verkoop, sector-rotation kandidaat. <b>Distributing</b> = meer verkoop, exit-signaal. <b>Mixed</b> = beide kanten, geen duidelijke trend.
+                </div>`;
+            } catch (e) {
+                el.innerHTML = `<div class="empty">Fetch mislukt: ${escapeHtml(e.message)}</div>`;
+            }
         }
 
         // Trades feed
@@ -545,6 +589,7 @@
 
         loadSqueezes();
         loadTopPoliticians();
+        loadThemeClusters();
         loadPortfolios();
         loadTrades();
         loadForm4();
