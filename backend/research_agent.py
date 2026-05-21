@@ -124,8 +124,40 @@ async def _ingest_all() -> List[Dict]:
     async def _youtube() -> List[Dict]:
         return await youtube_intel.fetch_youtube_intel(since_hours=48, max_videos_per_channel=2)
 
+    async def _congress() -> List[Dict]:
+        """Senate disclosures as Scout items. Purchases only — sales are
+        mostly portfolio cleanup, weaker signal."""
+        from . import stocks_data
+        try:
+            trades = await stocks_data.fetch_politician_trades(days_back=14)
+        except Exception as e:
+            logger.warning(f"congress ingest failed: {e}")
+            return []
+        items: List[Dict] = []
+        for t in trades:
+            if (t.get("type") or "") != "purchase":
+                continue
+            tk = (t.get("ticker") or "").strip()
+            if not tk or tk in ("?", "N/A"):
+                continue
+            rep = t.get("representative") or "?"
+            amt = t.get("amount") or ""
+            date = t.get("transaction_date") or ""
+            items.append({
+                "source": f"Congress: {rep}",
+                "title": f"{rep} kocht {tk} ({amt})",
+                "body": (f"{rep} bought {tk} on {date}. Amount range: {amt}. "
+                          f"Asset: {(t.get('asset') or '')[:200]}"),
+                "url": "",
+                "ts": date,
+            })
+        return items
+
     bucket: List[Dict] = []
-    results = await asyncio.gather(_gmail(), _rss(), _reddit(), _youtube(), return_exceptions=True)
+    results = await asyncio.gather(
+        _gmail(), _rss(), _reddit(), _youtube(), _congress(),
+        return_exceptions=True,
+    )
     for r in results:
         if isinstance(r, Exception):
             logger.warning(f"ingest source errored: {r}")
@@ -360,6 +392,75 @@ async def _send_digest(ideas: List[Dict]) -> None:
 # Public entry points
 # ──────────────────────────────────────────────────────────────────────
 
+def _congress_fast_path(items: List[Dict]) -> tuple:
+    """Pre-filter congress items where the ticker is on the stocks-watchlist
+    OR the senator is on the politicians-watchlist. These bypass the LLM
+    pipeline and become Implement-stage ideas directly: the signal is
+    already validated by two independent filters (your handpicked stocks +
+    your handpicked politicians).
+
+    Returns (fast_path_ideas, remaining_items)."""
+    try:
+        from . import stocks_data
+        stock_watchlist = {t.upper() for t in (stocks_data.get_watchlist() or [])}
+        pol_watchlist = {p.lower() for p in (stocks_data.get_politician_watchlist() or [])}
+    except Exception:
+        return [], items
+
+    fast: List[Dict] = []
+    remain: List[Dict] = []
+    for it in items:
+        src = (it.get("source") or "")
+        if not src.startswith("Congress:"):
+            remain.append(it)
+            continue
+        rep = src.replace("Congress:", "").strip()
+        title = it.get("title") or ""
+        # Extract ticker from title — "Rep kocht TICKER (range)"
+        import re
+        m = re.search(r"kocht\s+([A-Z][A-Z0-9.\-]{0,5})\b", title)
+        ticker = m.group(1) if m else None
+        on_stock_wl = ticker and ticker.upper() in stock_watchlist
+        on_pol_wl = rep.lower() in pol_watchlist
+        if not (on_stock_wl or on_pol_wl):
+            remain.append(it)
+            continue
+        reasons = []
+        if on_stock_wl: reasons.append(f"{ticker} on stocks watchlist")
+        if on_pol_wl:   reasons.append(f"{rep} on politicians watchlist")
+        # Synthetic Implement-stage idea — no LLM needed
+        fast.append({
+            "market_type": "stocks",
+            "ticker_or_event": ticker or "?",
+            "thesis": f"Congressional disclosure: {it.get('body','')[:180]}",
+            "conviction": 4,
+            "why_now": "Fresh STOCK Act disclosure; double-filtered ({}).".format(" + ".join(reasons)),
+            "source": src,
+            "source_title": title,
+            "source_url": it.get("url",""),
+            "source_ts": it.get("ts",""),
+            # Pre-built pipeline payload — skips Skeptic/Stakes/Trader
+            "stage": "implement",
+            "skeptic": {"pass": True, "score": 0.8,
+                          "strong_thesis": f"Congressional purchase of {ticker} matches a hand-curated filter ({', '.join(reasons)}).",
+                          "rejected_reason": None,
+                          "devils_advocate": "Disclosure can lag actual trade by 30-45 days; alpha may be stale.",
+                          "at": datetime.utcnow().isoformat()},
+            "stakes": {"stake_usd": 100.0, "max_exposure_pct": 5.0,
+                         "rationale": "Default stocks stake. Double-filter signal.",
+                         "skip": False,
+                         "at": datetime.utcnow().isoformat()},
+            "trader": {"target_market_url": None,
+                          "entry_price": None,
+                          "exit_triggers": "TP +20% / SL -10% / 90d max-hold (hardcoded paper rules)",
+                          "stop_loss": None,
+                          "time_to_resolution": "90 days",
+                          "action_summary": f"Follow {rep} into {ticker}.",
+                          "at": datetime.utcnow().isoformat()},
+        })
+    return fast, remain
+
+
 async def run_daily() -> Dict:
     """Full Scout→Skeptic→Stakes→Trader pipeline. Returns summary for API."""
     started = datetime.utcnow()
@@ -367,35 +468,47 @@ async def run_daily() -> Dict:
     if not items:
         await _send_digest([])
         return {"ingested": 0, "filtered": 0, "top": 0, "ms": 0, "ideas": []}
+
+    # Fast-path: congress trades on the stocks/politician watchlists skip the
+    # LLM pipeline — the double-filter is enough signal on its own.
+    fast_path_ideas, items = _congress_fast_path(items)
+    if fast_path_ideas:
+        logger.info(f"research_agent fast-path: {len(fast_path_ideas)} congress watchlist-overlap ideas")
+
     ideas = await _filter_all(items)
     top = await _dedupe_and_rank(ideas)
 
     # Persist first so rows get ids — then the 3-stage pipeline updates
     # each row in place with skeptic/stakes/trader/stage fields.
+    # Fast-path ideas (pre-validated by the double-filter) are persisted
+    # separately and SKIP run_pipeline — otherwise Skeptic would re-judge
+    # them from scratch and might override the synthetic pipeline data.
     piped: List[Dict] = []
+    if fast_path_ideas:
+        piped.extend(_persist(fast_path_ideas))
     if top:
         persisted = _persist(top)
         try:
             from .pipeline import run_pipeline
-            piped = await run_pipeline(persisted, concurrency=2)
-            for it in piped:
+            run_through = await run_pipeline(persisted, concurrency=2)
+            for it in run_through:
                 upd = {k: it.get(k) for k in ("skeptic", "stakes", "trader", "stage") if it.get(k) is not None}
                 if upd and it.get("id"):
                     update_idea_pipeline(it["id"], upd)
+            piped.extend(run_through)
         except Exception as e:
             logger.warning(f"pipeline failed (ideas persisted as raw): {e}")
-            piped = persisted
+            piped.extend(persisted)
 
-        # Auto-open paper-trade positions for ideas that made it to Implement.
-        # Hardcoded exit rules per asset class (see research_paper_trader.RULES).
-        # No real money — just a way to measure whether pipeline ideas have edge.
-        try:
-            from .research_paper_trader import open_paper_position
-            for it in piped:
-                if it.get("stage") == "implement":
-                    await open_paper_position(it)
-        except Exception as e:
-            logger.warning(f"paper-trader open failed: {e}")
+    # Auto-open paper-trade positions for every Implement-stage idea
+    # (whether from the LLM pipeline or the fast-path).
+    try:
+        from .research_paper_trader import open_paper_position
+        for it in piped:
+            if it.get("stage") == "implement":
+                await open_paper_position(it)
+    except Exception as e:
+        logger.warning(f"paper-trader open failed: {e}")
 
     await _send_digest(piped or top)
     elapsed = int((datetime.utcnow() - started).total_seconds() * 1000)
