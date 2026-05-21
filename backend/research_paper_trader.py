@@ -52,9 +52,22 @@ def _extract_stock_ticker(idea: Dict) -> Optional[str]:
 
 
 def _extract_crypto_symbol(idea: Dict) -> Optional[str]:
+    """Pull the primary symbol from ticker_or_event. Strip parenthetical
+    notes first ("Linea (ETH L2)" → "Linea") so we don't match the inner
+    L2 name. Falls back to the parenthetical only if the outer has no
+    matchable ticker."""
     candidate = (idea.get("ticker_or_event") or "").strip()
-    m = re.search(r"\b[A-Z]{2,6}\b", candidate)
-    return m.group(0) if m else None
+    # Strip "(...)" notes — they often contain confusing inner tokens.
+    main = re.sub(r"\s*\([^)]*\)\s*", " ", candidate).strip()
+    for source in (main, candidate):
+        m = re.search(r"\b[A-Z]{2,6}\b", source)
+        if m:
+            return m.group(0)
+        # Allow lowercase project names if no ALL-CAPS found
+        first_word = source.split()[0] if source.split() else ""
+        if first_word and len(first_word) >= 3 and first_word.isalpha():
+            return first_word
+    return None
 
 
 def _stock_price_sync(ticker: str) -> Optional[float]:

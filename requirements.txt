@@ -4,7 +4,7 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 httpx>=0.26.0
 aiohttp==3.9.1
-websockets==12.0
+websockets>=13.0  # bumped 2026-05-21: yfinance 0.2.40+ needs websockets.asyncio submodule (added in v13)
 
 # Data & Analysis
 pandas==2.1.4
