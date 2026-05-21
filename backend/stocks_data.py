@@ -5,7 +5,9 @@ interest scraping from Yahoo. Free public sources, no API keys required.
 Drives the /stocks dashboard. The bot doesn't trade stocks directly (yet) —
 this is signal-surface only, manual execution by the user.
 """
+import asyncio
 import json
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -288,10 +290,132 @@ def set_watchlist(tickers: List[str]):
     WATCHLIST_PATH.write_text(json.dumps({"tickers": seen}, indent=2))
 
 
+_PRICE_CACHE_DIR = Path(__file__).parent.parent / "data" / "yfinance_cache"
+_PRICE_CACHE_TTL_HOURS = 24
+
+
+def _price_cache_path(ticker: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", ticker)
+    return _PRICE_CACHE_DIR / f"{safe}.json"
+
+
+def _load_price_history_sync(ticker: str, days: int = 400) -> Optional[List[Dict]]:
+    """Per-ticker yfinance close-price history with 24h disk cache.
+    Returns [{date: 'YYYY-MM-DD', close: float}, ...] or None."""
+    cache = _price_cache_path(ticker)
+    if cache.exists():
+        try:
+            age = (datetime.utcnow() - datetime.utcfromtimestamp(cache.stat().st_mtime))
+            if age < timedelta(hours=_PRICE_CACHE_TTL_HOURS):
+                return json.loads(cache.read_text())
+        except Exception:
+            pass
+    try:
+        import yfinance as yf
+        hist = yf.Ticker(ticker).history(period=f"{days}d", interval="1d")
+        if hist.empty:
+            return None
+        rows = []
+        for idx, row in hist.iterrows():
+            d = idx.strftime("%Y-%m-%d")
+            try:
+                rows.append({"date": d, "close": float(row["Close"])})
+            except Exception:
+                continue
+        _PRICE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(rows))
+        return rows
+    except Exception as e:
+        logger.debug(f"yfinance history failed for {ticker}: {e}")
+        return None
+
+
+async def _price_history(ticker: str, days: int = 400) -> Optional[List[Dict]]:
+    return await asyncio.to_thread(_load_price_history_sync, ticker, days)
+
+
+def _close_at(prices: List[Dict], target_date: str) -> Optional[float]:
+    """Return closing price on or after target_date (next trading day if
+    target is a weekend/holiday). None if no data forward of target."""
+    if not prices or not target_date:
+        return None
+    for row in prices:
+        if row["date"] >= target_date:
+            return row["close"]
+    return None
+
+
+async def _enrich_trades_with_excess_returns(trades: List[Dict], window_days: int = 180) -> None:
+    """Fill `excess_return` in-place for trades that don't have one.
+
+    Method: for each trade, compute the realized return of the ticker
+    from txn_date through min(txn_date + window_days, today). Compare to
+    SPY same window. excess = stock_return - spy_return.
+
+    Skipped if either price series is unavailable, or if there's no
+    forward price data yet (very recent trades). The bot's old paid
+    Quiver source provided ExcessReturn pre-computed — this is the
+    free-tier replacement for that field.
+    """
+    needs = [t for t in trades if t.get("excess_return") is None]
+    if not needs:
+        return
+    tickers = sorted({(t.get("ticker") or "").upper() for t in needs if t.get("ticker")})
+    tickers = [t for t in tickers if t and t not in ("?", "N/A")]
+    # Pre-fetch SPY once + all tickers in parallel
+    spy_task = _price_history("SPY", days=400)
+    ticker_tasks = {t: _price_history(t, days=400) for t in tickers}
+    spy = await spy_task
+    history: Dict[str, List[Dict]] = {}
+    for t, task in ticker_tasks.items():
+        history[t] = await task
+    if not spy:
+        logger.warning("excess-return: SPY history unavailable, skipping enrichment")
+        return
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    for t in needs:
+        tk = (t.get("ticker") or "").upper()
+        if not tk or tk not in history or not history[tk]:
+            continue
+        td = t.get("transaction_date") or ""
+        if not td or td > today:
+            continue
+        # Window end = min(td + window_days, today)
+        try:
+            td_dt = datetime.fromisoformat(td)
+        except Exception:
+            continue
+        end_dt = min(td_dt + timedelta(days=window_days), datetime.utcnow())
+        end_date = end_dt.strftime("%Y-%m-%d")
+        entry = _close_at(history[tk], td)
+        exit_ = _close_at(history[tk], end_date)
+        spy_entry = _close_at(spy, td)
+        spy_exit = _close_at(spy, end_date)
+        # If the exit date is in the future relative to available data,
+        # _close_at returns None — we fall back to the latest close.
+        if exit_ is None and history[tk]:
+            exit_ = history[tk][-1]["close"]
+            spy_exit = spy[-1]["close"] if spy else None
+        if not all([entry, exit_, spy_entry, spy_exit]) or entry <= 0 or spy_entry <= 0:
+            continue
+        stock_return = (exit_ / entry) - 1
+        spy_return = (spy_exit / spy_entry) - 1
+        excess = stock_return - spy_return
+        # For sales, the politician benefitted from AVOIDING the move →
+        # invert sign so "good sale" → positive excess
+        if (t.get("type") or "").lower() == "sale":
+            excess = -excess
+        t["excess_return"] = round(excess, 4)
+        t["price_change"] = round(stock_return, 4)
+
+
 async def top_politicians_by_alpha(min_trades: int = 2) -> List[Dict]:
     """Aggregate the politician trade feed by representative and rank by mean
     excess return. The Pelosi-tracker move: who's actually outperforming?"""
     trades = await fetch_politician_trades(days_back=180)
+    # Fill excess_return for any trade missing it (the new free House+
+    # CapitolTrades sources don't precompute it like paid Quiver did).
+    await _enrich_trades_with_excess_returns(trades, window_days=180)
     by_rep: Dict[str, Dict] = {}
     for t in trades:
         rep = t.get("representative", "?")
