@@ -8,12 +8,22 @@ even if any individual trade is stale by the time we see it.
 
 Doesn't replace the per-trade Top Politicians table — that ranks who
 has alpha. This ranks WHAT is being accumulated.
+
+Two-tier classification:
+  1. Hardcoded THEMES dict (curated, narrow — "ai-semis", "nuclear-uranium")
+  2. yfinance fallback for unmapped tickers — derives a broader theme
+     from sector + industry, cached on disk (1 week TTL).
 """
 from __future__ import annotations
 
+import asyncio
+import json
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Dict, List, Set
+from pathlib import Path
+from typing import Dict, List, Optional, Set
+
+from loguru import logger
 
 # ──────────────────────────────────────────────────────────────────────
 # Theme map — ticker → list of themes. One ticker can belong to multiple
@@ -92,8 +102,157 @@ TICKER_TO_THEMES = dict(TICKER_TO_THEMES)
 
 
 def themes_for_ticker(ticker: str) -> List[str]:
-    """Return all themes a ticker belongs to (can be multiple)."""
-    return TICKER_TO_THEMES.get((ticker or "").upper(), [])
+    """Return all themes a ticker belongs to (can be multiple).
+    Reads from hardcoded map first, then the yfinance-derived dynamic cache.
+    Returns [] for tickers we've never classified — call enrich_dynamic_themes()
+    first to populate."""
+    tk = (ticker or "").upper()
+    static = TICKER_TO_THEMES.get(tk, [])
+    if static:
+        return static
+    return _dynamic_map.get(tk, [])
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Dynamic classification via yfinance — for tickers not in the static map
+# ──────────────────────────────────────────────────────────────────────
+
+_DYNAMIC_CACHE_PATH = Path(__file__).parent.parent / "data" / "ticker_themes_cache.json"
+_DYNAMIC_TTL_DAYS = 14  # sector/industry don't change weekly
+_dynamic_map: Dict[str, List[str]] = {}
+_dynamic_meta: Dict[str, str] = {}  # ticker -> ISO date last refreshed
+
+
+def _load_dynamic_cache() -> None:
+    if not _DYNAMIC_CACHE_PATH.exists():
+        return
+    try:
+        data = json.loads(_DYNAMIC_CACHE_PATH.read_text())
+        for tk, entry in data.items():
+            if isinstance(entry, dict):
+                _dynamic_map[tk] = entry.get("themes") or []
+                _dynamic_meta[tk] = entry.get("refreshed_at", "")
+            elif isinstance(entry, list):  # legacy shape
+                _dynamic_map[tk] = entry
+                _dynamic_meta[tk] = ""
+    except Exception as e:
+        logger.debug(f"dynamic theme cache load failed: {e}")
+
+
+def _save_dynamic_cache() -> None:
+    _DYNAMIC_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {tk: {"themes": _dynamic_map[tk], "refreshed_at": _dynamic_meta.get(tk, "")}
+               for tk in _dynamic_map}
+    try:
+        _DYNAMIC_CACHE_PATH.write_text(json.dumps(payload, indent=1))
+    except Exception as e:
+        logger.debug(f"dynamic theme cache save failed: {e}")
+
+
+# Map yfinance sector → our theme buckets. Used when industry doesn't match
+# any of the narrower INDUSTRY_KEYWORDS below.
+_SECTOR_TO_THEMES = {
+    "Technology": ["mega-tech"],
+    "Financial Services": ["banks"],
+    "Healthcare": ["pharma"],
+    "Consumer Cyclical": ["consumer-discretionary"],
+    "Consumer Defensive": ["consumer-staples"],
+    "Industrials": ["industrials"],
+    "Energy": ["oil-gas"],
+    "Communication Services": ["telecom"],
+    "Utilities": ["utilities"],
+    "Basic Materials": ["materials"],
+    "Real Estate": ["reits"],
+}
+
+# Industry-name substrings → specific themes. These override the sector
+# default (a Technology stock with industry "Semiconductors" goes to
+# ai-semis, not the generic mega-tech).
+_INDUSTRY_KEYWORDS = {
+    "ai-semis": ["semiconductor"],
+    "ai-software": ["software—application", "software-application",
+                     "software—infrastructure", "software-infrastructure"],
+    "nuclear-uranium": ["uranium", "nuclear"],
+    "defense": ["aerospace & defense", "aerospace and defense", "defense"],
+    "ev-auto": ["auto manufacturers"],
+    "crypto-adjacent": ["crypto", "blockchain"],
+    "banks": ["bank—diversified", "banks—diversified", "banks—regional"],
+    "oil-gas": ["oil & gas", "oil and gas"],
+    "pharma": ["drug manufacturers", "biotechnology"],
+    "reits": ["reit"],
+    "ai-software": ["information technology services"],  # broad coverage
+}
+
+
+def _classify_from_yfinance(sector: str, industry: str) -> List[str]:
+    """Map yfinance sector + industry to our internal themes."""
+    out: List[str] = []
+    i = (industry or "").lower()
+    if i:
+        for theme, keywords in _INDUSTRY_KEYWORDS.items():
+            if any(k in i for k in keywords) and theme not in out:
+                out.append(theme)
+    if not out and sector in _SECTOR_TO_THEMES:
+        out = list(_SECTOR_TO_THEMES[sector])
+    return out
+
+
+def _fetch_yfinance_classification_sync(ticker: str) -> List[str]:
+    """Blocking yfinance call — wrap with asyncio.to_thread."""
+    try:
+        import yfinance as yf
+        info = yf.Ticker(ticker).info or {}
+        sector = info.get("sector") or ""
+        industry = info.get("industry") or ""
+        themes = _classify_from_yfinance(sector, industry)
+        logger.debug(f"yfinance theme: {ticker} sector={sector!r} industry={industry!r} → {themes}")
+        return themes
+    except Exception as e:
+        logger.debug(f"yfinance theme classify failed for {ticker}: {e}")
+        return []
+
+
+async def enrich_dynamic_themes(tickers: List[str], concurrency: int = 4) -> int:
+    """For every ticker not in the hardcoded map and not in a fresh dynamic
+    cache entry, fetch yfinance and classify. Updates the on-disk cache.
+    Returns count of tickers newly classified this call.
+    """
+    if not _dynamic_map and _DYNAMIC_CACHE_PATH.exists():
+        _load_dynamic_cache()
+
+    now = datetime.utcnow()
+    cutoff = (now - timedelta(days=_DYNAMIC_TTL_DAYS)).isoformat()
+    todo: List[str] = []
+    seen: Set[str] = set()
+    for raw in tickers:
+        tk = (raw or "").strip().upper()
+        if not tk or tk in seen or tk in TICKER_TO_THEMES:
+            continue
+        seen.add(tk)
+        # Skip if cached recently
+        last = _dynamic_meta.get(tk, "")
+        if last and last >= cutoff:
+            continue
+        todo.append(tk)
+
+    if not todo:
+        return 0
+
+    sem = asyncio.Semaphore(concurrency)
+    async def _one(tk: str) -> None:
+        async with sem:
+            themes = await asyncio.to_thread(_fetch_yfinance_classification_sync, tk)
+        _dynamic_map[tk] = themes
+        _dynamic_meta[tk] = now.isoformat()
+
+    await asyncio.gather(*(_one(tk) for tk in todo))
+    _save_dynamic_cache()
+    logger.info(f"theme cache: classified {len(todo)} new tickers via yfinance")
+    return len(todo)
+
+
+# Auto-load cache on module import so the first call is fast
+_load_dynamic_cache()
 
 
 # ──────────────────────────────────────────────────────────────────────

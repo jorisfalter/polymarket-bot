@@ -1862,8 +1862,17 @@ async def get_politician_themes(
     disclosure lag — individual trades are stale but multi-politician
     accumulation in one theme is real signal."""
     from .stocks_data import fetch_politician_trades
-    from .politician_themes import detect_theme_clusters
+    from .politician_themes import detect_theme_clusters, enrich_dynamic_themes
     trades = await fetch_politician_trades(days_back=window_days + 5)
+    # Auto-classify tickers we haven't hardcoded yet via yfinance sector
+    # lookup. First call hits the network for unknown tickers; subsequent
+    # calls read from disk cache (14d TTL).
+    tickers = list({(t.get("ticker") or "").upper() for t in trades if t.get("ticker")})
+    try:
+        await enrich_dynamic_themes(tickers)
+    except Exception as e:
+        # Don't fail the endpoint on a yfinance hiccup; fall back to hardcoded only
+        logger.warning(f"theme enrichment failed: {e}")
     return detect_theme_clusters(
         trades, window_days=window_days, min_politicians=min_politicians,
     )
