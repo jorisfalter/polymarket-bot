@@ -79,20 +79,20 @@ async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
 
     trades: List[Dict] = []
 
+    # 1. Paid sources first if configured — fastest, most reliable
     if settings.quiver_api_key:
         trades = await _fetch_quiver_authed(settings.quiver_api_key, days_back=days_back)
     if not trades and settings.finnhub_api_key:
         trades = await _fetch_finnhub_congress(settings.finnhub_api_key, days_back=180)
-    # NOTE 2026-05-21: every free fallback we tried is dead.
-    # - Finnhub's /stock/congressional-trading went 403 on free tier
-    # - Stock Watcher S3 buckets (house + senate) → 403
-    # - senate-stock-watcher GitHub repo: 200 OK but data stops 2020-11
-    #   (last commit 2021-03; using it would inject 5yr-old data over the
-    #   disk-cache, worse than no fallback)
-    # - CapitolTrades BFF → CloudFront 503
-    # Verdict: there is no reliable free congress-data source. Recommend
-    # paid Quiver ($19/mo) for live data. Until then we serve from the
-    # disk snapshot below.
+    # 2. Direct scrape of the official disclosure portals — slow but free
+    # and durable (House Clerk + Senate efdsearch). Added 2026-05-21 after
+    # every free third-party source went dark.
+    if not trades:
+        try:
+            from .congress_scraper import fetch_all_congress
+            trades = await fetch_all_congress(days_back=max(days_back, 30))
+        except Exception as e:
+            logger.warning(f"congress_scraper failed: {e}")
     if not trades:
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:

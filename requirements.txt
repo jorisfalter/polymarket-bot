@@ -47,4 +47,6 @@ google-auth>=2.0.0
 # Research agent — ingestion
 feedparser>=6.0.0          # robust RSS/Atom parsing for intel_feeds
 youtube-transcript-api>=0.6.2  # free transcript fetch, no auth
+pdfplumber>=0.11.0         # parse House Clerk PTR PDFs for congress trades
+beautifulsoup4>=4.12.0     # parse Senate efdsearch HTML responses
 
