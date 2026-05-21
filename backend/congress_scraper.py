@@ -221,7 +221,152 @@ async def fetch_house_transactions(days_back: int = 30, max_filings: int = 60) -
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Senate efdsearch
+# CapitolTrades — React Server Component scraper (covers House + Senate)
+# ──────────────────────────────────────────────────────────────────────
+#
+# Discovered 2026-05-21 while looking for a Senate-data path after
+# efdsearch.senate.gov turned out to be Akamai-blocked from any
+# datacenter IP. The capitoltrades.com Next.js app SSR's its data
+# into React Server Component payloads — those are HTTP-fetchable
+# without any session or anti-bot bypass. The trick is the `_rsc=`
+# query parameter + the `RSC: 1` header; the response is a stream
+# of lines like `id:value` and the "0:" line contains the page data
+# with trades embedded as clean JSON objects.
+#
+# Each trade looks like:
+#   {"_issuerId":429914,"_politicianId":"M001236","_txId":...,
+#    "chamber":"house","issuer":{"issuerName":"AT&T Inc",
+#    "issuerTicker":"T:US","sector":"..."},"politician":{
+#    "firstName":"Tim","lastName":"Moore","party":"republican",
+#    "chamber":"house"},"price":24.43,"txDate":"2026-05-18",
+#    "txType":"buy","value":32500}
+#
+# Way cleaner than parsing House PDFs and covers Senate too.
+
+CAPITOLTRADES_BASE = "https://www.capitoltrades.com"
+_CT_RSC_PARAM = "bx0x8"  # build ID; if their build changes we may need to update
+
+_CT_TRADE_RE = re.compile(
+    r'\{"_issuerId":\d+,"_politicianId":"[^"]+","_txId":\d+,'
+    r'(?:[^{}]|\{[^{}]*\})*?\}'
+)
+
+
+async def _fetch_capitoltrades_rsc(path: str, params: Optional[Dict] = None) -> str:
+    """Fetch an RSC payload from capitoltrades.com. Returns raw text or ""."""
+    url = f"{CAPITOLTRADES_BASE}{path}"
+    query = dict(params or {})
+    query["_rsc"] = _CT_RSC_PARAM
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept": "text/x-component",
+        "RSC": "1",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20.0, headers=headers) as c:
+            r = await c.get(url, params=query)
+            r.raise_for_status()
+            return r.text
+    except Exception as e:
+        logger.debug(f"capitoltrades RSC fetch failed for {url}: {e}")
+        return ""
+
+
+def _parse_capitoltrades_trades(rsc_text: str) -> List[Dict]:
+    """Extract trade JSON objects from a CapitolTrades RSC payload."""
+    import json
+    out: List[Dict] = []
+    for raw in _CT_TRADE_RE.findall(rsc_text):
+        try:
+            obj = json.loads(raw)
+            out.append(obj)
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def _normalize_capitoltrades_trade(t: Dict) -> Dict:
+    """CapitolTrades trade → our common shape."""
+    pol = t.get("politician") or {}
+    iss = t.get("issuer") or {}
+    full_name = " ".join(p for p in (pol.get("firstName"), pol.get("lastName")) if p)
+    tx_type = (t.get("txType") or "").lower()
+    if tx_type == "buy":
+        type_norm = "purchase"
+    elif tx_type == "sell":
+        type_norm = "sale"
+    elif tx_type == "exchange":
+        type_norm = "exchange"
+    else:
+        type_norm = tx_type
+    # CapitolTrades tickers look like "T:US" / "IHG:US" — strip suffix.
+    ticker = (iss.get("issuerTicker") or "").upper().split(":")[0]
+    value = t.get("value")
+    return {
+        "chamber": (t.get("chamber") or pol.get("chamber") or "").title(),
+        "representative": full_name or "?",
+        "party": pol.get("party") or "",
+        "ticker": ticker,
+        "asset": iss.get("issuerName") or "",
+        "type": type_norm,
+        "amount": f"${value:,}" if isinstance(value, (int, float)) else "",
+        "amount_usd": float(value or 0),
+        "transaction_date": t.get("txDate") or "",
+        "disclosure_date": (t.get("pubDate") or "")[:10],
+        "excess_return": None,
+        "price_change": None,
+        "_txId": t.get("_txId"),
+        "_politicianId": t.get("_politicianId"),
+    }
+
+
+async def fetch_capitoltrades_transactions(
+    days_back: int = 30, max_pages: int = 30,
+) -> List[Dict]:
+    """Paginate CapitolTrades' /trades feed until we've covered days_back.
+    Returns deduped + normalized trades (House + Senate)."""
+    cutoff = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    seen_tx: set = set()
+    out: List[Dict] = []
+    for page in range(1, max_pages + 1):
+        rsc = await _fetch_capitoltrades_rsc("/trades", {
+            "page": str(page),
+            "pageSize": "96",  # what their site uses
+            "sortBy": "-publishDate",
+        })
+        if not rsc:
+            break
+        trades = _parse_capitoltrades_trades(rsc)
+        if not trades:
+            break
+        oldest_on_page = ""
+        for t in trades:
+            tx_id = t.get("_txId")
+            if tx_id is not None:
+                if tx_id in seen_tx:
+                    continue
+                seen_tx.add(tx_id)
+            norm = _normalize_capitoltrades_trade(t)
+            tx_date = norm["transaction_date"]
+            if tx_date and tx_date < cutoff:
+                continue
+            out.append(norm)
+            if tx_date and (not oldest_on_page or tx_date < oldest_on_page):
+                oldest_on_page = tx_date
+        # Stop if entire page is older than cutoff
+        if oldest_on_page and oldest_on_page < cutoff:
+            break
+    out.sort(key=lambda t: t.get("transaction_date", ""), reverse=True)
+    logger.info(f"CapitolTrades: {len(out)} trades in last {days_back}d "
+                f"({len(seen_tx)} unique _txIds, {page} pages scanned)")
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Senate efdsearch — DEPRECATED 2026-05-21
+# Akamai blocks every datacenter IP we tested with 403. Kept for
+# reference; not wired into fetch_all_congress anymore.
 # ──────────────────────────────────────────────────────────────────────
 
 SENATE_BASE = "https://efdsearch.senate.gov"
@@ -443,15 +588,33 @@ def _to_common_shape(meta: Dict, tx: Dict, chamber: str) -> Dict:
 # ──────────────────────────────────────────────────────────────────────
 
 async def fetch_all_congress(days_back: int = 30) -> List[Dict]:
-    """House + Senate combined. Errors in one chamber don't kill the other."""
-    house, senate = await asyncio.gather(
+    """Combined source: CapitolTrades RSC (House+Senate, clean dollar
+    values, fast) + House Clerk PDFs (fallback / cross-check, slower).
+
+    Dedupes by (chamber, representative, ticker, transaction_date) since
+    the two sources have different _txId schemes.
+    """
+    capitol, house = await asyncio.gather(
+        fetch_capitoltrades_transactions(days_back=days_back),
         fetch_house_transactions(days_back=days_back),
-        fetch_senate_transactions(days_back=days_back),
         return_exceptions=True,
     )
     out: List[Dict] = []
-    for src in (house, senate):
+    seen: set = set()
+    def _key(t: Dict) -> tuple:
+        rep = (t.get("representative") or "").strip().lower()
+        # Strip "Hon." prefix that House PDFs sometimes include
+        for p in ("hon.", "rep.", "sen."):
+            if rep.startswith(p):
+                rep = rep[len(p):].strip()
+        return (rep, t.get("ticker", "").upper(), t.get("transaction_date", ""), t.get("type", ""))
+    for src in (capitol, house):
         if isinstance(src, list):
-            out.extend(src)
+            for t in src:
+                k = _key(t)
+                if k in seen:
+                    continue
+                seen.add(k)
+                out.append(t)
     out.sort(key=lambda t: t.get("transaction_date", ""), reverse=True)
     return out
