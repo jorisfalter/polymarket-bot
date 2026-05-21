@@ -83,12 +83,16 @@ async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
         trades = await _fetch_quiver_authed(settings.quiver_api_key, days_back=days_back)
     if not trades and settings.finnhub_api_key:
         trades = await _fetch_finnhub_congress(settings.finnhub_api_key, days_back=180)
-    # Free fallback (2026-05-21): Finnhub's congress endpoint went 403 on free
-    # tier, S3-hosted Stock Watcher buckets went 403 too. GitHub-raw still
-    # serves the senate-stock-watcher JSON. House data has no working free
-    # source — accept senate-only coverage.
-    if not trades:
-        trades = await _fetch_senate_stock_watcher()
+    # NOTE 2026-05-21: every free fallback we tried is dead.
+    # - Finnhub's /stock/congressional-trading went 403 on free tier
+    # - Stock Watcher S3 buckets (house + senate) → 403
+    # - senate-stock-watcher GitHub repo: 200 OK but data stops 2020-11
+    #   (last commit 2021-03; using it would inject 5yr-old data over the
+    #   disk-cache, worse than no fallback)
+    # - CapitolTrades BFF → CloudFront 503
+    # Verdict: there is no reliable free congress-data source. Recommend
+    # paid Quiver ($19/mo) for live data. Until then we serve from the
+    # disk snapshot below.
     if not trades:
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
@@ -168,72 +172,6 @@ async def _fetch_finnhub_congress(api_key: str, days_back: int = 180) -> List[Di
     except Exception as e:
         logger.warning(f"Finnhub congress fetch failed: {e}")
     return out
-
-
-SENATE_WATCHER_URL = (
-    "https://raw.githubusercontent.com/timothycarambat/"
-    "senate-stock-watcher-data/master/aggregate/all_transactions.json"
-)
-
-
-async def _fetch_senate_stock_watcher() -> List[Dict]:
-    """Free Senate disclosures via the senate-stock-watcher GitHub repo.
-    Only senate is covered — the equivalent house-stock-watcher dataset
-    went offline. Returns trades sorted newest-first."""
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(SENATE_WATCHER_URL,
-                                  headers={"User-Agent": "Mozilla/5.0"})
-            r.raise_for_status()
-            items = r.json() or []
-    except Exception as e:
-        logger.warning(f"Senate Stock Watcher fetch failed: {e}")
-        return []
-    out: List[Dict] = [_normalize_senate_watcher(i) for i in items if i]
-    # Source dates are MM/DD/YYYY strings — sort by parsed ISO for safety
-    def _key(t: Dict) -> str:
-        d = t.get("transaction_date") or ""
-        # transaction_date is ISO after normalization
-        return d
-    out.sort(key=_key, reverse=True)
-    logger.info(f"Senate Stock Watcher: fetched {len(out)} trades")
-    return out
-
-
-def _normalize_senate_watcher(item: Dict) -> Dict:
-    """senate-stock-watcher shape → our common shape."""
-    raw_type = (item.get("type") or "").lower()
-    if "purchase" in raw_type or "buy" in raw_type:
-        type_norm = "purchase"
-    elif "sale" in raw_type or "sell" in raw_type:
-        type_norm = "sale"
-    else:
-        type_norm = raw_type or "?"
-
-    def _iso(d: str) -> str:
-        # "07/25/2012" → "2012-07-25"
-        if not d or "/" not in d:
-            return d or ""
-        try:
-            mm, dd, yyyy = d.split("/")
-            return f"{yyyy}-{mm.zfill(2)}-{dd.zfill(2)}"
-        except Exception:
-            return d
-
-    return {
-        "chamber": "Senate",
-        "representative": item.get("senator") or "?",
-        "party": "",
-        "ticker": (item.get("ticker") or "").upper().replace("--", "").strip("N/A "),
-        "asset": item.get("asset_description") or "",
-        "type": type_norm,
-        "amount": item.get("amount") or "",
-        "amount_usd": 0,  # source gives a range string, not a number
-        "transaction_date": _iso(item.get("transaction_date") or ""),
-        "disclosure_date": _iso(item.get("transaction_date") or ""),  # no separate field
-        "excess_return": None,
-        "price_change": None,
-    }
 
 
 def _normalize_finnhub(item: Dict) -> Dict:
