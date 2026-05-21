@@ -517,6 +517,15 @@ async def lifespan(app: FastAPI):
         hour='6,18', minute=0,  # 06:00 + 18:00 UTC = ~08:00 + ~20:00 CEST
         id='research_agent_job'
     )
+    # Daily paper-trade tick — refresh prices on every open paper position
+    # and apply hardcoded TP/SL/max-hold exit rules. Lets us measure whether
+    # the research pipeline actually produces edge over time.
+    scheduler.add_job(
+        run_paper_trade_tick,
+        'cron',
+        hour=11, minute=0,  # 11:00 UTC, between the two research runs
+        id='paper_trade_tick_job'
+    )
     scheduler.start()
 
     # Initial scan
@@ -1675,6 +1684,30 @@ async def trigger_research_run():
     return summary
 
 
+@app.get("/api/research/paper-trades")
+async def list_paper_trades(
+    status: Optional[str] = Query(None, description="open / closed"),
+    limit: int = Query(200, le=1000),
+):
+    """List paper positions opened by the research pipeline."""
+    from .research_paper_trader import list_positions
+    return list_positions(status=status, limit=limit)
+
+
+@app.get("/api/research/paper-trades/stats")
+async def paper_trades_stats():
+    """Aggregate paper-trade P&L by source / market / conviction."""
+    from .research_paper_trader import stats
+    return stats()
+
+
+@app.post("/api/research/paper-trades/tick")
+async def trigger_paper_tick():
+    """Manually run the daily tick (refresh prices + close exits)."""
+    from .research_paper_trader import tick_all_positions
+    return await tick_all_positions()
+
+
 @app.patch("/api/research/agent-ideas/{idea_id}/status")
 async def patch_agent_idea_status(idea_id: str, payload: Dict):
     """Mark an agent-surfaced idea as acted / archived / dismissed.
@@ -2035,6 +2068,20 @@ async def run_weekly_trade_analysis():
                     f"net ${analysis.get('total_pnl', 0):+.2f}")
     except Exception as e:
         logger.error(f"Weekly trade analysis failed: {e}")
+
+
+async def run_paper_trade_tick():
+    """Daily job: refresh prices on every open paper position and close any
+    that hit TP/SL/max-hold. Quiet in logs unless something closes."""
+    from .research_paper_trader import tick_all_positions
+    try:
+        s = await tick_all_positions()
+        if s.get("closed", 0) > 0 or s.get("errors"):
+            logger.info(f"📝 paper-trade tick: {s.get('updated',0)} updated, "
+                        f"{s.get('closed',0)} closed, {s.get('open',0)} still open "
+                        f"({len(s.get('errors',[]))} errors)")
+    except Exception as e:
+        logger.error(f"paper-trade tick failed: {e}")
 
 
 async def run_research_agent():

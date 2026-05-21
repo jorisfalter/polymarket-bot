@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=22">
+    <link rel="stylesheet" href="/static/styles.css?v=23">
     <script src="/static/theme.js?v=2"></script>
     <style>
         .agent-ideas-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
@@ -220,6 +220,27 @@
                 <div class="kanban-scroll">
                     <div class="kanban-row" id="kanban-row"><div class="empty">Loading...</div></div>
                 </div>
+            </div>
+
+            <!-- Paper-trade panel: meet of de pijplijn-ideeën edge hebben -->
+            <div class="agent-ideas-panel">
+                <div class="agent-ideas-header">
+                    <h2>📝 Paper-trades</h2>
+                    <button class="run-now-btn" id="paper-tick-btn" onclick="paperTickNow()">↻ Prijzen updaten</button>
+                </div>
+                <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">
+                    Elke <b>Uitvoeren</b>-kaart wordt automatisch papier-getraded met vaste exit-regels (aandelen +20/−10/90d · crypto +30/−15/60d · polymarket +50/−30/60d). Geen echt geld. Na een paar weken zien we welke bronnen écht edge hebben.
+                </p>
+                <div class="stats-bar" id="paper-stats-bar">
+                    <div class="stat-block"><div class="stat-num" id="paper-open">—</div><div class="stat-label">Open</div></div>
+                    <div class="stat-block"><div class="stat-num" id="paper-closed">—</div><div class="stat-label">Gesloten</div></div>
+                    <div class="stat-block"><div class="stat-num" id="paper-pnl">—</div><div class="stat-label">Netto P&amp;L</div></div>
+                </div>
+                <div id="paper-by-source" style="margin-top:14px;"></div>
+                <h3 style="font-size:13px;margin:18px 0 8px;color:var(--text-secondary);">Recente exits</h3>
+                <div id="paper-recent-closed"><div class="empty">Nog geen exits.</div></div>
+                <h3 style="font-size:13px;margin:18px 0 8px;color:var(--text-secondary);">Open posities</h3>
+                <div id="paper-open-list"><div class="empty">Nog geen open posities.</div></div>
             </div>
         </div>
     </div>
@@ -450,8 +471,113 @@
             }
         }
 
+        // ─── Paper-trader panel ───
+        async function loadPaperTrades() {
+            try {
+                const [statsRes, openRes, closedRes] = await Promise.all([
+                    fetch('/api/research/paper-trades/stats').then(r => r.json()),
+                    fetch('/api/research/paper-trades?status=open&limit=20').then(r => r.json()),
+                    fetch('/api/research/paper-trades?status=closed&limit=10').then(r => r.json()),
+                ]);
+                renderPaperStats(statsRes);
+                renderPaperOpen(openRes);
+                renderPaperClosed(closedRes);
+            } catch (e) {
+                console.error('paper-trades load failed', e);
+            }
+        }
+
+        function renderPaperStats(s) {
+            document.getElementById('paper-open').textContent = s.open ?? 0;
+            document.getElementById('paper-closed').textContent = s.closed ?? 0;
+            const pnl = s.net_pnl_usd ?? 0;
+            const el = document.getElementById('paper-pnl');
+            el.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+            el.style.color = pnl > 0 ? 'var(--accent-success, #5bdb89)' : (pnl < 0 ? 'var(--accent-danger, #ff6b6b)' : '');
+            // By-source breakdown — only useful once we have closed trades
+            const bySrc = s.by_source || {};
+            const sources = Object.entries(bySrc).sort((a, b) => b[1].pnl_usd - a[1].pnl_usd);
+            const wrap = document.getElementById('paper-by-source');
+            if (!sources.length) { wrap.innerHTML = ''; return; }
+            wrap.innerHTML = '<h3 style="font-size:13px;margin:0 0 6px;color:var(--text-secondary);">P&amp;L per bron</h3>' +
+                '<table style="width:100%;font-size:12px;border-collapse:collapse;">' +
+                sources.map(([src, b]) => {
+                    const c = b.pnl_usd > 0 ? 'var(--accent-success, #5bdb89)' : (b.pnl_usd < 0 ? 'var(--accent-danger, #ff6b6b)' : 'var(--text-secondary)');
+                    return `<tr style="border-bottom:1px solid var(--border-color);">
+                        <td style="padding:5px 0;">${escapeHtml(src)}</td>
+                        <td style="text-align:right;padding:5px 0;color:var(--text-muted);">${b.wins}/${b.trades} (${b.win_rate != null ? Math.round(b.win_rate*100) : '—'}%)</td>
+                        <td style="text-align:right;padding:5px 0;color:${c};font-family:'JetBrains Mono',monospace;">${b.pnl_usd >= 0 ? '+' : ''}$${b.pnl_usd.toFixed(2)}</td>
+                    </tr>`;
+                }).join('') + '</table>';
+        }
+
+        function _ppEntry(p) {
+            const mt = p.market_type;
+            const inst = p.instrument || {};
+            const what = inst.ticker || inst.symbol || inst.slug || '?';
+            return `${escapeHtml(p.market_type || '?').toUpperCase()} · ${escapeHtml(what)}`;
+        }
+        function _ppPnl(p) {
+            if (p.status !== 'closed') return '';
+            const c = p.pnl_usd > 0 ? 'var(--accent-success, #5bdb89)' : 'var(--accent-danger, #ff6b6b)';
+            const sign = p.pnl_usd >= 0 ? '+' : '';
+            return `<span style="color:${c};font-family:'JetBrains Mono',monospace;">${sign}$${p.pnl_usd.toFixed(2)} (${sign}${(p.pnl_pct*100).toFixed(1)}%)</span>`;
+        }
+
+        function renderPaperOpen(items) {
+            const el = document.getElementById('paper-open-list');
+            if (!items.length) { el.innerHTML = '<div class="empty">Nog geen open posities.</div>'; return; }
+            el.innerHTML = items.map(p => {
+                const entry = p.entry_price?.toFixed?.(4) ?? p.entry_price;
+                const last = p.last_price != null ? p.last_price.toFixed(4) : '—';
+                const opened = _cardDateTime(p.opened_at);
+                return `<div class="kcard" style="margin-bottom:8px;">
+                    <div class="kcard-top">
+                        <span style="font-size:12px;font-weight:600;">${_ppEntry(p)}</span>
+                        <span class="kcard-confidence">stake $${p.stake_usd}</span>
+                    </div>
+                    <div class="kcard-meta-grid">
+                        <span>Entry</span><span>${entry}</span>
+                        <span>Laatste</span><span>${last}</span>
+                        <span>TP/SL</span><span>+${(p.tp_pct*100).toFixed(0)}% / ${(p.sl_pct*100).toFixed(0)}%</span>
+                    </div>
+                    <div class="kcard-source">${opened} · ${escapeHtml(p.source || '?')}</div>
+                </div>`;
+            }).join('');
+        }
+
+        function renderPaperClosed(items) {
+            const el = document.getElementById('paper-recent-closed');
+            if (!items.length) { el.innerHTML = '<div class="empty">Nog geen exits.</div>'; return; }
+            el.innerHTML = items.map(p => {
+                const closed = _cardDateTime(p.closed_at);
+                const reasonNL = { take_profit: 'TP', stop_loss: 'SL', max_hold: 'tijd op' }[p.exit_reason] || p.exit_reason;
+                return `<div class="kcard" style="margin-bottom:6px;">
+                    <div class="kcard-top">
+                        <span style="font-size:12px;font-weight:600;">${_ppEntry(p)}</span>
+                        <span style="font-size:10px;color:var(--text-muted);">${reasonNL}</span>
+                    </div>
+                    <div class="kcard-source">${closed} · ${_ppPnl(p)} · ${escapeHtml(p.source || '?')}</div>
+                </div>`;
+            }).join('');
+        }
+
+        async function paperTickNow() {
+            const btn = document.getElementById('paper-tick-btn');
+            btn.disabled = true; btn.textContent = '⏳ Bezig...';
+            try {
+                const r = await fetch('/api/research/paper-trades/tick', { method: 'POST' });
+                const s = await r.json();
+                alert(`Bijgewerkt: ${s.updated} open, ${s.closed} gesloten, ${s.open} nog open.`);
+                loadPaperTrades();
+            } catch (e) { alert('Tick mislukt: ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = '↻ Prijzen updaten'; }
+        }
+
         loadAgentIdeas();   // kanban — laadt ideeën + verdicts inline
+        loadPaperTrades();
         setInterval(loadAgentIdeas, 90000);
+        setInterval(loadPaperTrades, 120000);
     </script>
 </body>
 </html>

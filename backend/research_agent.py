@@ -386,6 +386,17 @@ async def run_daily() -> Dict:
             logger.warning(f"pipeline failed (ideas persisted as raw): {e}")
             piped = persisted
 
+        # Auto-open paper-trade positions for ideas that made it to Implement.
+        # Hardcoded exit rules per asset class (see research_paper_trader.RULES).
+        # No real money — just a way to measure whether pipeline ideas have edge.
+        try:
+            from .research_paper_trader import open_paper_position
+            for it in piped:
+                if it.get("stage") == "implement":
+                    await open_paper_position(it)
+        except Exception as e:
+            logger.warning(f"paper-trader open failed: {e}")
+
     await _send_digest(piped or top)
     elapsed = int((datetime.utcnow() - started).total_seconds() * 1000)
 
