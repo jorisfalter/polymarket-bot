@@ -35,6 +35,21 @@ If `ahead` or `behind` is non-zero, resolve before editing — otherwise you're 
 
 ---
 
+## Working method — when an external source is blocked
+
+Learned 2026-05-22, the hard way (a multi-hour Senate-data hunt that ended at Firecrawl — a tool that was knowable from the start).
+
+**The 3-strike tripwire.** After ~3 failed attempts at the same obstacle, STOP. Do not try a 4th variation of the same approach. The repetition itself is the signal you are frame-locked.
+
+When you stop, switch search mode:
+- You have been searching for **the data/source** ("free congressional trading API"). Switch to searching for **the technique/tool** — WebSearch the *obstacle itself*: "scrape site that blocks datacenter IPs", "bypass bot detection scraping".
+- Ask yourself: *"what would a professional in this exact niche use?"* and *"what's the standard, boring way to solve this?"* — these trigger retrieval of conventional tooling instead of clever improvisation (self-hosted Playwright stealth, undocumented-endpoint tricks — all signs you've over-improvised).
+- If the fix needs two separate hard things (e.g. your own headless browser **and** residential IPs), check for a **managed service that bundles them** — for almost any common scraping obstacle one exists, often with a free tier (Firecrawl, ScrapingBee, Zyte, ScraperAPI).
+
+The failure mode is not missing knowledge — it's not retrieving known tools because you never left the original problem frame. Budget is rarely the blocker; a recurring free tier usually exists. Surface the tool category to the user explicitly rather than grinding one more free hack.
+
+---
+
 ## Working directories
 
 - **Local dev (Mac)**: `/Users/joris/Projects/polymarket`
