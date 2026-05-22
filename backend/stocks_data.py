@@ -107,6 +107,35 @@ async def fetch_politician_trades(days_back: int = 30) -> List[Dict]:
         except Exception as e:
             logger.debug(f"Quiver public fallback failed (expected): {e}")
 
+    # 3. Firecrawl: directly scrape watched politicians' CapitolTrades pages.
+    # This ALWAYS runs (not gated on `not trades`) because it's the only
+    # path to Senate data — House Clerk PDFs cover the House but miss
+    # senators like Mullin. Merges into whatever the sources above produced,
+    # deduped by (rep, ticker, date, type).
+    try:
+        from .congress_scraper import fetch_watched_politicians_firecrawl
+        watched = get_politician_watchlist()
+        if watched and settings.firecrawl_api_key:
+            fc_trades = await fetch_watched_politicians_firecrawl(watched)
+            if fc_trades:
+                seen = set()
+                for t in trades:
+                    rep = (t.get("representative") or "").lower().lstrip("hon. ").strip()
+                    seen.add((rep, t.get("ticker", "").upper(),
+                              t.get("transaction_date", ""), t.get("type", "")))
+                added = 0
+                for t in fc_trades:
+                    rep = (t.get("representative") or "").lower().lstrip("hon. ").strip()
+                    k = (rep, t.get("ticker", "").upper(),
+                         t.get("transaction_date", ""), t.get("type", ""))
+                    if k not in seen:
+                        seen.add(k)
+                        trades.append(t)
+                        added += 1
+                logger.info(f"Firecrawl watched-politicians: +{added} new trades")
+    except Exception as e:
+        logger.warning(f"Firecrawl watched-politician fetch failed: {e}")
+
     if trades:
         trades.sort(key=lambda x: x.get("transaction_date", ""), reverse=True)
         _pol_cache["trades"] = trades

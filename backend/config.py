@@ -126,6 +126,10 @@ class Settings(BaseSettings):
     auth_secret: Optional[str] = None
     public_url: str = "https://polymarket.ai-tigers.com"  # base for magic-link URLs
 
+    # Firecrawl — scraping API with residential-proxy stealth mode. Used to
+    # reach CapitolTrades politician pages that block datacenter IPs.
+    firecrawl_api_key: Optional[str] = None
+
     # Gmail reading (for newsletters like Matt Levine)
     gmail_address: Optional[str] = None
     gmail_app_password: Optional[str] = None     # Gmail App Password (not regular password)

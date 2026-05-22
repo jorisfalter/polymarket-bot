@@ -364,9 +364,170 @@ async def fetch_capitoltrades_transactions(
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Firecrawl — CapitolTrades per-politician scraper
+# ──────────────────────────────────────────────────────────────────────
+#
+# 2026-05-22: CapitolTrades' /trades feed AND its RSC payloads return a
+# data-less shell to any datacenter IP — including Firecrawl's basic
+# proxy. BUT: individual /politicians/{bioguide_id} pages, fetched via
+# Firecrawl with proxy="stealth" + US location, DO render the full trade
+# table. So we can't get the global feed, but we CAN get any specific
+# politician — which is exactly what a watchlist needs.
+#
+# This is the only working path to Senate data (Mullin etc.) since
+# efdsearch.senate.gov is Akamai-blocked from every datacenter IP.
+#
+# Cost: ~5 Firecrawl credits per politician page (stealth). At a daily
+# refresh of a handful of watched politicians that fits the free tier;
+# a dozen+ needs the paid Hobby tier (~$16/mo).
+
+FIRECRAWL_API = "https://api.firecrawl.dev/v1/scrape"
+
+# Politician name → Congress bioguide ID (== CapitolTrades politician ID).
+# Add a row here when a new name is added to the politician watchlist.
+# Bioguide IDs are public: bioguide.congress.gov.
+POLITICIAN_BIOGUIDE = {
+    "markwayne mullin": "M001190",
+    "josh gottheimer": "G000583",
+    "nancy pelosi": "P000197",
+}
+
+# Markdown table row from a CapitolTrades politician page looks like:
+#  | ### [Issuer Name](url)<br>TICKER:US | 10 Mar<br>2026 | 24 Feb<br>2026
+#    | days<br>13 | buy | 50K–100K | [Goto trade detail page.](url) |
+_CT_MD_ROW = re.compile(
+    r"\|\s*#{0,3}\s*\[([^\]]+)\]\([^)]*\)\s*<br>\s*([A-Z0-9.\-]+):[A-Z]{2}\s*"  # issuer + TICKER:CC
+    r"\|\s*([^|]+?)\s*"          # published date
+    r"\|\s*([^|]+?)\s*"          # traded date
+    r"\|\s*[^|]*?\s*"            # filed-after (ignored)
+    r"\|\s*(buy|sell|exchange|receive)\s*"   # type
+    r"\|\s*([^|]+?)\s*"          # size range
+    r"\|",
+    re.I,
+)
+
+_MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun",
+     "jul", "aug", "sep", "oct", "nov", "dec"], start=1)}
+
+
+def _parse_ct_date(raw: str) -> str:
+    """'24 Feb<br>2026' or '24 Feb 2026' → '2026-02-24'."""
+    if not raw:
+        return ""
+    cleaned = raw.replace("<br>", " ").strip()
+    m = re.search(r"(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\s+(\d{4})", cleaned)
+    if not m:
+        return ""
+    day, mon, year = m.groups()
+    mon_n = _MONTHS.get(mon[:3].lower())
+    if not mon_n:
+        return ""
+    return f"{year}-{mon_n:02d}-{int(day):02d}"
+
+
+def _parse_ct_size(raw: str) -> float:
+    """'50K–100K' → 50000 (lower bound). '1M–5M' → 1_000_000."""
+    if not raw:
+        return 0.0
+    first = re.split(r"[–\-]", raw.replace("–", "-"))[0].strip().upper()
+    m = re.match(r"\$?([\d.,]+)\s*([KMB]?)", first)
+    if not m:
+        return 0.0
+    num = float(m.group(1).replace(",", ""))
+    mult = {"K": 1e3, "M": 1e6, "B": 1e9, "": 1}.get(m.group(2), 1)
+    return num * mult
+
+
+def _parse_capitoltrades_politician_md(md: str, rep_name: str) -> List[Dict]:
+    """Parse the trade table from a CapitolTrades politician-page markdown."""
+    out: List[Dict] = []
+    for m in _CT_MD_ROW.finditer(md or ""):
+        issuer, ticker, published, traded, type_raw, size_raw = m.groups()
+        tx_type = type_raw.lower()
+        type_norm = ("purchase" if tx_type == "buy"
+                     else "sale" if tx_type == "sell"
+                     else tx_type)
+        amt = _parse_ct_size(size_raw)
+        out.append({
+            "chamber": "",  # not on the page; filled by caller if known
+            "representative": rep_name,
+            "party": "",
+            "ticker": ticker.upper(),
+            "asset": issuer.strip(),
+            "type": type_norm,
+            "amount": size_raw.strip(),
+            "amount_usd": amt,
+            "transaction_date": _parse_ct_date(traded),
+            "disclosure_date": _parse_ct_date(published),
+            "excess_return": None,
+            "price_change": None,
+        })
+    return out
+
+
+async def fetch_politician_via_firecrawl(name: str) -> List[Dict]:
+    """Scrape one politician's CapitolTrades page via Firecrawl. Returns
+    their trades (House or Senate) in the common shape, or [] on failure."""
+    from .config import settings
+    key = settings.firecrawl_api_key
+    if not key:
+        logger.debug("FIRECRAWL_API_KEY not set — skipping firecrawl source")
+        return []
+    bioguide = POLITICIAN_BIOGUIDE.get((name or "").strip().lower())
+    if not bioguide:
+        logger.warning(f"no bioguide ID mapped for politician '{name}' — "
+                        f"add it to POLITICIAN_BIOGUIDE")
+        return []
+    url = f"{CAPITOLTRADES_BASE}/politicians/{bioguide}"
+    try:
+        async with httpx.AsyncClient(timeout=130.0) as c:
+            r = await c.post(
+                FIRECRAWL_API,
+                headers={"Authorization": f"Bearer {key}",
+                         "Content-Type": "application/json"},
+                json={
+                    "url": url,
+                    "formats": ["markdown"],
+                    "waitFor": 8000,
+                    "proxy": "stealth",
+                    "location": {"country": "US"},
+                },
+            )
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        logger.warning(f"Firecrawl scrape failed for {name}: {e}")
+        return []
+    if not data.get("success"):
+        logger.warning(f"Firecrawl returned success=false for {name}")
+        return []
+    md = (data.get("data") or {}).get("markdown", "") or ""
+    trades = _parse_capitoltrades_politician_md(md, name)
+    logger.info(f"Firecrawl: {len(trades)} trades for {name}")
+    return trades
+
+
+async def fetch_watched_politicians_firecrawl(names: List[str]) -> List[Dict]:
+    """Scrape every watched politician via Firecrawl (low concurrency —
+    each call is a real browser render + costs credits)."""
+    out: List[Dict] = []
+    sem = asyncio.Semaphore(2)
+    async def _one(n: str) -> List[Dict]:
+        async with sem:
+            return await fetch_politician_via_firecrawl(n)
+    results = await asyncio.gather(*(_one(n) for n in names), return_exceptions=True)
+    for r in results:
+        if isinstance(r, list):
+            out.extend(r)
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Senate efdsearch — DEPRECATED 2026-05-21
 # Akamai blocks every datacenter IP we tested with 403. Kept for
-# reference; not wired into fetch_all_congress anymore.
+# reference; not wired into fetch_all_congress anymore. The Firecrawl
+# CapitolTrades path above is the working Senate route.
 # ──────────────────────────────────────────────────────────────────────
 
 SENATE_BASE = "https://efdsearch.senate.gov"
