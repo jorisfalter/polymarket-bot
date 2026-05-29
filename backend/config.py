@@ -96,12 +96,28 @@ class Settings(BaseSettings):
 
     # AI Trading Agent
     agent_enabled: bool = True
+    # Agent mode — controls which strategy runs:
+    #   "frozen" — no trading (default while rebuilding for Pad 2). Detector + alerts still fire.
+    #   "legacy" — strategies 1-7. Frozen 2026-05-29; see docs/research/frozen-strategies.md
+    #   "maker"  — market-making, Pad 2 from Akey paper (docs/research/akey-paper-implications.md)
+    agent_mode: str = "frozen"
     anthropic_api_key: Optional[str] = None  # Legacy fallback
     openrouter_api_key: Optional[str] = None  # Preferred: OpenRouter (cheaper)
     agent_model: str = "deepseek/deepseek-chat-v3-0324"  # ~$0.10/dag vs $2/dag Haiku
     agent_max_positions: int = 30            # 30 slots — moonshots ($1-3) and core ($5-10) coexist comfortably
     agent_max_per_trade: float = 10.0        # Max $10 per trade
     agent_max_total_exposure: float = 100.0  # Max $100 total at risk (hard cap)
+
+    # Market-maker mode (Pad 2 — see docs/research/akey-paper-implications.md)
+    # Shakedown scale: $20 total / $5 per market. Scale up only after dry-run validation.
+    maker_max_per_market: float = 5.0       # Max USD exposure per single market
+    maker_max_total: float = 20.0           # Max USD total across all maker markets
+    maker_target_token_ids: list = []       # Outcome token IDs we maker-make on (populated via shortlist endpoint)
+    maker_cycle_seconds: int = 30           # How often to re-evaluate orderbook + reprice
+    maker_drift_threshold_cents: int = 2    # Cancel + repost if mid drifts >Nc from our bid
+    maker_exit_spread_cents: int = 3        # On fill, post exit Nc above entry
+    maker_position_timeout_hours: int = 24  # Force-close (FAK) if position open >Nh without movement
+    maker_dry_run: bool = True              # Log-only mode; flip to False after 48h dry-run observation
 
     # Trade proxy (Fly.io Tokyo — bypasses Polymarket geoblock)
     trade_proxy_url: Optional[str] = None     # e.g. https://polymarket-trade-proxy.fly.dev

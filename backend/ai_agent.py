@@ -805,6 +805,11 @@ class AITradingAgent:
         """Main cycle — gather data, ask Claude, execute."""
         if not settings.agent_enabled or not self.client:
             return
+        if settings.agent_mode != "legacy":
+            # Frozen since 2026-05-29 per Pad 2 rebuild. Strategies 1-7 documented
+            # in docs/research/frozen-strategies.md. Maker mode runs from
+            # backend/market_maker.py when settings.agent_mode == "maker".
+            return
 
         try:
             # 0. Sync live positions from Polymarket (source of truth)
