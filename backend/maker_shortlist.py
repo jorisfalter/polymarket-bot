@@ -144,17 +144,22 @@ async def fetch_shortlist(
     return candidates[:top_n]
 
 
-async def resolve_targets() -> list[str]:
-    """Return the list of token_ids the maker should target this cycle.
+async def resolve_targets() -> list[dict]:
+    """Return the list of target market dicts the maker should target this
+    cycle.
 
-    If config.maker_target_token_ids is non-empty, use that override.
-    Otherwise auto-pick from the shortlist.
+    Each dict has at minimum {token_id, condition_id, question, mid,
+    spread_cents}. condition_id is required by the trade-proxy's pre-flight.
+
+    If config.maker_target_token_ids is non-empty, use those (with empty
+    condition_id — pre-flight will skip gracefully).  Otherwise auto-pick.
     """
     override = settings.maker_target_token_ids or []
     if override:
         logger.info(f"maker targets from config override: {len(override)} ids")
-        return list(override)
+        return [{"token_id": tid, "condition_id": None, "question": "(override)",
+                 "mid": 0.5, "spread_cents": 0.0} for tid in override]
     shortlist = await fetch_shortlist()
-    ids = [c["token_id"] for c in shortlist]
-    logger.info(f"maker targets auto-picked: {len(ids)} markets — {[c['question'][:50] for c in shortlist]}")
-    return ids
+    logger.info(f"maker targets auto-picked: {len(shortlist)} markets — "
+                f"{[c['question'][:50] for c in shortlist]}")
+    return shortlist

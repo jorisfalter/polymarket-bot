@@ -485,6 +485,16 @@ async def lifespan(app: FastAPI):
         minutes=15,  # AI agent thinks every 15 minutes
         id='ai_agent_job'
     )
+    # Market-maker cycle (Pad 2). No-op when agent_mode != "maker".
+    # Dry-run by default (settings.maker_dry_run) — logs decisions, posts nothing.
+    from .market_maker import market_maker
+    scheduler.add_job(
+        market_maker.run_cycle,
+        'interval',
+        seconds=settings.maker_cycle_seconds,
+        id='market_maker_job',
+        max_instances=1,
+    )
     scheduler.add_job(
         run_daily_summary,
         'cron',
