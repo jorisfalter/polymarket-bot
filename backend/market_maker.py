@@ -34,7 +34,7 @@ from typing import Optional
 from loguru import logger
 
 from .config import settings
-from .polymarket_client import get_client
+from .polymarket_client import PolymarketClient
 from . import maker_proxy
 from . import maker_shortlist
 
@@ -117,20 +117,28 @@ class MarketMaker:
                 return
 
             open_orders = await maker_proxy.list_open_orders()
-            live_positions = await self._fetch_live_positions()
 
-            intents: list[Intent] = []
-            for target in targets:
-                state = await self._build_state(target, open_orders, live_positions)
-                if state is None:
-                    continue
-                intents.extend(self._decide(state))
+            target_ids = {t["token_id"] for t in targets}
+            async with PolymarketClient() as client:
+                live_positions = await self._fetch_live_positions(client)
+                running_exposure = self._sum_exposure(open_orders, live_positions, target_ids)
+                maker_exposure = running_exposure
+                intents: list[Intent] = []
+                for target in targets:
+                    state = await self._build_state(target, client, open_orders, live_positions)
+                    if state is None:
+                        continue
+                    market_intents = self._decide(state, running_exposure)
+                    for it in market_intents:
+                        if it.action == "POST_BID":
+                            running_exposure += it.price * it.size
+                    intents.extend(market_intents)
 
-            total_exposure = self._sum_exposure(open_orders, live_positions)
+            wallet_exposure = self._sum_exposure(open_orders, live_positions, None)
             logger.info(
                 f"{prefix} cycle {self._cycle_count}: targets={len(targets)} "
-                f"open_orders={len(open_orders)} exposure=${total_exposure:.2f} "
-                f"intents={len(intents)}"
+                f"open_orders={len(open_orders)} maker_exp=${maker_exposure:.2f} "
+                f"wallet_exp=${wallet_exposure:.2f} intents={len(intents)}"
             )
 
             for intent in intents:
@@ -156,10 +164,9 @@ class MarketMaker:
     # ---- State assembly -----------------------------------------------
 
     async def _build_state(
-        self, target: dict, open_orders: list[dict], live_positions: list[dict]
+        self, target: dict, client, open_orders: list[dict], live_positions: list[dict]
     ) -> Optional[MarketState]:
         token_id = target["token_id"]
-        client = await get_client()
         try:
             book = await client.get_order_book(token_id)
         except Exception as e:
@@ -227,31 +234,45 @@ class MarketMaker:
             position_age_hours=age_h,
         )
 
-    async def _fetch_live_positions(self) -> list[dict]:
-        client = await get_client()
+    async def _fetch_live_positions(self, client) -> list[dict]:
         try:
             return await client.get_user_positions(settings.poly_wallet_address or "") or []
         except Exception as e:
             logger.warning(f"live positions fetch failed: {e}")
             return []
 
-    def _sum_exposure(self, open_orders: list[dict], live_positions: list[dict]) -> float:
-        # Open-order exposure: sum of (size_remaining × price) on BUY orders.
+    def _sum_exposure(
+        self, open_orders: list[dict], live_positions: list[dict],
+        only_tokens: Optional[set[str]] = None,
+    ) -> float:
+        """Sum USD exposure. If only_tokens is set, restrict to those token
+        IDs (used to compute maker-mode exposure vs whole-wallet exposure)."""
         order_usd = 0.0
         for o in open_orders:
             if (o.get("side") or "").upper() != "BUY":
                 continue
+            if only_tokens and o.get("token_id") not in only_tokens:
+                continue
             size = float(o.get("size_original") or 0) - float(o.get("size_remaining") or 0)
             remaining = float(o.get("size_original") or 0) - size
             order_usd += remaining * float(o.get("price") or 0)
-        # Held-position exposure: shares × current mid (approximated as initialValue).
-        held_usd = sum(float(p.get("initialValue") or 0) for p in live_positions)
+        held_usd = 0.0
+        for p in live_positions:
+            tok = p.get("asset") or p.get("token_id")
+            if only_tokens and tok not in only_tokens:
+                continue
+            held_usd += float(p.get("initialValue") or 0)
         return order_usd + held_usd
 
     # ---- Decision logic -----------------------------------------------
 
-    def _decide(self, st: MarketState) -> list[Intent]:
-        """Generate intents for one market. Pure function of state — no I/O."""
+    def _decide(self, st: MarketState, total_maker_exposure: float = 0.0) -> list[Intent]:
+        """Generate intents for one market. Pure function of state — no I/O.
+
+        total_maker_exposure is the running sum across markets evaluated this
+        cycle so far — used to enforce maker_max_total without leaking past
+        the cap when multiple targets all want to post fresh bids.
+        """
         intents: list[Intent] = []
         tick = 0.01  # binary; neg_risk tighter handled at proxy quantization
         drift = settings.maker_drift_threshold_cents / 100.0
@@ -306,9 +327,11 @@ class MarketMaker:
         held_value = st.held_shares * st.mid
         market_exposure = own_bid_usd + held_value
 
-        room = settings.maker_max_per_market - market_exposure
+        room_market = settings.maker_max_per_market - market_exposure
+        room_total = settings.maker_max_total - total_maker_exposure
+        room = min(room_market, room_total)
         if room < 1.0:
-            return intents  # no room
+            return intents  # no room (per-market or total cap)
 
         # Bid price: best_bid (join queue) OR best_bid + tick (improve), but
         # only if improving still leaves >= 1 tick spread to best_ask.
