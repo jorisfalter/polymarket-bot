@@ -352,6 +352,16 @@ class SellRequest(BaseModel):
     min_price: Optional[float] = None
 
 
+# Limit-order requests (GTC) used by market-maker mode. Maker posts into the
+# book, so size is in SHARES not USD — caller computes shares = stake / price.
+class LimitOrderRequest(BaseModel):
+    token_id: str
+    price: float          # 0.0-1.0; will be quantized to market tick_size
+    size: float           # shares (NOT usd). For a BUY: usd_stake / price.
+    side: str             # "BUY" or "SELL"
+    condition_id: Optional[str] = None
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "region": os.environ.get("FLY_REGION", "unknown")}
@@ -505,6 +515,115 @@ async def sell(req: SellRequest, authorization: str = Header(None)):
     except Exception as e:
         logger.error(f"Sell error: {e}")
         return {"success": False, "error": str(e)}
+
+
+@app.post("/limit")
+async def limit(req: LimitOrderRequest, authorization: str = Header(None)):
+    """Post a GTC limit order. Used by market-maker mode (Pad 2).
+
+    Unlike /buy and /sell (which use FAK to fill immediately), GTC sits in
+    the orderbook until filled or cancelled — this is how we provide
+    liquidity and earn the spread.
+    """
+    verify_auth(authorization)
+    client = get_client()
+
+    side_upper = (req.side or "").upper()
+    if side_upper not in ("BUY", "SELL"):
+        return {"success": False, "error": f"invalid side {req.side!r}, expected BUY or SELL"}
+
+    try:
+        from py_clob_client_v2 import OrderArgs, OrderType, PartialCreateOrderOptions, Side
+
+        ok, reason = check_market_tradeable(
+            req.token_id,
+            amount_usd=req.price * req.size,
+            condition_id=req.condition_id or "",
+        )
+        if not ok:
+            logger.warning(f"Limit refused: {reason} ({req.token_id[:12]})")
+            return {"success": False, "error": f"market not tradeable: {reason}"}
+
+        neg_risk = is_neg_risk(req.token_id)
+        # Tick size: 0.01 standard; switches to 0.001 inside [0.04, 0.96] only
+        # AFTER a market trades there (per paper footnote 12). For maker posts
+        # we'd rather quantize too coarse than have CLOB reject. Conservative:
+        # 0.01 unless neg_risk (which often allows finer).
+        tick_size = "0.001" if neg_risk else "0.01"
+        options = PartialCreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk)
+
+        order_args = OrderArgs(
+            token_id=req.token_id,
+            price=req.price,
+            size=req.size,
+            side=Side.BUY if side_upper == "BUY" else Side.SELL,
+            order_type=OrderType.GTC,
+        )
+        response = client.create_and_post_order(order_args=order_args, options=options)
+
+        if response and response.get("success"):
+            return {
+                "success": True,
+                "order_id": response.get("orderID") or response.get("order_id"),
+                "price": req.price,
+                "size": req.size,
+                "side": side_upper,
+                "neg_risk": neg_risk,
+            }
+        error = (response or {}).get("errorMsg") or (response or {}).get("error") or "Unknown"
+        return {
+            "success": False,
+            "error": error,
+            "full_response": response,
+            "neg_risk": neg_risk,
+        }
+    except Exception as e:
+        logger.error(f"Limit error: {e}")
+        return {"success": False, "error": str(e), "exception_type": type(e).__name__}
+
+
+@app.get("/orders")
+async def list_orders(authorization: str = Header(None), token_id: Optional[str] = None):
+    """List open orders on our wallet. Optional ?token_id=... filter."""
+    verify_auth(authorization)
+    client = get_client()
+    try:
+        from py_clob_client_v2 import OpenOrderParams
+        params = OpenOrderParams(asset_id=token_id) if token_id else None
+        orders = client.get_open_orders(params=params) if params else client.get_open_orders()
+        # Normalize to a thin shape the maker loop can consume.
+        out = []
+        for o in (orders or []):
+            if not isinstance(o, dict):
+                o = getattr(o, "__dict__", {}) or {}
+            out.append({
+                "order_id": o.get("id") or o.get("orderID") or o.get("order_id"),
+                "token_id": o.get("asset_id") or o.get("token_id"),
+                "side": o.get("side"),
+                "price": float(o.get("price", 0) or 0),
+                "size_original": float(o.get("original_size", o.get("size", 0)) or 0),
+                "size_remaining": float(o.get("size_matched", 0) or 0),  # caller computes remaining
+                "status": o.get("status"),
+                "created_at": o.get("created_at"),
+            })
+        return {"success": True, "count": len(out), "orders": out}
+    except Exception as e:
+        logger.error(f"list_orders error: {e}")
+        return {"success": False, "error": str(e), "orders": []}
+
+
+@app.delete("/orders/{order_id}")
+async def cancel_order(order_id: str, authorization: str = Header(None)):
+    """Cancel a single open order by ID."""
+    verify_auth(authorization)
+    client = get_client()
+    try:
+        from py_clob_client_v2 import OrderPayload
+        response = client.cancel_order(OrderPayload(orderID=order_id))
+        return {"success": True, "order_id": order_id, "response": response}
+    except Exception as e:
+        logger.error(f"cancel error for {order_id}: {e}")
+        return {"success": False, "order_id": order_id, "error": str(e)}
 
 
 @app.get("/reddit/{subreddit}/{sort}")
