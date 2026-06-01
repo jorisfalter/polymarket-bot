@@ -153,6 +153,36 @@
                 <span style="margin-left:auto;font-size:11px;color:var(--text-muted);" id="last-update">Loading...</span>
             </div>
 
+            <!-- MAKER-MODE PANEL (Pad 2) — hidden unless agent_mode='maker' -->
+            <div id="maker-section" style="display:none;">
+                <div class="panel" style="margin-bottom:12px;">
+                    <h3>🛠️ Market-Maker Status <span class="count" id="maker-mode-badge">--</span></h3>
+                    <div class="row" style="display:flex;gap:24px;flex-wrap:wrap;margin:8px 0;font-size:13px;">
+                        <div><strong>Cycle:</strong> <span id="maker-cycle">--</span></div>
+                        <div><strong>Last:</strong> <span id="maker-last">--</span></div>
+                        <div><strong>Open orders:</strong> <span id="maker-open-count">0</span></div>
+                        <div><strong>Realized P&amp;L:</strong> <span id="maker-pnl">$0.00</span></div>
+                        <div><strong>Fills:</strong> <span id="maker-fills">0 buy / 0 sell</span></div>
+                    </div>
+                </div>
+                <div class="dash-grid">
+                    <div class="panel">
+                        <h3>Open Limit Orders <span class="count" id="maker-orders-count">0</span></h3>
+                        <div id="maker-orders-list"><div class="empty">No open limit orders.</div></div>
+                    </div>
+                    <div class="panel">
+                        <h3>Shortlist Candidates <span class="count" id="maker-shortlist-count">0</span></h3>
+                        <div id="maker-shortlist-list"><div class="empty">Loading shortlist...</div></div>
+                    </div>
+                </div>
+                <div class="dash-grid">
+                    <div class="panel" style="grid-column:1/-1;">
+                        <h3>Recent Maker Intents <span class="count" id="maker-intents-count">0</span></h3>
+                        <div id="maker-intents-list"><div class="empty">No intents yet.</div></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Top row: Open positions + Strategy P&L -->
             <div class="dash-grid">
                 <div class="panel">
@@ -196,6 +226,6 @@
         </div>
     </div>
 
-    <script src="/static/agent.js?v=5"></script>
+    <script src="/static/agent.js?v=6"></script>
 </body>
 </html>

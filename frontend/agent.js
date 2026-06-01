@@ -72,10 +72,11 @@ let _thesisFilter = 'high'; // default: only high+extreme conviction
 
 async function fetchAll() {
     try {
-        const [status, journal, summary] = await Promise.all([
+        const [status, journal, summary, makerStatus] = await Promise.all([
             fetch('/api/agent/status').then(r => r.json()),
             fetch('/api/agent/journal?limit=20').then(r => r.json()),
             fetch('/api/agent/daily-summary').then(r => r.json()),
+            fetch('/api/maker/status').then(r => r.json()).catch(() => null),
         ]);
         renderHeadline(summary, status);
         renderPositions(status.portfolio?.positions || []);
@@ -86,10 +87,84 @@ async function fetchAll() {
         renderTheses();
         const thinking = await fetch('/api/agent/thinking?limit=5').then(r => r.json());
         renderThinking(thinking || []);
+        // Maker panel — only visible when agent is in maker mode
+        if (makerStatus && makerStatus.mode === 'maker') {
+            document.getElementById('maker-section').style.display = '';
+            renderMaker(makerStatus);
+            fetch('/api/maker/shortlist').then(r => r.json()).then(renderMakerShortlist).catch(() => {});
+        } else {
+            document.getElementById('maker-section').style.display = 'none';
+        }
         document.getElementById('last-update').textContent = `Updated ${new Date().toLocaleTimeString('en-GB')}`;
     } catch (e) {
         console.error('Fetch failed:', e);
     }
+}
+
+function renderMaker(s) {
+    const badge = `${s.mode}${s.dry_run ? ' (dry-run)' : ' (LIVE)'}`;
+    document.getElementById('maker-mode-badge').textContent = badge;
+    document.getElementById('maker-cycle').textContent = `#${s.cycle_count || 0}`;
+    document.getElementById('maker-last').textContent = s.last_cycle_at ? relativeTime(s.last_cycle_at) : '--';
+    document.getElementById('maker-open-count').textContent = s.open_orders_count || 0;
+    const pnl = s.realized_pnl || 0;
+    const pnlEl = document.getElementById('maker-pnl');
+    pnlEl.textContent = fmtMoney(pnl);
+    pnlEl.className = pnlClass(pnl);
+    document.getElementById('maker-fills').textContent = `${s.fills_buy || 0} buy / ${s.fills_sell || 0} sell`;
+
+    // Open orders table
+    const orders = s.open_orders || [];
+    const ordersEl = document.getElementById('maker-orders-list');
+    document.getElementById('maker-orders-count').textContent = orders.length;
+    if (!orders.length) {
+        ordersEl.innerHTML = '<div class="empty">No open limit orders.</div>';
+    } else {
+        ordersEl.innerHTML = orders.map(o => {
+            const filledPct = o.size > 0 ? Math.round((o.size_filled / o.size) * 100) : 0;
+            return `<div class="entry-row">
+                <span class="entry-side ${o.side === 'BUY' ? 'pnl-positive' : 'pnl-negative'}">${o.side}</span>
+                <span class="entry-market">${escapeHtml((o.market_question || o.token_id.substr(0,12)).substr(0,60))}</span>
+                <span class="entry-price">@ ${(+o.price).toFixed(3)} × ${(+o.size).toFixed(2)} sh</span>
+                <span class="entry-time">${filledPct}% filled · ${relativeTime(o.timestamp)}</span>
+            </div>`;
+        }).join('');
+    }
+
+    // Recent intents
+    const intents = s.recent_intents || [];
+    const intentsEl = document.getElementById('maker-intents-list');
+    document.getElementById('maker-intents-count').textContent = intents.length;
+    if (!intents.length) {
+        intentsEl.innerHTML = '<div class="empty">No intents yet.</div>';
+    } else {
+        intentsEl.innerHTML = intents.slice().reverse().map(i => {
+            const cls = i.action === 'POST_BID' ? 'pnl-positive' :
+                        i.action === 'POST_ASK' ? 'pnl-negative' :
+                        i.action === 'CANCEL' ? '' : 'pnl-negative';
+            return `<div class="entry-row">
+                <span class="entry-side ${cls}">${i.action}</span>
+                <span class="entry-market">${escapeHtml(i.token_id || '')}</span>
+                <span class="entry-price">@ ${(+i.price || 0).toFixed(3)} × ${(+i.size || 0).toFixed(2)}</span>
+                <span class="entry-time" title="${escapeHtml(i.reason || '')}">${relativeTime(i.ts)}</span>
+            </div>`;
+        }).join('');
+    }
+}
+
+function renderMakerShortlist(cands) {
+    const el = document.getElementById('maker-shortlist-list');
+    document.getElementById('maker-shortlist-count').textContent = (cands || []).length;
+    if (!cands || !cands.length) {
+        el.innerHTML = '<div class="empty">No qualifying candidates.</div>';
+        return;
+    }
+    el.innerHTML = cands.map(c => `<div class="entry-row">
+        <span class="entry-side">${c.spread_cents.toFixed(1)}c</span>
+        <span class="entry-market">${escapeHtml((c.question || '').substr(0,55))}</span>
+        <span class="entry-price">mid ${c.mid.toFixed(3)} · vol $${Math.round(c.volume_24h).toLocaleString()}</span>
+        <span class="entry-time">${c.hours_to_end.toFixed(0)}h left · score ${c.score.toFixed(0)}</span>
+    </div>`).join('');
 }
 
 function renderHeadline(summary, status) {

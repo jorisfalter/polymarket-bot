@@ -1460,6 +1460,30 @@ async def trigger_agent_cycle():
     return {"ok": True, "thinking": ai_agent._thinking_history[-1] if ai_agent._thinking_history else None}
 
 
+# --- Market-maker (Pad 2) endpoints --------------------------------------
+
+@app.get("/api/maker/status")
+async def get_maker_status():
+    """Maker-mode status: open orders, positions, P&L, recent intents."""
+    from .market_maker import market_maker
+    return market_maker.get_status()
+
+
+@app.get("/api/maker/shortlist")
+async def get_maker_shortlist():
+    """Current auto-pick shortlist of crypto markets the maker would target."""
+    from .maker_shortlist import fetch_shortlist
+    return await fetch_shortlist(top_n=10)
+
+
+@app.post("/api/maker/run")
+async def trigger_maker_cycle():
+    """Manually trigger one maker cycle."""
+    from .market_maker import market_maker
+    await market_maker.run_cycle()
+    return {"ok": True, "status": market_maker.get_status()}
+
+
 @app.post("/api/agent/daily-summary")
 async def trigger_daily_summary():
     """Manually trigger the daily summary (Telegram + archive)."""
