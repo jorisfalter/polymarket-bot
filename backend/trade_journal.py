@@ -168,6 +168,189 @@ class TradeJournal:
         """Sum of amount_usd for all open positions."""
         return sum(p.get("amount_usd", 0) for p in self.get_open_positions())
 
+    # ------------------------------------------------------------------
+    # Market-maker events (Pad 2)
+    # ------------------------------------------------------------------
+    # Three new actions, separate from ENTER/EXIT to keep legacy P&L
+    # reports clean:
+    #   LIMIT_POST   — we placed a GTC limit order
+    #   LIMIT_CANCEL — we cancelled an open limit order
+    #   LIMIT_FILL   — an open order filled (partial or full)
+    #
+    # Position state for maker mode is derived from LIMIT_FILL records:
+    # BUY fills increase shares; SELL fills decrease them. Avg entry price
+    # is share-weighted across BUY fills since the last time shares hit
+    # zero. Open orders are LIMIT_POST records minus matching LIMIT_CANCEL
+    # and minus orders whose order_id has a fully-matched LIMIT_FILL.
+
+    def log_maker_event(
+        self,
+        event_type: str,  # LIMIT_POST | LIMIT_CANCEL | LIMIT_FILL
+        token_id: str,
+        order_id: str,
+        side: str,         # BUY or SELL
+        price: float,
+        size: float,       # shares posted/cancelled/filled
+        market_question: str = "",
+        market_slug: str = "",
+        reason: str = "",
+        fill_price: Optional[float] = None,  # only for LIMIT_FILL — may differ from posted price
+    ):
+        if event_type not in ("LIMIT_POST", "LIMIT_CANCEL", "LIMIT_FILL"):
+            logger.error(f"Unknown maker event type: {event_type}")
+            return
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "strategy": "maker",
+            "action": event_type,
+            "market_question": market_question,
+            "market_slug": market_slug,
+            "token_id": token_id,
+            "order_id": order_id,
+            "side": (side or "").upper(),
+            "price": price,
+            "size": size,
+        }
+        if event_type == "LIMIT_FILL":
+            entry["fill_price"] = fill_price if fill_price is not None else price
+            entry["amount_usd"] = round(size * (fill_price or price), 4)
+        if reason:
+            entry["reason"] = reason
+        try:
+            JOURNAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(JOURNAL_PATH, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+            logger.info(
+                f"📓 Journal: {event_type} {side} {market_question[:40]} "
+                f"@ {price:.3f} × {size:.2f} sh  ord={order_id[:12] if order_id else '-'}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to write maker journal: {e}")
+
+    def _iter_maker_events(self) -> List[dict]:
+        """All maker journal entries in file order."""
+        if not JOURNAL_PATH.exists():
+            return []
+        out = []
+        for line in JOURNAL_PATH.read_text().strip().split("\n"):
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("strategy") == "maker":
+                out.append(entry)
+        return out
+
+    def get_maker_open_orders(self) -> List[dict]:
+        """Return LIMIT_POST records whose order_id has not been cancelled or
+        fully filled. Each result includes how much has been filled so far."""
+        posts: dict[str, dict] = {}
+        filled_size: dict[str, float] = {}
+        cancelled: set = set()
+        for e in self._iter_maker_events():
+            oid = e.get("order_id") or ""
+            if not oid:
+                continue
+            action = e["action"]
+            if action == "LIMIT_POST":
+                posts[oid] = e
+                filled_size.setdefault(oid, 0.0)
+            elif action == "LIMIT_FILL":
+                filled_size[oid] = filled_size.get(oid, 0.0) + float(e.get("size") or 0)
+            elif action == "LIMIT_CANCEL":
+                cancelled.add(oid)
+
+        out = []
+        for oid, post in posts.items():
+            if oid in cancelled:
+                continue
+            posted_size = float(post.get("size") or 0)
+            already_filled = filled_size.get(oid, 0.0)
+            remaining = posted_size - already_filled
+            if remaining <= 0.0001:
+                continue  # fully filled
+            row = dict(post)
+            row["size_remaining"] = round(remaining, 4)
+            row["size_filled"] = round(already_filled, 4)
+            out.append(row)
+        return out
+
+    def get_maker_position(self, token_id: str) -> dict:
+        """Compute shares held + avg entry price for a token from LIMIT_FILL
+        records. Resets on every zero-crossing (FIFO-ish — sells close out
+        whatever's open at their average cost).
+
+        Returns: {"shares": float, "avg_entry_price": float, "opened_at": iso8601|None}
+        """
+        shares = 0.0
+        cost_basis = 0.0  # USD invested in current position
+        opened_at: Optional[str] = None
+        for e in self._iter_maker_events():
+            if e["action"] != "LIMIT_FILL":
+                continue
+            if e.get("token_id") != token_id:
+                continue
+            side = (e.get("side") or "").upper()
+            sz = float(e.get("size") or 0)
+            px = float(e.get("fill_price") or e.get("price") or 0)
+            if side == "BUY":
+                if shares <= 0.0001:
+                    opened_at = e.get("timestamp")
+                    cost_basis = 0.0
+                shares += sz
+                cost_basis += sz * px
+            elif side == "SELL":
+                shares -= sz
+                if shares <= 0.0001:
+                    shares = 0.0
+                    cost_basis = 0.0
+                    opened_at = None
+                else:
+                    # partial close — reduce cost basis proportionally
+                    cost_basis = max(0.0, cost_basis - sz * (cost_basis / (shares + sz)))
+        avg = (cost_basis / shares) if shares > 0.0001 else 0.0
+        return {"shares": round(shares, 4), "avg_entry_price": round(avg, 4), "opened_at": opened_at}
+
+    def get_maker_performance(self) -> dict:
+        """Cumulative maker P&L from LIMIT_FILL records. P&L is realized
+        only on SELL fills against the running BUY cost basis."""
+        per_token_shares: dict[str, float] = {}
+        per_token_cost: dict[str, float] = {}
+        realized_pnl = 0.0
+        buys = sells = 0
+        for e in self._iter_maker_events():
+            if e["action"] != "LIMIT_FILL":
+                continue
+            tok = e.get("token_id", "")
+            side = (e.get("side") or "").upper()
+            sz = float(e.get("size") or 0)
+            px = float(e.get("fill_price") or e.get("price") or 0)
+            shares = per_token_shares.get(tok, 0.0)
+            cost = per_token_cost.get(tok, 0.0)
+            if side == "BUY":
+                shares += sz
+                cost += sz * px
+                buys += 1
+            elif side == "SELL" and shares > 0.0001:
+                avg = cost / shares
+                realized_pnl += sz * (px - avg)
+                shares -= sz
+                cost -= sz * avg
+                sells += 1
+                if shares <= 0.0001:
+                    shares = 0.0
+                    cost = 0.0
+            per_token_shares[tok] = shares
+            per_token_cost[tok] = cost
+        return {
+            "realized_pnl": round(realized_pnl, 4),
+            "buys": buys,
+            "sells": sells,
+            "open_tokens": {k: round(v, 4) for k, v in per_token_shares.items() if v > 0.0001},
+        }
+
 
 # Singleton
 journal = TradeJournal()

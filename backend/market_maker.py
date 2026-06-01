@@ -35,6 +35,7 @@ from loguru import logger
 
 from .config import settings
 from .polymarket_client import PolymarketClient
+from .trade_journal import journal
 from . import maker_proxy
 from . import maker_shortlist
 
@@ -88,10 +89,15 @@ class MarketState:
 
 class MarketMaker:
     def __init__(self):
-        # Track entry prices in-memory until journal integration (task #56).
-        # Persists across cycles within a process; lost on restart.
-        # {token_id: {"shares": float, "avg_entry": float, "opened_at": iso8601}}
-        self._entries: dict[str, dict] = {}
+        # Previous-cycle open orders snapshot — used to detect fills by
+        # diffing against the current cycle's open orders. Order_id ->
+        # {size_original, size_remaining, side, price, ...}
+        self._prev_open_orders: dict[str, dict] = {}
+        # Map token_id -> question for human-readable journal entries.
+        self._token_question: dict[str, str] = {}
+        # Set of order_ids we cancelled this run — used to distinguish
+        # 'order disappeared because we cancelled' from 'order filled'.
+        self._cancelled_order_ids: set = set()
         self._last_cycle_at: Optional[datetime] = None
         self._cycle_count: int = 0
         # Recent intents for the dashboard.
@@ -116,7 +122,21 @@ class MarketMaker:
                 logger.info(f"{prefix} cycle {self._cycle_count}: no targets — sleeping")
                 return
 
+            # Refresh question map for journal entries
+            for t in targets:
+                self._token_question[t["token_id"]] = t.get("question", "")
+
             open_orders = await maker_proxy.list_open_orders()
+
+            # Fill detection — compare prev snapshot to current. Any order
+            # that was open last cycle but isn't now (and wasn't cancelled by
+            # us) is a full fill at its posted price. Orders still open but
+            # with extra size_matched are partial fills.
+            self._detect_and_log_fills(open_orders)
+            # Snapshot current open orders for next cycle's diff
+            self._prev_open_orders = {
+                (o.get("order_id") or ""): o for o in open_orders if o.get("order_id")
+            }
 
             target_ids = {t["token_id"] for t in targets}
             async with PolymarketClient() as client:
@@ -151,13 +171,20 @@ class MarketMaker:
             logger.error(f"{prefix} cycle error: {e}", exc_info=True)
 
     def get_status(self) -> dict:
+        open_orders = journal.get_maker_open_orders()
+        perf = journal.get_maker_performance()
         return {
             "mode": settings.agent_mode,
             "dry_run": settings.maker_dry_run,
             "enabled": settings.agent_enabled,
             "cycle_count": self._cycle_count,
             "last_cycle_at": self._last_cycle_at.isoformat() if self._last_cycle_at else None,
-            "tracked_entries": len(self._entries),
+            "open_orders_count": len(open_orders),
+            "open_orders": open_orders[:20],
+            "open_positions": perf.get("open_tokens", {}),
+            "realized_pnl": perf.get("realized_pnl", 0),
+            "fills_buy": perf.get("buys", 0),
+            "fills_sell": perf.get("sells", 0),
             "recent_intents": self._recent_intents[-20:],
         }
 
@@ -209,13 +236,20 @@ class MarketMaker:
                 held = float(p.get("size") or 0)
                 break
 
-        entry = self._entries.get(token_id) or {}
-        avg_entry = float(entry.get("avg_entry") or 0)
-        opened_at_iso = entry.get("opened_at")
+        pos = journal.get_maker_position(token_id)
+        # Prefer journal-derived shares if it disagrees with live API (e.g.
+        # if the maker just filled a batch but Polymarket's API hasn't
+        # propagated yet). Journal is the source of truth for entry price.
+        if pos.get("shares", 0) > 0.0001:
+            held = max(held, pos["shares"])
+        avg_entry = float(pos.get("avg_entry_price") or 0)
+        opened_at_iso = pos.get("opened_at")
         age_h = 0.0
         if opened_at_iso:
             try:
                 opened = datetime.fromisoformat(opened_at_iso)
+                if opened.tzinfo is None:
+                    opened = opened.replace(tzinfo=timezone.utc)
                 age_h = (datetime.now(timezone.utc) - opened).total_seconds() / 3600
             except Exception:
                 pass
@@ -372,13 +406,21 @@ class MarketMaker:
 
     async def _execute(self, intent: Intent):
         """Send an intent to the trade-proxy. Only called when dry_run=False."""
+        question = self._token_question.get(intent.token_id, "")
         if intent.action == "POST_BID":
             resp = await maker_proxy.place_limit(
                 token_id=intent.token_id, price=intent.price, size=intent.size,
                 side="BUY", condition_id=intent.condition_id,
             )
             if resp and resp.get("success"):
-                logger.info(f"[MAKER] bid posted, order_id={resp.get('order_id')}")
+                oid = resp.get("order_id") or ""
+                logger.info(f"[MAKER] bid posted, order_id={oid}")
+                journal.log_maker_event(
+                    event_type="LIMIT_POST", token_id=intent.token_id,
+                    order_id=oid, side="BUY", price=intent.price,
+                    size=intent.size, market_question=question,
+                    reason=intent.reason,
+                )
             else:
                 logger.warning(f"[MAKER] bid post failed: {resp}")
         elif intent.action == "POST_ASK":
@@ -387,13 +429,32 @@ class MarketMaker:
                 side="SELL", condition_id=intent.condition_id,
             )
             if resp and resp.get("success"):
-                logger.info(f"[MAKER] ask posted, order_id={resp.get('order_id')}")
+                oid = resp.get("order_id") or ""
+                logger.info(f"[MAKER] ask posted, order_id={oid}")
+                journal.log_maker_event(
+                    event_type="LIMIT_POST", token_id=intent.token_id,
+                    order_id=oid, side="SELL", price=intent.price,
+                    size=intent.size, market_question=question,
+                    reason=intent.reason,
+                )
             else:
                 logger.warning(f"[MAKER] ask post failed: {resp}")
         elif intent.action == "CANCEL":
             if intent.order_id:
                 ok = await maker_proxy.cancel_order(intent.order_id)
                 logger.info(f"[MAKER] cancel {intent.order_id[:12]}: {ok}")
+                if ok:
+                    self._cancelled_order_ids.add(intent.order_id)
+                    # Look up posted side/price from prev snapshot for log clarity
+                    prev = self._prev_open_orders.get(intent.order_id, {})
+                    journal.log_maker_event(
+                        event_type="LIMIT_CANCEL", token_id=intent.token_id,
+                        order_id=intent.order_id,
+                        side=str(prev.get("side") or ""),
+                        price=float(prev.get("price") or 0),
+                        size=float(prev.get("size_original") or 0),
+                        market_question=question, reason=intent.reason,
+                    )
         elif intent.action == "FAK_EXIT":
             # Reuse the existing /sell endpoint for emergency exits.
             import httpx
@@ -407,6 +468,75 @@ class MarketMaker:
                 logger.info(f"[MAKER] FAK exit response: {r.json()}")
             except Exception as e:
                 logger.error(f"[MAKER] FAK exit failed: {e}")
+
+    def _detect_and_log_fills(self, current_open_orders: list[dict]):
+        """Diff current open orders against last cycle's snapshot. Log
+        LIMIT_FILL records for:
+          - Orders no longer open that weren't cancelled by us (full fill)
+          - Orders still open but with extra size_matched since last cycle
+            (partial fill)
+
+        GTC limit orders always fill at YOUR posted price (you're the
+        maker), so we use the previously-recorded price as the fill price.
+        """
+        current_by_id = {(o.get("order_id") or ""): o for o in current_open_orders if o.get("order_id")}
+
+        # Pull already-logged fill sizes per order so partial-fill accounting
+        # doesn't double-count across cycles.
+        already_filled: dict[str, float] = {}
+        for e in journal._iter_maker_events():
+            if e["action"] == "LIMIT_FILL":
+                oid = e.get("order_id") or ""
+                already_filled[oid] = already_filled.get(oid, 0.0) + float(e.get("size") or 0)
+
+        # 1) Orders that disappeared from open list
+        for oid, prev in self._prev_open_orders.items():
+            if oid in current_by_id:
+                continue
+            if oid in self._cancelled_order_ids:
+                continue  # we cancelled it ourselves
+            posted = float(prev.get("size_original") or 0)
+            unfilled = posted - already_filled.get(oid, 0.0)
+            if unfilled <= 0.0001:
+                continue  # already fully accounted for
+            journal.log_maker_event(
+                event_type="LIMIT_FILL",
+                token_id=prev.get("token_id") or "",
+                order_id=oid,
+                side=str(prev.get("side") or ""),
+                price=float(prev.get("price") or 0),
+                size=unfilled,
+                fill_price=float(prev.get("price") or 0),
+                market_question=self._token_question.get(prev.get("token_id") or "", ""),
+                reason="detected: order disappeared from book",
+            )
+
+        # 2) Orders still open but with new matches
+        for oid, cur in current_by_id.items():
+            posted = float(cur.get("size_original") or 0)
+            remaining = float(cur.get("size_remaining") or 0)
+            # Polymarket's /orders returns 'size_matched' separately in V2 — be
+            # defensive about which field carries the filled amount:
+            filled_proxy = posted - remaining
+            if filled_proxy <= 0.0001:
+                continue
+            delta = filled_proxy - already_filled.get(oid, 0.0)
+            if delta <= 0.0001:
+                continue
+            journal.log_maker_event(
+                event_type="LIMIT_FILL",
+                token_id=cur.get("token_id") or "",
+                order_id=oid,
+                side=str(cur.get("side") or ""),
+                price=float(cur.get("price") or 0),
+                size=delta,
+                fill_price=float(cur.get("price") or 0),
+                market_question=self._token_question.get(cur.get("token_id") or "", ""),
+                reason="detected: partial fill",
+            )
+
+        # Reset cancellation flags — they apply to this cycle's fill check only.
+        self._cancelled_order_ids = set()
 
     def _track_intent(self, intent: Intent):
         self._recent_intents.append({
