@@ -557,9 +557,12 @@ async def limit(req: LimitOrderRequest, authorization: str = Header(None)):
             price=req.price,
             size=req.size,
             side=Side.BUY if side_upper == "BUY" else Side.SELL,
-            order_type=OrderType.GTC,
         )
-        response = client.create_and_post_order(order_args=order_args, options=options)
+        # V2: order_type is a kwarg on create_and_post_order (default GTC),
+        # not a field on OrderArgs (that was V1).
+        response = client.create_and_post_order(
+            order_args=order_args, options=options, order_type=OrderType.GTC,
+        )
 
         if response and response.get("success"):
             return {

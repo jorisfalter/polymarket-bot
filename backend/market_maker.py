@@ -372,10 +372,15 @@ class MarketMaker:
         target_bid = st.best_bid
         if st.best_ask - (st.best_bid + tick) >= tick:
             target_bid = round(st.best_bid + tick, 4)
-        # Size in shares: how many can we buy with `room` at target_bid?
+        # Size in shares. Polymarket enforces a per-market minimum notional
+        # ($1 binary / $5 multi-outcome); float math like 17.36 * 0.288 lands
+        # at 4.9996 and fails the strict `< min` check. Ceil-up the shares
+        # AND add one extra cent of size so notional always strictly clears.
         if target_bid <= 0:
             return intents
-        size = round(min(room, settings.maker_max_per_market) / target_bid, 2)
+        import math
+        target_notional = min(room, settings.maker_max_per_market)
+        size = (math.ceil((target_notional / target_bid) * 100) + 1) / 100
         if size < 1.0:
             return intents  # too small after rounding
 
