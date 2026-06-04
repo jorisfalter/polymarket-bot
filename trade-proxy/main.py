@@ -599,13 +599,20 @@ async def list_orders(authorization: str = Header(None), token_id: Optional[str]
         for o in (orders or []):
             if not isinstance(o, dict):
                 o = getattr(o, "__dict__", {}) or {}
+            size_original = float(o.get("original_size", o.get("size", 0)) or 0)
+            size_matched = float(o.get("size_matched", 0) or 0)
             out.append({
                 "order_id": o.get("id") or o.get("orderID") or o.get("order_id"),
                 "token_id": o.get("asset_id") or o.get("token_id"),
                 "side": o.get("side"),
                 "price": float(o.get("price", 0) or 0),
-                "size_original": float(o.get("original_size", o.get("size", 0)) or 0),
-                "size_remaining": float(o.get("size_matched", 0) or 0),  # caller computes remaining
+                "size_original": size_original,
+                "size_matched": size_matched,
+                # size_remaining = the unfilled portion (used directly by callers).
+                # Earlier this was mis-mapped to size_matched, which made the maker
+                # bot's fill-detector treat every freshly-discovered open order as
+                # a phantom full fill on restart. Fixed 2026-06-04.
+                "size_remaining": max(0.0, size_original - size_matched),
                 "status": o.get("status"),
                 "created_at": o.get("created_at"),
             })

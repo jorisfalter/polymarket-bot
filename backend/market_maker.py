@@ -487,11 +487,19 @@ class MarketMaker:
         current_by_id = {(o.get("order_id") or ""): o for o in current_open_orders if o.get("order_id")}
 
         # Pull already-logged fill sizes per order so partial-fill accounting
-        # doesn't double-count across cycles.
+        # doesn't double-count across cycles, AND the set of orders we know
+        # we posted (cold-start safety: a freshly-discovered order with no
+        # LIMIT_POST in our journal is somebody else's / from before this
+        # codebase's lineage — never log phantom fills on those).
         already_filled: dict[str, float] = {}
+        known_posted: set = set()
         for e in journal._iter_maker_events():
-            if e["action"] == "LIMIT_FILL":
-                oid = e.get("order_id") or ""
+            oid = e.get("order_id") or ""
+            if not oid:
+                continue
+            if e["action"] == "LIMIT_POST":
+                known_posted.add(oid)
+            elif e["action"] == "LIMIT_FILL":
                 already_filled[oid] = already_filled.get(oid, 0.0) + float(e.get("size") or 0)
 
         # 1) Orders that disappeared from open list
@@ -500,6 +508,8 @@ class MarketMaker:
                 continue
             if oid in self._cancelled_order_ids:
                 continue  # we cancelled it ourselves
+            if oid not in known_posted:
+                continue  # not one of ours — don't fabricate a fill for it
             posted = float(prev.get("size_original") or 0)
             unfilled = posted - already_filled.get(oid, 0.0)
             if unfilled <= 0.0001:
@@ -518,10 +528,10 @@ class MarketMaker:
 
         # 2) Orders still open but with new matches
         for oid, cur in current_by_id.items():
+            if oid not in known_posted:
+                continue  # cold-start safety: not in our LIMIT_POST history
             posted = float(cur.get("size_original") or 0)
             remaining = float(cur.get("size_remaining") or 0)
-            # Polymarket's /orders returns 'size_matched' separately in V2 — be
-            # defensive about which field carries the filled amount:
             filled_proxy = posted - remaining
             if filled_proxy <= 0.0001:
                 continue
