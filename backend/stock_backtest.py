@@ -217,7 +217,12 @@ def print_table(summary: Dict) -> None:
 
 async def main():
     """Default runner — politicians we already scrape."""
-    politicians = ["Nancy Pelosi", "Markwayne Mullin", "Josh Gottheimer"]
+    politicians = [
+        "Nancy Pelosi", "Markwayne Mullin", "Josh Gottheimer",
+        "Tommy Tuberville", "Sheldon Whitehouse", "Dan Crenshaw",
+        "Ro Khanna", "Marjorie Taylor Greene", "Suzan Delbene",
+        "Mike McCaul", "Diana Harshbarger",
+    ]
     # Look back ~6 months but only as far as our forward data lets us
     cutoff = (date.today() - timedelta(days=180)).isoformat()
     logger.info(f"pulling politician signals since {cutoff}…")

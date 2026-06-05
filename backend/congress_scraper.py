@@ -390,6 +390,16 @@ POLITICIAN_BIOGUIDE = {
     "markwayne mullin": "M001190",
     "josh gottheimer": "G000583",
     "nancy pelosi": "P000197",
+    # Added 2026-06-05 for backtest sample-size expansion. All are well-known
+    # active congressional traders per multiple journalism sources.
+    "tommy tuberville": "T000278",
+    "sheldon whitehouse": "W000802",
+    "dan crenshaw": "C001124",
+    "ro khanna": "K000389",
+    "marjorie taylor greene": "G000596",
+    "suzan delbene": "D000617",
+    "mike mccaul": "M001157",
+    "diana harshbarger": "H001088",
 }
 
 # Markdown table row from a CapitolTrades politician page looks like:
