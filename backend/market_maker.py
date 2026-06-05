@@ -139,11 +139,55 @@ class MarketMaker:
             }
 
             target_ids = {t["token_id"] for t in targets}
+
+            # Maker footprint = every token we've EVER posted to. Used for
+            # cap math (so orphans count) and for orphan cleanup below.
+            known_posted_oids: set = set()
+            for e in journal._iter_maker_events():
+                if e["action"] == "LIMIT_POST":
+                    oid = e.get("order_id") or ""
+                    if oid:
+                        known_posted_oids.add(oid)
+            maker_token_ids = {
+                o.get("token_id") for o in open_orders
+                if o.get("order_id") in known_posted_oids and o.get("token_id")
+            }
+            maker_token_ids |= target_ids
+            # Add tokens where we hold maker-origin shares (any position with
+            # any LIMIT_FILL in journal counts).
+            filled_tokens = {
+                e.get("token_id") for e in journal._iter_maker_events()
+                if e["action"] == "LIMIT_FILL" and e.get("token_id")
+            }
+            maker_token_ids |= filled_tokens
+
             async with PolymarketClient() as client:
                 live_positions = await self._fetch_live_positions(client)
-                running_exposure = self._sum_exposure(open_orders, live_positions, target_ids)
+                # Cap math now sees orphan exposure too — no more leakage.
+                running_exposure = self._sum_exposure(open_orders, live_positions, maker_token_ids)
                 maker_exposure = running_exposure
                 intents: list[Intent] = []
+
+                # ORPHAN CLEANUP: cancel open BUYs on tokens that are NOT in
+                # the current shortlist (we no longer want to enter there).
+                # SELL exits on orphan tokens are kept — they're closing
+                # positions we already hold.
+                for o in open_orders:
+                    oid = o.get("order_id") or ""
+                    tok = o.get("token_id") or ""
+                    if not oid or not tok:
+                        continue
+                    if tok in target_ids:
+                        continue  # current target, normal logic handles it
+                    if oid not in known_posted_oids:
+                        continue  # not ours, leave alone
+                    if (o.get("side") or "").upper() != "BUY":
+                        continue  # don't yank exit asks
+                    intents.append(Intent(
+                        action="CANCEL", token_id=tok, order_id=oid,
+                        reason="orphan: token left shortlist",
+                    ))
+
                 for target in targets:
                     state = await self._build_state(target, client, open_orders, live_positions)
                     if state is None:
