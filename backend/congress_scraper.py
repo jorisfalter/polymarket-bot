@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import re
 import zipfile
 from datetime import datetime, timedelta
@@ -476,9 +477,20 @@ def _parse_capitoltrades_politician_md(md: str, rep_name: str) -> List[Dict]:
     return out
 
 
+_FIRECRAWL_CACHE_DIR = Path(__file__).parent.parent / "data" / "firecrawl_cache"
+_FIRECRAWL_CACHE_TTL_HOURS = 12  # CapitolTrades pages update slowly; new
+                                  # disclosures appear at most once per day.
+                                  # 12h cache caps Firecrawl spend hard
+                                  # without blunting fresh-signal detection.
+
+
 async def fetch_politician_via_firecrawl(name: str) -> List[Dict]:
     """Scrape one politician's CapitolTrades page via Firecrawl. Returns
-    their trades (House or Senate) in the common shape, or [] on failure."""
+    their trades (House or Senate) in the common shape, or [] on failure.
+
+    12h disk cache per politician — re-running the backtest or refreshing
+    the dashboard within the window costs zero Firecrawl credits.
+    """
     from .config import settings
     key = settings.firecrawl_api_key
     if not key:
@@ -489,6 +501,18 @@ async def fetch_politician_via_firecrawl(name: str) -> List[Dict]:
         logger.warning(f"no bioguide ID mapped for politician '{name}' — "
                         f"add it to POLITICIAN_BIOGUIDE")
         return []
+
+    # Disk-cache check
+    cache_path = _FIRECRAWL_CACHE_DIR / f"{bioguide}.json"
+    if cache_path.exists():
+        try:
+            age = datetime.utcnow() - datetime.utcfromtimestamp(cache_path.stat().st_mtime)
+            if age < timedelta(hours=_FIRECRAWL_CACHE_TTL_HOURS):
+                data = json.loads(cache_path.read_text())
+                logger.info(f"Firecrawl cache HIT for {name} ({len(data)} trades, age {age.total_seconds()/3600:.1f}h)")
+                return data
+        except Exception:
+            pass
     url = f"{CAPITOLTRADES_BASE}/politicians/{bioguide}"
     try:
         async with httpx.AsyncClient(timeout=130.0) as c:
@@ -515,6 +539,13 @@ async def fetch_politician_via_firecrawl(name: str) -> List[Dict]:
     md = (data.get("data") or {}).get("markdown", "") or ""
     trades = _parse_capitoltrades_politician_md(md, name)
     logger.info(f"Firecrawl: {len(trades)} trades for {name}")
+    # Write to disk cache — even empty results count to avoid re-spending
+    # credits on a politician with no recent disclosures.
+    try:
+        _FIRECRAWL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(trades))
+    except Exception as e:
+        logger.debug(f"Firecrawl cache write failed for {name}: {e}")
     return trades
 
 
