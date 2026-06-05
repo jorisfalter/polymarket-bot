@@ -478,10 +478,11 @@ def _parse_capitoltrades_politician_md(md: str, rep_name: str) -> List[Dict]:
 
 
 _FIRECRAWL_CACHE_DIR = Path(__file__).parent.parent / "data" / "firecrawl_cache"
-_FIRECRAWL_CACHE_TTL_HOURS = 12  # CapitolTrades pages update slowly; new
-                                  # disclosures appear at most once per day.
-                                  # 12h cache caps Firecrawl spend hard
-                                  # without blunting fresh-signal detection.
+_FIRECRAWL_CACHE_TTL_HOURS = 24  # CapitolTrades pages update at most once
+                                  # per day (STOCK Act disclosures). 24h
+                                  # TTL caps monthly spend at ~330 credits
+                                  # across 11 politicians, well under the
+                                  # 500/mo free tier.
 
 
 async def fetch_politician_via_firecrawl(name: str) -> List[Dict]:
