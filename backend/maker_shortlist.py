@@ -1,11 +1,24 @@
 """
 Dynamic shortlist of crypto-price markets for maker mode.
 
-Why dynamic: daily-resolving markets expire every 24-48h, so a hardcoded
-token_id list in config goes stale instantly. We query Gamma each cycle
-and pick the top N candidates by spread × volume.
+⚠️ 2026-06-16: maker mode FROZEN after losing ~$70 in 6 days (5-11 June)
+on crypto daily-price markets. Root cause was adverse selection — takers
+who could see live spot prices dumped YES-side shares onto our wide-spread
+bids right before those markets resolved NO. Wide spreads on time-decaying
+directional markets ≠ maker edge; they're the *price of insurance against
+informed flow*. We mistook that for opportunity.
 
-Selection criteria (paper-validated where possible):
+`fetch_shortlist` is left in place so the dashboard endpoint still works,
+but `config.agent_mode = "frozen"` keeps the bot from posting orders.
+DO NOT re-enable maker mode on crypto-prices without first solving the
+informed-flow problem (e.g. cancel bids when spot moves against the
+market direction).
+
+Why the original design was dynamic: daily-resolving markets expire every
+24-48h, so a hardcoded token_id list in config goes stale instantly. We
+query Gamma each cycle and pick the top N candidates by spread × volume.
+
+Selection criteria (paper-validated, but contradicted by live results):
 - Tag: crypto-prices (footnote 13 in Akey et al. — these markets have
   maker rebates since 2026-03-06, which widens spreads to compensate
   takers for fees, leaving room for makers to capture).
