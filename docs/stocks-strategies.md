@@ -222,6 +222,66 @@ De Polymarket AI-agent ontvangt nu de top-10 WSB buzz tickers in zijn 15-min cyc
 
 ---
 
+## Strategie 8: Shared-Scale-Economies (Nick Sleep)
+
+> **Bron**: Nick Sleep's brieven aan Nomad Investment Partnership (~2001-2014). Hij draaide ~15 jaar lang >20%/jaar compounded, vooral op Costco / Amazon / Berkshire, en sloot het fonds toen hij "had gewonnen". Volledige analyse: `docs/research/sleep-modern-candidates.md`.
+
+### Het inzicht
+
+Klassieke schaalvoordelen: grotere omzet → lagere kost per klant → hogere marge → meer winst voor aandeelhouders.
+
+**Shared scale economies**: zelfde kostenvoordelen, maar het bedrijf **geeft de besparing terug aan de klant in plaats van zelf te oogsten**. Costco maakt $0 op de boodschappen, alleen op de lidmaatschapsfee. Amazon hield jarenlang nul marge in retail en reinvesteerde alles in wider selection, faster shipping, lower prices. SpaceX heeft launchkost met 100× verlaagd en doorgegeven aan de overheid, captureren 80% van payloads zonder prijsstijging.
+
+### De vliegwiel-logica
+
+```
+Besparing doorgeven → betere klantpropositie → meer klanten →
+meer schaal → meer besparing → herhalen
+```
+
+Concurrentie kan niet meekomen zonder hun eigen marges op te offeren. Vertrouwen + loyaliteit bouwen tot onverdoofbare moat. Klassieke metrics (P/E, marge) maken zulke bedrijven duur of "saai" omdat de échte waarde (consumer surplus) niet op de P&L staat.
+
+### Hoe identificeer je ze
+
+| Kwantitatief signaal | Drempel |
+|---|---|
+| Echte schaal | Omzet > $5-10B |
+| Marges verdacht laag voor schaal | Net margin < 5-8% terwijl peers >15% |
+| Sterke reinvestering | R&D + capex > 8% van omzet |
+| Snelle topline groei | 5j omzet-CAGR > 15% |
+| Recurring revenue mechanisme | Membership / abonnement / netwerk-lock-in |
+
+| Kwalitatief signaal | Vraag |
+|---|---|
+| Doorgegeven besparing | Zegt CEO expliciet "prijs omlaag, kwaliteit omhoog" of vergelijkbaar? |
+| Lange-termijn discipline | Geen kwartaalmarge-gestuurd guidance, founder/insider eigendom |
+| Klanttrust | Hoge NPS, hoge retention, organische groei zonder ads |
+
+### Anti-patroon — niet verwarren
+
+Een bedrijf met lage marges dat **niet doorgeeft** maar gewoon **slecht runt** is geen Sleep-bedrijf. Onderscheid:
+
+- **Sleep**: marges laag *omdat ze ervoor kiezen* — surplus gaat naar klant. Bedrijf domineert categorie en heeft pricing power.
+- **Failure**: marges laag omdat *concurrentie het pakt of operatie inefficient is*. Geen moat-vorming.
+
+Test: zou het bedrijf morgen prijzen 5% kunnen verhogen zonder volume te verliezen? Als ja → het is een Sleep-bedrijf in vrijwillige onderinvestering van marge. Als nee → het is gewoon een marginaal bedrijf.
+
+### Tegenvoorbeelden (om de strategie te scherpen)
+
+- **Visa/Mastercard**: massieve schaal, maar marges 40%+. Schaal wordt niet doorgegeven — ze extracteren. Anti-Sleep.
+- **Apple, Microsoft**: high-margin extraction met sterke moats. Buffett-stijl pricing-power, niet Sleep-stijl surplus-creation.
+
+### Implementatie
+
+**Momenteel op dashboard:** ❌ Nog niet gebouwd. Vereist:
+- Periodieke fundamentals-scan via yfinance / SEC EDGAR XBRL voor de kwantitatieve drempels
+- Handmatige beoordeling van de kwalitatieve signalen (CEO-letters, earnings call language, founder-ownership)
+- Watchlist met "Sleep-kandidaten" naast bestaande politici-volgen / Form 4 strategieën
+
+Concrete hedendaagse kandidaten: `docs/research/sleep-modern-candidates.md`.
+
+---
+
 ## Implementatie-roadmap
 
 ### Momenteel live op dashboard
