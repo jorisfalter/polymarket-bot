@@ -483,9 +483,12 @@ async def _fetch_stock_prices() -> dict:
 try:
     from openai import OpenAI
     HAS_OPENAI = True
-except ImportError:
+except Exception as e:
+    # Broad except on purpose: a broken openai install (e.g. the openai 3.5.0
+    # + aiohttp 3.9.1 AttributeError of 2026-08-27) must degrade the agent,
+    # not take down the whole app at import time.
     HAS_OPENAI = False
-    logger.warning("openai SDK not installed. AI agent disabled.")
+    logger.warning(f"openai SDK unavailable ({e}). AI agent disabled.")
 
 
 class AITradingAgent:
