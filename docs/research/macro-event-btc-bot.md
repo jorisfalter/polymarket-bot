@@ -70,6 +70,44 @@ Maar: de twee grootste d+3-winnaars waren precies de échte liquiditeits/policy-
 
 **De hypothese van de paper-fase is dus**: de edge zit niet in de prijsbeweging maar in de *oorzaak*-classificatie. LLM's taak = "was dit een monetair/fiscaal liquiditeits-event, of iets anders?"
 
+## Retro-classificatie van de 25 hits (2026-08-27)
+
+De 25 signatuur-hits vallen in ~20 episodes (opeenvolgende dagen = zelfde event). Oorzaak-classificatie (Claude, met hindsight-kennis + websearch voor de 2026-dates; d+1..d+3 return vanaf volgende dagopen):
+
+| Episode | Oorzaak | Klasse | d+1..d+3 |
+|---|---|---|---|
+| 2023-01-12 | Koele CPI-print | other (data ≠ operatie) | **+10.7%** ← false negative |
+| 2023-03-12 | SVB-collapse + **Fed BTFP** | **monetary_liquidity** | **+10.4%** |
+| 2023-06-06 | SEC vs Binance/Coinbase bounce | crypto_idiosyncratic | −2.8% |
+| 2023-08-29 | Grayscale ETF-uitspraak | crypto_idiosyncratic | −6.9% |
+| 2024-02-28 / 03-04 | ETF-inflow frenzy naar ATH | etf_flows | −0.7% / −2.1% |
+| 2024-03-20 | Dovish FOMC hold | other (praat ≠ operatie) | −5.7% |
+| 2024-03-24 | Herstel zonder catalyst | other | +3.4% |
+| 2024-05-15 | Koele CPI | other | +1.1% |
+| 2024-05-20 | ETH-ETF approval odds | crypto_idiosyncratic | −4.9% |
+| 2024-07-15 | Trump-aanslag / election odds | other | −1.1% |
+| 2024-08-08 | Bounce na yen-carry crash | short_squeeze_only | −4.8% |
+| 2024-08-23 | Powell Jackson Hole | other (praat ≠ operatie) | −1.9% |
+| 2025-03-02 | Trump strategic crypto reserve | crypto_idiosyncratic | −3.9% |
+| 2025-03-11 | Bounce | other | +1.3% |
+| 2025-04-09 | Tariff-pauze squeeze | short_squeeze/other | +3.2% |
+| 2026-02-06 | Bounce na −33% correctie | other | −0.6% |
+| 2026-03-04 | ETF-inflows herstel | etf_flows | −7.4% |
+| 2026-04-13 | De-escalatie + funding-squeeze | short_squeeze_only | +1.0% |
+| 2026-08-19 | **Treasury buyback-verdubbeling** | **monetary_liquidity** | **+11.2%** |
+
+**Resultaat: monetary_liquidity episodes (n=2): gem +10.8%, beide dubbelcijferig. Alle overige (n=18): gem −1.2%.** De scheiding is precies wat de these voorspelt — maar n=2 is klein, en dit is classificatie mét hindsight. De live paper-fase test of een LLM met alleen day-of headlines hetzelfde onderscheid maakt.
+
+Twee lessen verwerkt in de productie-prompt:
+- **"Praat is geen operatie"**: dovish FOMC/Jackson Hole/koele CPI expliciet uitgesloten — alleen échte operaties (buybacks, QE, BTFP-achtige faciliteiten, stimulus-wet) tellen. Beide zouden anders false positives zijn geweest (−5.7%, −1.9%).
+- False negative accepteren: de CPI-rally van jan 2023 (+10.7%) mist de filter. Prima — gemiste winst is geen verlies; de bescherming tegen de 18 mean-reverters is het geld waard.
+
+## Triggerkeuze: market-first, niet news-first
+
+De deterministische prijs-trigger is bewust een momentum-signaal, maar hij is niet de edge — hij is het **aandacht-mechanisme**. News-first vereist dat de LLM `surprise` en `already_priced_in` ex-ante inschat (zijn zwakste punt, zie tegenwerping #2). Market-first laat de markt de materialiteit bewijzen (+5% BTC én goud mee = het event is groot én wordt als debasement gelezen) en vraagt de LLM alleen het makkelijkere "wat wás de oorzaak". De 19-aug-data toont dat de snelheid van news-first niet nodig is (volgende ochtend nog +12%). Bonus: exact backtestbaar; "welke headlines hadden getriggerd" is dat niet.
+
+**v2 (na validatie)**: smalle news-trigger ernaast op alleen officiële bronnen (Treasury buyback-schedules, FOMC-statements — handvol per kwartaal), voor een paar uur eerdere instap. Beide paden loggen en per event het snelheidsvoordeel meten.
+
 ## Paper-fase plan
 
 Architectuur draait de volgorde om (goedkoop deterministisch triggeren, dán pas LLM):
@@ -81,3 +119,5 @@ Architectuur draait de volgorde om (goedkoop deterministisch triggeren, dán pas
 5. **Evaluatie na ~2 echte events** (kan 2–6 maanden duren; retroactief backfillen met de 25 historische hits kan meteen — LLM classificeert oude events op basis van nieuws van die dag, dan zien we direct of de oorzaak-filter de winners scheidt).
 
 Pas daarna: sub-account (check VIP/corporate-vereiste), $500, max 2x live.
+
+**Status 2026-08-27: geïmplementeerd** — `backend/macro_btc.py`, hourly scheduler-job, endpoints `GET /api/macro-btc/status` + `POST /api/macro-btc/check?force=true` (testpad). Config-keys `macro_btc_*` in `config.py`. Binance API key (read-only, IP-locked op VPS 91.98.202.189) staat klaar voor de live-fase; paper-fase gebruikt alleen publieke endpoints.

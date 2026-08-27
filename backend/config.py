@@ -119,6 +119,19 @@ class Settings(BaseSettings):
     maker_position_timeout_hours: int = 24  # Force-close (FAK) if position open >Nh without movement
     maker_dry_run: bool = True              # Log-only mode; flip to False after 48h dry-run observation
 
+    # Macro-event BTC paper trader (docs/research/macro-event-btc-bot.md)
+    # PAPER ONLY. Trigger = BTC day move + gold confirmation; LLM classifies
+    # cause; only monetary_liquidity events get a paper entry.
+    macro_btc_enabled: bool = True
+    macro_btc_trigger_pct: float = 5.0        # BTC >= +5% from UTC day open
+    macro_btc_gold_confirm_pct: float = 0.3   # PAXG >= +0.3% same day
+    macro_btc_min_confidence: float = 0.8     # LLM confidence floor for entry
+    macro_btc_paper_capital: float = 1000.0   # Fictional account size USD
+    macro_btc_leverage: float = 2.0           # Notional = capital * leverage
+    macro_btc_hard_stop_pct: float = 1.5      # Exit if price -1.5% from entry
+    macro_btc_trail_pct: float = 3.0          # Exit if -3% from peak
+    macro_btc_max_hold_hours: float = 72.0    # Force exit after 3 days
+
     # Trade proxy (Fly.io Tokyo — bypasses Polymarket geoblock)
     trade_proxy_url: Optional[str] = None     # e.g. https://polymarket-trade-proxy.fly.dev
     trade_proxy_secret: Optional[str] = None  # Bearer token for auth

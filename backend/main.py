@@ -495,6 +495,17 @@ async def lifespan(app: FastAPI):
         id='market_maker_job',
         max_instances=1,
     )
+    # Macro-event BTC paper trader — hourly trigger check (BTC +5% & gold up),
+    # LLM cause-classification, paper position management. Telegram only on
+    # trigger/exit (~7x/year by design). docs/research/macro-event-btc-bot.md
+    from .macro_btc import macro_btc
+    scheduler.add_job(
+        macro_btc.run_cycle,
+        'interval',
+        minutes=60,
+        id='macro_btc_job',
+        max_instances=1,
+    )
     scheduler.add_job(
         run_daily_summary,
         'cron',
@@ -1458,6 +1469,26 @@ async def trigger_agent_cycle():
     """Manually trigger one agent cycle."""
     await ai_agent.run_cycle()
     return {"ok": True, "thinking": ai_agent._thinking_history[-1] if ai_agent._thinking_history else None}
+
+
+# --- Macro-event BTC paper trader -----------------------------------------
+
+@app.get("/api/macro-btc/status")
+async def macro_btc_status():
+    """Current paper position + journal of triggers/exits."""
+    from .macro_btc import macro_btc
+    return {
+        "enabled": settings.macro_btc_enabled,
+        "state": macro_btc.state,
+        "journal": macro_btc.get_journal(limit=50),
+    }
+
+
+@app.post("/api/macro-btc/check")
+async def macro_btc_check(force: bool = False, notify: bool = True):
+    """Manual trigger check. force=true skips the price trigger (test path)."""
+    from .macro_btc import macro_btc
+    return await macro_btc.run_cycle(force_trigger=force, notify=notify)
 
 
 # --- Market-maker (Pad 2) endpoints --------------------------------------
