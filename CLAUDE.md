@@ -101,6 +101,7 @@ The failure mode is not missing knowledge — it's not retrieving known tools be
 | `trade_audit.py` | 327 | **Deep sanity audit** — dupes, P&L anomalies, theme concentration, sizing collapse, fade-vs-piggyback, burst clusters. See workflow doc |
 | `leaderboard.py` | 325 | Top traders + ☆ watchlist |
 | `intel_feeds.py` | 282 | Newsletters (Matt Levine / Money Stuff etc.) |
+| `macro_btc.py` | 290 | Macro-event BTC **paper** trader: BTC+5%-én-goud-op trigger (hourly), LLM oorzaak-classificatie, paper-entry alleen op `monetary_liquidity`. Zie `docs/research/macro-event-btc-bot.md` |
 | `crypto_data.py` | 260 | Funding rates, basis, spreads |
 | `reddit_data.py` | 256 | WSB scraping |
 | `trade_analysis.py` | 255 | P&L by strategy / pattern / stake bucket — the "Learn from History" backend |
@@ -146,6 +147,7 @@ The failure mode is not missing knowledge — it's not retrieving known tools be
 | `ai_agent.run_cycle` | 15min | The autonomous bot |
 | `run_daily_summary` | 09:00 UTC | Social-media recap |
 | `check_politician_alerts` | 30min | Starred-politicians watch |
+| `macro_btc.run_cycle` | 60min | Macro-event BTC paper trader — Telegram alleen bij trigger/exit (~7x/jaar) |
 | `run_weekly_trade_analysis` | Mon 08:00 UTC | Weekly Telegram digest |
 
 **Disabled**: WSB email alerts (per user 2026-05-08, "ze zijn vervelend"). Function `check_wsb_alerts()` kept intact, `/api/stocks/wsb-watchlist-overlap` endpoint still works for on-demand dashboard checks.
@@ -233,6 +235,11 @@ Bot was fading insiders on some asymmetric trades. Fixed in `ai_prompts.py` stra
 
 ### 2026-05: Order-version-mismatch retry
 Added retry-with-backoff (1.5s / 3s / 6s, max 4 attempts) in `auto_seller.py` for `order_version_mismatch` errors.
+
+### 2026-08-27: prod boot-crash na rebuild (openai/aiohttp) + Telegram bleek dood
+**Boot-crash**: `docker compose up --build` trok ongepinde `openai` 3.5.0 binnen; diens vendored `httpx_aiohttp` vereist `aiohttp.SocketTimeoutError` (3.10+) terwijl aiohttp op 3.9.1 gepind stond → app stierf bij import. Fix: `aiohttp>=3.10,<4` in requirements + import-guard in `ai_agent.py` verbreed van `except ImportError` naar `except Exception` zodat een kapotte SDK de agent degradeert i.p.v. de app te killen.
+
+**Telegram**: bleek nooit geconfigureerd — geen `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` in `.env` (VPS noch Mac); alle `send_telegram()`-calls (daily summary, digests, magic-link login!) faalden maandenlang stil. Nu aangesloten: bot **@moneyprintingnews_bot**, keys alleen in `.env` (gitignored). Als "Telegram doet het niet": eerst .env-keys checken — send_telegram faalt by design stil.
 
 ### 2026-05: Asymmetric floor raised
 `asymmetric_min_notional` $5 → $50. Retail $20-30 Eurovision/longshot bets were firing as "insider asymmetric". Real insider asymmetric bets (Paris weather) were $30+ AND from fresh wallets with no other activity.
