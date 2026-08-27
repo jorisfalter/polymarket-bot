@@ -11,6 +11,7 @@ Distilled summaries of trading strategies, insider patterns, and platform ideas 
 | (Crypto carry strategies moved to [`docs/crypto-strategies.md`](../crypto-strategies.md)) | Promoted to top-level playbook. |
 | [polymarket-derivatives-platform.md](polymarket-derivatives-platform.md) | Brainstorm: Deribit-style derivatives platform built on top of Polymarket. |
 | [aschenbrenner-situational-awareness.md](aschenbrenner-situational-awareness.md) | AGI-by-2027 essay. Intellectual backbone for the Power/Nuclear AI-infra watchlist bucket. |
+| [macro-event-btc-bot.md](macro-event-btc-bot.md) | Macro/policy-nieuws → LLM-extractie → deterministische gate → intraday leveraged BTC op apart sub-account. |
 
 ## Adding a new research doc
 1. One file per idea. Name it `<author>-<topic>.md` or `<case-slug>.md`.
