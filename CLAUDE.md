@@ -102,6 +102,7 @@ The failure mode is not missing knowledge — it's not retrieving known tools be
 | `leaderboard.py` | 325 | Top traders + ☆ watchlist |
 | `intel_feeds.py` | 282 | Newsletters (Matt Levine / Money Stuff etc.) |
 | `macro_btc.py` | 290 | Macro-event BTC **paper** trader: BTC+5%-én-goud-op trigger (hourly), LLM oorzaak-classificatie, paper-entry alleen op `monetary_liquidity`. Zie `docs/research/macro-event-btc-bot.md` |
+| `earnings_gap.py` | 190 | PEAD-alert: dagelijkse scan op ≥5% gap-ups (universe + watchlist) → Telegram-playbook + outcome-tracking na 3 handelsdagen. Alert-only, manual execution. Zie `docs/research/earnings-gap-drift.md` |
 | `crypto_data.py` | 260 | Funding rates, basis, spreads |
 | `reddit_data.py` | 256 | WSB scraping |
 | `trade_analysis.py` | 255 | P&L by strategy / pattern / stake bucket — the "Learn from History" backend |
@@ -148,6 +149,7 @@ The failure mode is not missing knowledge — it's not retrieving known tools be
 | `run_daily_summary` | 09:00 UTC | Social-media recap |
 | `check_politician_alerts` | 30min | Starred-politicians watch |
 | `macro_btc.run_cycle` | 60min | Macro-event BTC paper trader — Telegram alleen bij trigger/exit (~7x/jaar) |
+| `earnings_gap.run_daily_check` | ma-vr 21:15 UTC | PEAD gap-up alerts + outcome-rapportage (~1/week) |
 | `run_weekly_trade_analysis` | Mon 08:00 UTC | Weekly Telegram digest |
 
 **Disabled**: WSB email alerts (per user 2026-05-08, "ze zijn vervelend"). Function `check_wsb_alerts()` kept intact, `/api/stocks/wsb-watchlist-overlap` endpoint still works for on-demand dashboard checks.

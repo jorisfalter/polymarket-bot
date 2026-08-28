@@ -40,4 +40,4 @@ Past exact in het bestaande patroon: **Telegram-alert, handmatige uitvoering.**
 
 Voorstel v1: dagelijkse check na de US-close (≈20:30 UTC) over het universum + de 28-ticker watchlist: gap-up ≥5% vandaag → Telegram-melding met naam, gap, dagverloop en het script ("koop close/morgen open, verkoop na 3 handelsdagen, geen stop nodig gezien horizon — sizing klein"). ~1 melding/week verwacht.
 
-**Status: gedocumenteerd + gevalideerd, alert nog niet gebouwd** — wachten op akkoord Joris.
+**Status 2026-08-28: gebouwd en live** — `backend/earnings_gap.py`, dagelijkse scan ma-vr 21:15 UTC over universe + stocks-watchlist (45 tickers), Telegram-alert met playbook, en automatische outcome-rapportage (hypothetisch close→close) 3 handelsdagen na elke alert zodat we de edge live meten. Endpoints: `GET /api/earnings-gap/status`, `POST /api/earnings-gap/check`. Eerste echte alerts direct bij lancering: CRM gap +11.9% en NVDA gap +6.3% (27 aug — het Tijd-artikel dat deze note triggerde).
