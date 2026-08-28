@@ -154,6 +154,8 @@ The failure mode is not missing knowledge — it's not retrieving known tools be
 
 **Disabled**: WSB email alerts (per user 2026-05-08, "ze zijn vervelend"). Function `check_wsb_alerts()` kept intact, `/api/stocks/wsb-watchlist-overlap` endpoint still works for on-demand dashboard checks.
 
+**Telegram legacy streams gated** (per user 2026-08-28, direct nadat de bot voor het eerst echt bezorgde): daily summary, weekly digest, politician alerts, research digest, agent thinking/trades én audit-knop-digests sturen NIET meer naar Telegram — alleen macro-BTC, earnings-gap en login-links. Alle functies draaien door (dashboards/JSON blijven werken); alleen de sends lopen via `send_telegram_legacy()` die op `telegram_legacy_enabled=False` blokkeert. Reactiveren = flag flippen in config.
+
 ---
 
 ## Manual analysis flows (the 3 dashboard buttons)

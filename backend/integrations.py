@@ -109,6 +109,17 @@ async def send_telegram(text: str, parse_mode: str = "HTML",
         return False
 
 
+async def send_telegram_legacy(text: str, **kwargs) -> bool:
+    """Gated variant for pre-2026-08-28 streams (daily summary, digests,
+    politician alerts, agent messages). These fired silently for months while
+    Telegram was unconfigured; when the bot came alive the user asked to keep
+    only the rare high-signal alerts. Flip telegram_legacy_enabled to revive."""
+    if not settings.telegram_legacy_enabled:
+        logger.debug("Telegram legacy stream suppressed (telegram_legacy_enabled=False)")
+        return False
+    return await send_telegram(text, **kwargs)
+
+
 def _esc(text: str) -> str:
     """Escape HTML special chars so Telegram doesn't break parsing."""
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

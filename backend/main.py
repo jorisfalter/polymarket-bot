@@ -1622,7 +1622,7 @@ async def trigger_triage(limit: int = Query(50, le=200)):
     from .trade_failures import triage_failures
     result = await triage_failures(limit=limit)
     if settings.telegram_enabled and settings.telegram_chat_id:
-        from .integrations import send_telegram
+        from .integrations import send_telegram_legacy as send_telegram
         summary = result.get("summary", {})
         modes = summary.get("by_mode", {})
         lines = [f"🔧 <b>Failure triage</b> — checked {result.get('triaged', 0)} entries"]
@@ -1655,7 +1655,7 @@ async def trigger_audit_trades(days: int = Query(30, ge=1, le=365)):
     from .trade_audit import audit_trades, format_telegram_audit
     audit = audit_trades(days=days)
     if settings.telegram_enabled and settings.telegram_chat_id:
-        from .integrations import send_telegram
+        from .integrations import send_telegram_legacy as send_telegram
         await send_telegram(format_telegram_audit(audit))
     return audit
 
@@ -1676,7 +1676,7 @@ async def trigger_learn_from_history(days: int = Query(30, ge=1, le=365)):
     from .trade_analysis import analyze_history, format_telegram_summary
     analysis = analyze_history(days=days)
     if settings.telegram_enabled and settings.telegram_chat_id:
-        from .integrations import send_telegram
+        from .integrations import send_telegram_legacy as send_telegram
         await send_telegram(format_telegram_summary(analysis))
     return analysis
 
@@ -2179,7 +2179,7 @@ async def run_weekly_trade_analysis():
         if analysis.get("total_exits", 0) == 0:
             return
         if settings.telegram_enabled and settings.telegram_chat_id:
-            from .integrations import send_telegram
+            from .integrations import send_telegram_legacy as send_telegram
             await send_telegram(format_telegram_summary(analysis))
         logger.info(f"Weekly trade analysis: {analysis.get('total_exits', 0)} exits, "
                     f"net ${analysis.get('total_pnl', 0):+.2f}")

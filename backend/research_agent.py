@@ -382,7 +382,7 @@ def _format_digest(ideas: List[Dict]) -> str:
 
 async def _send_digest(ideas: List[Dict]) -> None:
     try:
-        from .integrations import send_telegram
+        from .integrations import send_telegram_legacy as send_telegram
         await send_telegram(_format_digest(ideas))
     except Exception as e:
         logger.warning(f"telegram digest failed: {e}")

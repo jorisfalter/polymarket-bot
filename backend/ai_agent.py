@@ -14,7 +14,7 @@ from .config import settings
 from .auto_seller import auto_seller
 from .trade_journal import journal
 from .polymarket_client import PolymarketClient
-from .integrations import post_tweet, format_thinking_tweet, log_trade_to_sheets, log_thinking_to_sheets, send_telegram, format_thinking_telegram, format_trade_telegram, log_trade_to_airtable
+from .integrations import post_tweet, format_thinking_tweet, log_trade_to_sheets, log_thinking_to_sheets, send_telegram_legacy as send_telegram, format_thinking_telegram, format_trade_telegram, log_trade_to_airtable
 from .leaderboard import tracker
 from .auditor_data import get_auditor, is_earnings_market, analyze_wallet_auditor_pattern
 from .intel_feeds import fetch_all_intel

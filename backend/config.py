@@ -160,6 +160,12 @@ class Settings(BaseSettings):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     telegram_enabled: bool = True
+    # Legacy streams (daily summary, weekly digest, politician alerts,
+    # research digest, agent thinking/trades, audit-button digests) — disabled
+    # per user 2026-08-28: Telegram is only for the rare high-signal alerts
+    # (macro-BTC, earnings-gap) + login links. Functions stay intact; only
+    # their Telegram sends are gated (send_telegram_legacy in integrations.py).
+    telegram_legacy_enabled: bool = False
 
     # Dashboard auth — magic-link login via Telegram. If auth_secret is unset,
     # auth is DISABLED (fail-open) so a misconfigured deploy never locks the

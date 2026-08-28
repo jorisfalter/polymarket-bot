@@ -16,7 +16,7 @@ from loguru import logger
 
 from .config import settings
 from .trade_journal import journal
-from .integrations import send_telegram, _esc
+from .integrations import send_telegram_legacy as send_telegram, _esc
 from . import ai_agent as _ai_agent_module
 from .auto_seller import auto_seller
 
