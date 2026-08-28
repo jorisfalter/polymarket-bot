@@ -34,6 +34,18 @@ Drift-controle: unconditionele 3d-drift van dit universum was +0.42% → **exces
 - Geen transactiekosten/slippage meegerekend (verwaarloosbaar bij deze namen en horizon).
 - Overlap met bestaande posities/watchlist bewaken — dit zijn dezelfde AI-namen als de stocks-watchlist.
 
+## Executie: Binance US Stocks (bevestigd 2026-08-28)
+
+Joris heeft toegang tot Binance's échte US-aandelen-interface (`binance.com/en/stocks/EQ_<TICKER>`, "super app"-lancering juni 2026 met 7.000 stocks/ETF's — geen tokenized wrapper). Geverifieerd op AAPL-screenshot:
+
+- **Spread ~0.02%** (bid 315.74 / ask 315.81), zelfs in de overnight-sessie → edge blijft intact. Bij kleinere namen wél eerst bid/ask checken; >0.3% = wachten op reguliere sessie.
+- **Overnight-sessie** (03:00 ET = 09:00 CET) → 's ochtends bij de koffie instappen na de 23:15 CET alert, i.p.v. wachten op de 15:30 CET US-open.
+- **Fractional shares** (min ~0.016) → vrije sizing, bv. $200-500 per alert.
+- Betaalt uit **USDC-spotsaldo** — saldo aanhouden; fee-tarief nog checken via de %Fee-link.
+- Alternatieven als een naam ontbreekt: Kraken xStocks (100 namen, tokenized — spread checken) of een NL-broker (DEGIRO/IBKR).
+
+Flow: Telegram-alert (23:15 CET) → volgende ochtend spread checken → limit buy rond de ask → verkopen na 3 handelsdagen (de outcome-melding is de verkoop-reminder).
+
 ## Praktisch (stocks board = manual execution)
 
 Past exact in het bestaande patroon: **Telegram-alert, handmatige uitvoering.**
