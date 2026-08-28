@@ -193,6 +193,16 @@ Export private key from: https://reveal.magic.link/polymarket
 
 ---
 
+## Binance API (getest 2026-08-28)
+
+Key in `.env` (`BINANCE_API_KEY`/`BINANCE_SECRET_KEY`, beide machines; settings-velden `binance_api_key`/`binance_secret_key`):
+- **Permissies**: Reading + Spot & Margin & Stock Trading + Prediction Trading. GEEN withdrawals, geen Margin Loan, geen Universal Transfer, geen Futures (nog).
+- **IP-locked op het VPS-publieke IP `91.98.202.189`** — werkt dus alleen vanaf de VPS; vanaf de Mac faalt elke signed call met -2015 (getest, by design).
+- Trade-pijplijn gevalideerd via `POST /api/v3/order/test` (valideert permissies+order zonder te plaatsen) → HTTP 200.
+- Spot-wallet was leeg bij test; fondsen staan in Funding/Stocks-wallet. Overboeken doet Joris handmatig (bot heeft geen transfer-rechten).
+- Futures-testtruc voor later (geen test-endpoint op fapi): limit-order ver onder de markt plaatsen + direct cancelen.
+- Binance heeft sinds 2026-07-20 ook API-trading voor US stocks (de `/stocks/EQ_<TICKER>` producten) — nog niet gebouwd; earnings-gap blijft alert-only.
+
 ## Risk limits (hard caps — do NOT raise without explicit user approval)
 
 In `backend/config.py`:
