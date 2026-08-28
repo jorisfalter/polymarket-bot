@@ -132,6 +132,18 @@ class Settings(BaseSettings):
     macro_btc_trail_pct: float = 3.0          # Exit if -3% from peak
     macro_btc_max_hold_hours: float = 72.0    # Force exit after 3 days
 
+    # Binance — read-only key, IP-locked to the VPS (91.98.202.189). Not used
+    # yet: the macro-BTC paper phase runs on public endpoints. The live phase
+    # will additionally need the Futures permission on this key.
+    binance_api_key: Optional[str] = None
+    binance_secret_key: Optional[str] = None
+
+    # Earnings-gap drift alert (docs/research/earnings-gap-drift.md)
+    # Alert-only, manual execution on the stocks board.
+    earnings_gap_enabled: bool = True
+    earnings_gap_threshold_pct: float = 5.0   # Overnight gap-up >= 5%
+    earnings_gap_hold_days: int = 3           # Playbook: sell after 3 trading days
+
     # Trade proxy (Fly.io Tokyo — bypasses Polymarket geoblock)
     trade_proxy_url: Optional[str] = None     # e.g. https://polymarket-trade-proxy.fly.dev
     trade_proxy_secret: Optional[str] = None  # Bearer token for auth

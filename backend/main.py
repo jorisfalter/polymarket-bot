@@ -506,6 +506,16 @@ async def lifespan(app: FastAPI):
         id='macro_btc_job',
         max_instances=1,
     )
+    # Earnings-gap drift alert — daily after US close (21:15 UTC covers both
+    # EDT and EST closes). Alert-only; Telegram carries the manual playbook.
+    # docs/research/earnings-gap-drift.md
+    from .earnings_gap import earnings_gap
+    scheduler.add_job(
+        earnings_gap.run_daily_check,
+        'cron',
+        day_of_week='mon-fri', hour=21, minute=15,
+        id='earnings_gap_job',
+    )
     scheduler.add_job(
         run_daily_summary,
         'cron',
@@ -1489,6 +1499,22 @@ async def macro_btc_check(force: bool = False, notify: bool = True):
     """Manual trigger check. force=true skips the price trigger (test path)."""
     from .macro_btc import macro_btc
     return await macro_btc.run_cycle(force_trigger=force, notify=notify)
+
+
+# --- Earnings-gap drift alert ---------------------------------------------
+
+@app.get("/api/earnings-gap/status")
+async def earnings_gap_status():
+    """Alert/outcome journal + live-tracked stats."""
+    from .earnings_gap import earnings_gap
+    return earnings_gap.get_status()
+
+
+@app.post("/api/earnings-gap/check")
+async def earnings_gap_check(notify: bool = True):
+    """Manual scan (same as the daily 21:15 UTC job)."""
+    from .earnings_gap import earnings_gap
+    return await earnings_gap.run_daily_check(notify=notify)
 
 
 # --- Market-maker (Pad 2) endpoints --------------------------------------
