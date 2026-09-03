@@ -6,6 +6,8 @@
 
 ## What this project is
 
+> **Status 2026-09-03 — Polymarket-trading is gestopt** (per Joris: "polymarket agent is volledig irrelevant, polymarket doen we niet meer"). De agent blijft `frozen`, detector + dashboards draaien passief door. Actieve focus: **macro-BTC paper trader** (`macro_btc.py`), **earnings-gap alerts** (`earnings_gap.py`, stocks) en het crypto board. Werkprincipe voor alle bots: *good judgement is historical knowledge* — precedent zoeken vóór de trade, thesis vastleggen bij entry, post-mortem + les bij exit (zie judgement-loop in `docs/research/macro-event-btc-bot.md`).
+
 A real-time surveillance system + autonomous AI trading bot for Polymarket. Two purposes (in this order, per `docs/trading-philosophy.md`):
 
 1. **Entertainment + content** — daily stories worth sharing on social (Telegram firehose).

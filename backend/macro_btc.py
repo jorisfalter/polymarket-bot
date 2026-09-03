@@ -40,6 +40,26 @@ STATE_PATH = Path("data/macro_btc_state.json")
 BINANCE_API = "https://api.binance.com/api/v3"
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search"
 
+# Historical precedents: every BTC>=5%-and-gold-up episode 2023-2026, with the
+# d+1..d+3 continuation that followed. Good judgement is historical knowledge —
+# the classifier must anchor each new event to the episode it most resembles.
+PRECEDENTS = """2023-01-12 | cool CPI print (data, not an operation)      | other               | +10.7%
+2023-03-12 | SVB collapse + Fed BTFP facility            | monetary_liquidity  | +10.4%
+2023-06-06 | bounce after SEC sues Binance/Coinbase      | crypto_idiosyncratic|  -2.8%
+2023-08-29 | Grayscale ETF court win                     | crypto_idiosyncratic|  -6.9%
+2024-02-28 | ETF inflow frenzy toward ATH                | etf_flows           |  -0.7%
+2024-03-20 | dovish FOMC hold (words, not an operation)  | other               |  -5.7%
+2024-05-15 | cool CPI print                              | other               |  +1.1%
+2024-05-20 | ETH-ETF approval odds spike                 | crypto_idiosyncratic|  -4.9%
+2024-08-08 | bounce after yen-carry crash                | short_squeeze_only  |  -4.8%
+2024-08-23 | Powell Jackson Hole speech (words)          | other               |  -1.9%
+2025-03-02 | Trump strategic crypto reserve announcement | crypto_idiosyncratic|  -3.9%
+2025-04-09 | tariff-pause relief squeeze                 | short_squeeze_only  |  +3.2%
+2026-02-06 | bounce after -33% correction                | other               |  -0.6%
+2026-03-04 | ETF inflows recovery                        | etf_flows           |  -7.4%
+2026-04-13 | geopolitical de-escalation + funding squeeze| short_squeeze_only  |  +1.0%
+2026-08-19 | Treasury doubles long-bond buybacks         | monetary_liquidity  | +11.2%"""
+
 CLASSIFY_PROMPT = """You are a macro analyst. Bitcoin is up {btc_pct:+.1f}% today and gold is up {gold_pct:+.1f}% today ({date} UTC).
 
 Here are today's news headlines:
@@ -53,8 +73,25 @@ Classify the PRIMARY cause of this bitcoin move into exactly one category:
 - "crypto_idiosyncratic": crypto-specific news (regulation, halving, exchange events, adoption)
 - "other": anything else / unclear
 
+Historical precedents (date | event | class | BTC return over the 3 days AFTER the trigger day):
+{precedents}
+
+Only monetary_liquidity episodes continued double-digit; everything else mean-reverted or chopped. Anchor your judgement: name the precedent this most resembles.
+{lessons}
 Respond with ONLY a JSON object, no markdown:
-{{"cause": "<category>", "confidence": <0.0-1.0>, "headline_evidence": "<the 1-2 headlines that support this>", "reasoning": "<one sentence>"}}"""
+{{"cause": "<category>", "confidence": <0.0-1.0>,
+ "precedent": "<the historical episode this most resembles, and in one clause why>",
+ "expected_path": "<what you expect over the next 72h if the thesis is right>",
+ "invalidation": "<observable condition that would prove the thesis wrong>",
+ "headline_evidence": "<the 1-2 headlines that support this>", "reasoning": "<one sentence>"}}"""
+
+POSTMORTEM_PROMPT = """You closed a paper BTC long. Compare thesis vs reality and extract ONE transferable lesson for future classification of macro-BTC events. Be harsh and specific; "be more careful" is not a lesson.
+
+Thesis at entry: cause={cause}, precedent="{precedent}", expected_path="{expected_path}", invalidation="{invalidation}"
+Reality: entry ${entry:,.0f} -> exit ${exit:,.0f} ({move_pct:+.1f}%) after {hold_hours:.0f}h, exit reason: {reason}, peak was ${peak:,.0f}
+
+Respond with ONLY a JSON object, no markdown:
+{{"thesis_correct": <true/false>, "lesson": "<one sentence, transferable to the next event>"}}"""
 
 
 class MacroBTCPaperTrader:
@@ -132,15 +169,29 @@ class MacroBTCPaperTrader:
 
     # ---------- LLM classification ----------
 
+    def _recent_lessons(self, limit: int = 3) -> str:
+        """Last post-mortem lessons, fed back into the next classification."""
+        lessons = [r["lesson"] for r in self.get_journal()
+                   if r.get("event") == "LESSON" and r.get("lesson")][-limit:]
+        if not lessons:
+            return ""
+        body = "\n".join(f"- {l}" for l in lessons)
+        return f"\nLessons from this bot's own previous trades:\n{body}\n"
+
     async def _classify(self, btc_pct: float, gold_pct: float, headlines: list) -> Optional[dict]:
-        if not (settings.openrouter_api_key or settings.anthropic_api_key):
-            logger.warning("macro_btc: no LLM API key — cannot classify")
-            return None
         prompt = CLASSIFY_PROMPT.format(
             btc_pct=btc_pct, gold_pct=gold_pct,
             date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             headlines="\n".join(f"- {h}" for h in headlines) or "(no headlines available)",
+            precedents=PRECEDENTS,
+            lessons=self._recent_lessons(),
         )
+        return await self._llm_json(prompt)
+
+    async def _llm_json(self, prompt: str) -> Optional[dict]:
+        if not (settings.openrouter_api_key or settings.anthropic_api_key):
+            logger.warning("macro_btc: no LLM API key — cannot classify")
+            return None
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 if settings.openrouter_api_key:
@@ -227,6 +278,9 @@ class MacroBTCPaperTrader:
                 "entry_price": btc["last"], "entry_ts": datetime.now(timezone.utc).isoformat(),
                 "notional": notional, "peak_price": btc["last"],
                 "cause": cause, "confidence": confidence,
+                "precedent": (classification or {}).get("precedent", ""),
+                "expected_path": (classification or {}).get("expected_path", ""),
+                "invalidation": (classification or {}).get("invalidation", ""),
             }
         self._save_state()
 
@@ -237,10 +291,12 @@ class MacroBTCPaperTrader:
                       f"({settings.macro_btc_leverage:.0f}x) @ ${btc['last']:,.0f}"
                       if entry_taken else "geen entry (oorzaak-filter)")
             evidence = _esc((classification or {}).get("headline_evidence", ""))
+            precedent = _esc((classification or {}).get("precedent", ""))
             await send_telegram(
                 f"{emoji} <b>Macro-BTC trigger</b>\n"
                 f"BTC {btc['pct']:+.1f}% | goud {gold['pct']:+.1f}%\n"
                 f"Oorzaak: <b>{_esc(cause)}</b> ({confidence:.0%})\n"
+                f"Precedent: <i>{precedent}</i>\n"
                 f"→ {action}\n"
                 f"<i>{evidence}</i>"
             )
@@ -279,19 +335,41 @@ class MacroBTCPaperTrader:
             "hold_hours": round(age_h, 1), "move_pct": round(move_pct, 2),
             "gross_pnl": round(gross, 2), "fees": round(fees + funding, 2),
             "net_pnl": round(net, 2), "cause": pos.get("cause"),
+            "thesis": {k: pos.get(k, "") for k in ("precedent", "expected_path", "invalidation")},
         }
         self._journal(record)
         self.state["position"] = None
         self._save_state()
 
+        # Post-mortem: thesis vs reality -> one transferable lesson, journaled
+        # and fed back into the next classification (_recent_lessons).
+        lesson = None
+        try:
+            pm = await self._llm_json(POSTMORTEM_PROMPT.format(
+                cause=pos.get("cause", "?"), precedent=pos.get("precedent", "?"),
+                expected_path=pos.get("expected_path", "?"),
+                invalidation=pos.get("invalidation", "?"),
+                entry=entry, exit=price, move_pct=move_pct,
+                hold_hours=age_h, reason=reason, peak=pos["peak_price"],
+            ))
+            if pm and pm.get("lesson"):
+                lesson = pm
+                self._journal({"event": "LESSON", "thesis_correct": pm.get("thesis_correct"),
+                               "lesson": pm["lesson"], "exit_reason": reason,
+                               "net_pnl": round(net, 2)})
+        except Exception as e:
+            logger.warning(f"macro_btc post-mortem failed: {e}")
+
         if notify:
-            from .integrations import send_telegram
+            from .integrations import send_telegram, _esc
             emoji = "✅" if net > 0 else "❌"
-            await send_telegram(
-                f"{emoji} <b>Macro-BTC paper exit</b> ({reason})\n"
-                f"${entry:,.0f} → ${price:,.0f} ({move_pct:+.1f}%) in {age_h:.0f}u\n"
-                f"Net P&amp;L: <b>${net:+.2f}</b> op ${settings.macro_btc_paper_capital:.0f} paper capital"
-            )
+            msg = (f"{emoji} <b>Macro-BTC paper exit</b> ({reason})\n"
+                   f"${entry:,.0f} → ${price:,.0f} ({move_pct:+.1f}%) in {age_h:.0f}u\n"
+                   f"Net P&amp;L: <b>${net:+.2f}</b> op ${settings.macro_btc_paper_capital:.0f} paper capital")
+            if lesson:
+                verdict = "thesis klopte" if lesson.get("thesis_correct") else "thesis fout"
+                msg += f"\n📓 <i>{verdict}: {_esc(lesson['lesson'])}</i>"
+            await send_telegram(msg)
         return {"status": "exited", **record}
 
 

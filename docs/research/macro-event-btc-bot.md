@@ -121,3 +121,13 @@ Architectuur draait de volgorde om (goedkoop deterministisch triggeren, dán pas
 Pas daarna: sub-account (check VIP/corporate-vereiste), $500, max 2x live.
 
 **Status 2026-08-27: geïmplementeerd** — `backend/macro_btc.py`, hourly scheduler-job, endpoints `GET /api/macro-btc/status` + `POST /api/macro-btc/check?force=true` (testpad). Config-keys `macro_btc_*` in `config.py`. Binance API key (read-only, IP-locked op VPS 91.98.202.189) staat klaar voor de live-fase; paper-fase gebruikt alleen publieke endpoints.
+
+## Judgement-loop (2026-09-03) — "good judgement is historical knowledge"
+
+Principe van Joris: een bot moet (1) historisch precedent zoeken, (2) zijn thesis opschrijven vóór de trade, (3) zijn resultaat opschrijven bij exit. Geïmplementeerd als gesloten cirkel:
+
+1. **Precedent op beslismoment**: de volledige tabel van 16 historische episodes (mét d+3-uitkomsten) zit in de classificatie-prompt (`PRECEDENTS`); de LLM moet expliciet benoemen op welke episode het nieuwe event het meest lijkt.
+2. **Falsifieerbare thesis**: elke classificatie levert `precedent`, `expected_path` en `invalidation` — vastgelegd in het journal en in de positie zelf. De Telegram-trigger toont het precedent.
+3. **Post-mortem bij exit**: na elke exit vergelijkt een LLM-call thesis vs realiteit (`POSTMORTEM_PROMPT`) → `thesis_correct` + één overdraagbare les, als `LESSON`-record in het journal. De laatste 3 lessen worden automatisch in de vólgende classificatie-prompt geïnjecteerd (`_recent_lessons`) — de bot wordt per trade wijzer.
+
+Earnings-gap kreeg de lichte variant: elke outcome-melding bevat de lopende live-statistiek naast de backtest-baseline (59%, +1.6%), zodat elk resultaat in historische context aankomt.

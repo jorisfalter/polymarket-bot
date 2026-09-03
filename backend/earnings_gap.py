@@ -154,6 +154,13 @@ class EarningsGapAlerter:
                 lines.append(f"{emoji} <b>{o['ticker']}</b> ({o['date']}): "
                              f"${o['entry_close']:,.2f} → ${o['exit_close']:,.2f} "
                              f"= {o['return_pct']:+.1f}% na {o['hold_days']}d")
+            # Rolling live stats — every result arrives in its historical
+            # context (backtest baseline: 59% winrate, +1.6% avg).
+            s = self.get_status()["stats"]
+            if s["n"]:
+                lines.append(f"<i>Live totaal: {s['wins']}/{s['n']} winst, "
+                             f"gem {s['avg_return_pct']:+.2f}% "
+                             f"(backtest: 59%, +1.6%)</i>")
         await send_telegram("\n".join(lines))
 
     def get_status(self) -> dict:
