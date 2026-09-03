@@ -142,7 +142,9 @@ class Settings(BaseSettings):
     # Alert-only, manual execution on the stocks board.
     earnings_gap_enabled: bool = True
     earnings_gap_threshold_pct: float = 5.0   # Overnight gap-up >= 5%
-    earnings_gap_hold_days: int = 3           # Playbook: sell after 3 trading days
+    # Tranche playbook (horizon sweep 2026-09-03): 1/3 out at each horizon.
+    # Excess per horizon: d1 +0.79%, d3 +1.18%, d10 +2.60% -> blended ~+1.5%.
+    earnings_gap_tranches: list = [1, 3, 10]
 
     # Trade proxy (Fly.io Tokyo — bypasses Polymarket geoblock)
     trade_proxy_url: Optional[str] = None     # e.g. https://polymarket-trade-proxy.fly.dev

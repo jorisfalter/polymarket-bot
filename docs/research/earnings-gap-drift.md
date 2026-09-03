@@ -23,9 +23,24 @@ Drift-controle: unconditionele 3d-drift van dit universum was +0.42% → **exces
 **Conclusies:**
 - **Long-only.** Gap-downs continueren NIET (eerder een bounce) — nooit shorten op slechte cijfers.
 - **Entry op de close van de gap-dag** (of volgende open); de gap-dag intraday zelf voegt niets toe bij ≥5%.
-- **Hold 3 dagen** — het excess is na d+3 grotendeels op (d5 excess +0.76%, lager dan d3).
 - Groter is niet beter: ≥8% gaps doen het niet beter dan ≥5%.
 - Frequentie: ~56 events/jaar over 15 namen ≈ 1/week; per naam ~4/jaar (de kwartalen).
+
+## Horizon-sweep (2026-09-03): de drift loopt 2-3 weken door
+
+De oorspronkelijke "hold 3 dagen" bleek een lokaal optimum: alleen d3/d5 gemeten, en d5 heeft toevallig een dip. Volledige sweep d+1..d+15 (263 events, excess = boven basisdrift):
+
+| k | excess | t | | k | excess | t |
+|---|---|---|---|---|---|---|
+| 1 | **+0.79%** | 2.2 | | 8 | +1.34% | 1.6 |
+| 2 | +0.90% | 2.0 | | 9 | +2.39% | 2.5 |
+| 3 | +1.18% | 2.1 | | 10 | **+2.60%** | 2.7 |
+| 4 | +1.27% | 2.0 | | 13 | +3.18% | 3.0 |
+| 5 | +0.79% | 1.2 | | 15 | **+3.33%** | 3.0 |
+
+Klassiek PEAD-gedrag: front-loaded (d1 alleen al +0.79%, beste rendement per dag kapitaalbeslag), dan doordriften tot ~d+13-15 waar het afvlakt. De d+9-sprong (+1.05% marginaal) is verdacht groot — deels ruis/uitschieters, dus d13 niet als heilig getal nemen. Gap-dag intraday blijft dood (+0.09%).
+
+**Tranche-playbook (per Joris)**: volledige positie kopen op close/volgende open, **verkoop in derden na 1, 3 en 10 handelsdagen**. Verwacht gecombineerd excess ≈ +1.5% per event (⅓×0.79 + ⅓×1.18 + ⅓×2.60), gespreid over de curve met minder staartrisico dan alles op d10. De outcome-tracker rapporteert elke tranche apart (`hold_days` per OUTCOME-record) én lopende live-stats per tranche — de live-data beslecht welke horizon standhoudt.
 
 ## Eerlijke kanttekeningen
 

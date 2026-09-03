@@ -104,7 +104,7 @@ The failure mode is not missing knowledge — it's not retrieving known tools be
 | `leaderboard.py` | 325 | Top traders + ☆ watchlist |
 | `intel_feeds.py` | 282 | Newsletters (Matt Levine / Money Stuff etc.) |
 | `macro_btc.py` | 290 | Macro-event BTC **paper** trader: BTC+5%-én-goud-op trigger (hourly), LLM oorzaak-classificatie, paper-entry alleen op `monetary_liquidity`. Zie `docs/research/macro-event-btc-bot.md` |
-| `earnings_gap.py` | 190 | PEAD-alert: dagelijkse scan op ≥5% gap-ups (universe + watchlist) → Telegram-playbook + outcome-tracking na 3 handelsdagen. Alert-only, manual execution. Zie `docs/research/earnings-gap-drift.md` |
+| `earnings_gap.py` | 200 | PEAD-alert: dagelijkse scan op ≥5% gap-ups (universe + watchlist) → Telegram-playbook + tranche-outcome-tracking (verkoop in derden na 1/3/10 handelsdagen). Alert-only, manual execution. Zie `docs/research/earnings-gap-drift.md` |
 | `crypto_data.py` | 260 | Funding rates, basis, spreads |
 | `reddit_data.py` | 256 | WSB scraping |
 | `trade_analysis.py` | 255 | P&L by strategy / pattern / stake bucket — the "Learn from History" backend |
