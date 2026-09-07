@@ -213,16 +213,24 @@ class MacroBTCPaperTrader:
         return None
 
     async def _call_anthropic(self, prompt: str) -> str:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        # claude-opus-5: the classification IS the trade decision and fires
+        # ~10x/year — at $5/$25 per MTok that's ~$0.03/call, so never save
+        # here. Adaptive thinking is on by default; thinking blocks come back
+        # in content, so pick the text block instead of content[0].
+        async with httpx.AsyncClient(timeout=300.0) as client:
             r = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": settings.anthropic_api_key,
                          "anthropic-version": "2023-06-01"},
-                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 500,
+                json={"model": "claude-opus-5", "max_tokens": 16000,
                       "messages": [{"role": "user", "content": prompt}]},
             )
             r.raise_for_status()
-            return r.json()["content"][0]["text"].strip()
+            body = r.json()
+            if body.get("stop_reason") == "refusal":
+                raise RuntimeError("anthropic refusal")
+            return "\n".join(b.get("text", "") for b in body["content"]
+                             if b.get("type") == "text").strip()
 
     async def _call_openrouter(self, prompt: str) -> str:
         async with httpx.AsyncClient(timeout=60.0) as client:

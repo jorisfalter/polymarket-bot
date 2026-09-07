@@ -126,7 +126,7 @@ Pas daarna: sub-account (check VIP/corporate-vereiste), $500, max 2x live.
 
 BTC +5.3% ($81.4k) mét goud +1.86% → echte trigger om 19:33 UTC. Maar OpenRouter gaf **402 Payment Required** (credits op) → "unclassified", geen entry, én de dagtrigger werd verbrand (geen retry). Retro-classificatie met de bewaarde headlines (Anthropic): **"other" (0.72)** — dovish Waller-comments, woorden geen operatie, precedent 2023-01-12/2024-03-20. Realiteit: peak +1.1%, na 72u **−2.0%** — de filter had correct "nee" gezegd en de mean-reversion kwam exact uit. **Eerste live-validatie van de oorzaak-filter** (n=1, maar het script klopte).
 
-Fixes (2026-09-07): (1) **Anthropic (Haiku) is nu primair**, OpenRouter alleen fallback — OpenRouter wordt niet meer aangevuld; (2) mislukte classificatie verbrandt de dagtrigger niet meer → retry elk uur + expliciete ⚠️-melding i.p.v. vaag "unclassified (0%)"; (3) episode 2026-09-03 toegevoegd aan de PRECEDENTS-tabel (17 episodes).
+Fixes (2026-09-07): (1) **Anthropic is nu primair** — sinds dezelfde dag op **Opus 5** (`claude-opus-5`): de classificatie ís de trade-beslissing en vuurt ~10x/jaar, dus ~$0.03/call voor het beste oordeel is een no-brainer (~$0.30/jaar). OpenRouter alleen fallback en wordt niet meer aangevuld; (2) mislukte classificatie verbrandt de dagtrigger niet meer → retry elk uur + expliciete ⚠️-melding i.p.v. vaag "unclassified (0%)"; (3) episode 2026-09-03 toegevoegd aan de PRECEDENTS-tabel (17 episodes).
 
 ## Judgement-loop (2026-09-03) — "good judgement is historical knowledge"
 
