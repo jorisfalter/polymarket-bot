@@ -160,6 +160,10 @@ The failure mode is not missing knowledge — it's not retrieving known tools be
 
 ---
 
+## News sentinel (hourly, headless Claude op de VPS)
+
+De news-first laag bovenop de prijs-trigger-bots (2026-09-07): een **uurlijkse cron als `app`-user op de VPS host** (niet in Docker) draait `scripts/news_sentinel.sh` → headless Claude Code (`claude -p`, subscription-auth uit `/home/app/.claude`) met missie `scripts/sentinel.md`. Cyclus: nieuws ophalen (`scripts/fetch_news.py`, Google News RSS) → novelty-check tegen `/home/app/sentinel/state.json` → bij een materieel event: precedent zoeken in `docs/research/`, falsifieerbare thesis + invalidation naar `/home/app/sentinel/journal.jsonl`, en bij confidence ≥0.7 Telegram via `scripts/send_telegram.py`. **Plaatst nooit orders** — paper-theses + alerts only. De meeste uren eindigt hij in een NOOP (<1 min). Logs: `/home/app/sentinel/runs.log`. Bij verlopen Claude-login stuurt de wrapper max 1x/dag een Telegram-waarschuwing; herstel = `ssh -t app@100.102.30.80 claude` → `/login`.
+
 ## Manual analysis flows (the 3 dashboard buttons)
 
 User strongly prefers **click-to-trigger** over cron for analysis. Reason: findings need human judgment; daily robot pings get ignored. See `memory/feedback_manual_analysis_workflows.md`.
