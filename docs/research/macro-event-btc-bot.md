@@ -122,6 +122,12 @@ Pas daarna: sub-account (check VIP/corporate-vereiste), $500, max 2x live.
 
 **Status 2026-08-27: geïmplementeerd** — `backend/macro_btc.py`, hourly scheduler-job, endpoints `GET /api/macro-btc/status` + `POST /api/macro-btc/check?force=true` (testpad). Config-keys `macro_btc_*` in `config.py`. Binance API key (read-only, IP-locked op VPS 91.98.202.189) staat klaar voor de live-fase; paper-fase gebruikt alleen publieke endpoints.
 
+## Eerste live trigger: 2026-09-03 — filter gevalideerd, LLM-pijplijn gefaald
+
+BTC +5.3% ($81.4k) mét goud +1.86% → echte trigger om 19:33 UTC. Maar OpenRouter gaf **402 Payment Required** (credits op) → "unclassified", geen entry, én de dagtrigger werd verbrand (geen retry). Retro-classificatie met de bewaarde headlines (Anthropic): **"other" (0.72)** — dovish Waller-comments, woorden geen operatie, precedent 2023-01-12/2024-03-20. Realiteit: peak +1.1%, na 72u **−2.0%** — de filter had correct "nee" gezegd en de mean-reversion kwam exact uit. **Eerste live-validatie van de oorzaak-filter** (n=1, maar het script klopte).
+
+Fixes (2026-09-07): (1) **Anthropic (Haiku) is nu primair**, OpenRouter alleen fallback — OpenRouter wordt niet meer aangevuld; (2) mislukte classificatie verbrandt de dagtrigger niet meer → retry elk uur + expliciete ⚠️-melding i.p.v. vaag "unclassified (0%)"; (3) episode 2026-09-03 toegevoegd aan de PRECEDENTS-tabel (17 episodes).
+
 ## Judgement-loop (2026-09-03) — "good judgement is historical knowledge"
 
 Principe van Joris: een bot moet (1) historisch precedent zoeken, (2) zijn thesis opschrijven vóór de trade, (3) zijn resultaat opschrijven bij exit. Geïmplementeerd als gesloten cirkel:

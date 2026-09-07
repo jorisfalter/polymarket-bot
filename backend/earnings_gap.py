@@ -160,10 +160,10 @@ class EarningsGapAlerter:
             # Rolling live stats per tranche — every result arrives in its
             # historical context (backtest excess: d1 +0.8%, d3 +1.2%, d10 +2.6%).
             stats = self.get_status()["stats"]
-            parts = [f"d{k}: {s['wins']}/{s['n']} gem {s['avg_return_pct']:+.1f}%"
+            parts = [f"verkoop-na-{k}d: {s['wins']} van {s['n']} winst, gem {s['avg_return_pct']:+.1f}%"
                      for k, s in stats.items() if s["n"]]
             if parts:
-                lines.append(f"<i>Live totaal — {' | '.join(parts)}</i>")
+                lines.append(f"<i>Live score per tranche — {' | '.join(parts)}</i>")
         await send_telegram("\n".join(lines))
 
     def get_status(self) -> dict:

@@ -58,7 +58,8 @@ PRECEDENTS = """2023-01-12 | cool CPI print (data, not an operation)      | othe
 2026-02-06 | bounce after -33% correction                | other               |  -0.6%
 2026-03-04 | ETF inflows recovery                        | etf_flows           |  -7.4%
 2026-04-13 | geopolitical de-escalation + funding squeeze| short_squeeze_only  |  +1.0%
-2026-08-19 | Treasury doubles long-bond buybacks         | monetary_liquidity  | +11.2%"""
+2026-08-19 | Treasury doubles long-bond buybacks         | monetary_liquidity  | +11.2%
+2026-09-03 | dovish Waller comments, yields fall (words) | other               |  -2.0%"""
 
 CLASSIFY_PROMPT = """You are a macro analyst. Bitcoin is up {btc_pct:+.1f}% today and gold is up {gold_pct:+.1f}% today ({date} UTC).
 
@@ -189,37 +190,51 @@ class MacroBTCPaperTrader:
         return await self._llm_json(prompt)
 
     async def _llm_json(self, prompt: str) -> Optional[dict]:
-        if not (settings.openrouter_api_key or settings.anthropic_api_key):
+        """Anthropic first (primary since 2026-09-07 — OpenRouter credits ran
+        dry and 402'd during the very first live trigger), OpenRouter as
+        fallback. Tries both before giving up; caller retries next cycle."""
+        attempts = []
+        if settings.anthropic_api_key:
+            attempts.append(("anthropic", self._call_anthropic))
+        if settings.openrouter_api_key:
+            attempts.append(("openrouter", self._call_openrouter))
+        if not attempts:
             logger.warning("macro_btc: no LLM API key — cannot classify")
             return None
-        try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                if settings.openrouter_api_key:
-                    r = await client.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
-                        json={"model": settings.agent_model,
-                              "messages": [{"role": "user", "content": prompt}],
-                              "temperature": 0.1},
-                    )
-                    r.raise_for_status()
-                    text = r.json()["choices"][0]["message"]["content"].strip()
-                else:
-                    # Anthropic native fallback (local dev has no OpenRouter key)
-                    r = await client.post(
-                        "https://api.anthropic.com/v1/messages",
-                        headers={"x-api-key": settings.anthropic_api_key,
-                                 "anthropic-version": "2023-06-01"},
-                        json={"model": "claude-haiku-4-5-20251001", "max_tokens": 500,
-                              "messages": [{"role": "user", "content": prompt}]},
-                    )
-                    r.raise_for_status()
-                    text = r.json()["content"][0]["text"].strip()
-            m = re.search(r"\{.*\}", text, re.DOTALL)
-            return json.loads(m.group(0)) if m else None
-        except Exception as e:
-            logger.error(f"macro_btc classification failed: {e}")
-            return None
+        for name, call in attempts:
+            try:
+                text = await call(prompt)
+                m = re.search(r"\{.*\}", text, re.DOTALL)
+                if m:
+                    return json.loads(m.group(0))
+                logger.warning(f"macro_btc: {name} returned no JSON")
+            except Exception as e:
+                logger.error(f"macro_btc: {name} LLM call failed: {e}")
+        return None
+
+    async def _call_anthropic(self, prompt: str) -> str:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": settings.anthropic_api_key,
+                         "anthropic-version": "2023-06-01"},
+                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 500,
+                      "messages": [{"role": "user", "content": prompt}]},
+            )
+            r.raise_for_status()
+            return r.json()["content"][0]["text"].strip()
+
+    async def _call_openrouter(self, prompt: str) -> str:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+                json={"model": settings.agent_model,
+                      "messages": [{"role": "user", "content": prompt}],
+                      "temperature": 0.1},
+            )
+            r.raise_for_status()
+            return r.json()["choices"][0]["message"]["content"].strip()
 
     # ---------- main cycle ----------
 
@@ -257,10 +272,26 @@ class MacroBTCPaperTrader:
             headlines = await self._fetch_headlines(client)
 
         classification = await self._classify(btc["pct"], gold["pct"], headlines)
-        self.state["last_trigger_date"] = today
 
-        cause = (classification or {}).get("cause", "unclassified")
-        confidence = float((classification or {}).get("confidence", 0.0))
+        if classification is None:
+            # LLM down during a real trigger (seen 2026-09-03: OpenRouter 402).
+            # Do NOT burn last_trigger_date — the next hourly cycle retries.
+            self._journal({"event": "TRIGGER_ERROR", "date": today,
+                           "btc_pct": round(btc["pct"], 2), "gold_pct": round(gold["pct"], 2),
+                           "error": "classification failed (all LLM providers)"})
+            if notify:
+                from .integrations import send_telegram
+                await send_telegram(
+                    f"⚠️ <b>Macro-BTC trigger — classificatie MISLUKT</b>\n"
+                    f"BTC {btc['pct']:+.1f}% | goud {gold['pct']:+.1f}%\n"
+                    f"LLM-providers onbereikbaar; retry volgend uur. "
+                    f"Check API-keys/credits als dit aanhoudt."
+                )
+            return {"status": "classification_failed", "btc": btc, "gold": gold}
+
+        self.state["last_trigger_date"] = today
+        cause = classification.get("cause", "unclassified")
+        confidence = float(classification.get("confidence", 0.0))
         entry_taken = (cause == "monetary_liquidity"
                        and confidence >= settings.macro_btc_min_confidence)
 
@@ -290,16 +321,15 @@ class MacroBTCPaperTrader:
             action = (f"PAPER LONG ${self.state['position']['notional']:.0f} notional "
                       f"({settings.macro_btc_leverage:.0f}x) @ ${btc['last']:,.0f}"
                       if entry_taken else "geen entry (oorzaak-filter)")
-            evidence = _esc((classification or {}).get("headline_evidence", ""))
-            precedent = _esc((classification or {}).get("precedent", ""))
-            await send_telegram(
-                f"{emoji} <b>Macro-BTC trigger</b>\n"
-                f"BTC {btc['pct']:+.1f}% | goud {gold['pct']:+.1f}%\n"
-                f"Oorzaak: <b>{_esc(cause)}</b> ({confidence:.0%})\n"
-                f"Precedent: <i>{precedent}</i>\n"
-                f"→ {action}\n"
-                f"<i>{evidence}</i>"
-            )
+            evidence = _esc(classification.get("headline_evidence", ""))
+            precedent = _esc(classification.get("precedent", ""))
+            msg = (f"{emoji} <b>Macro-BTC trigger</b>\n"
+                   f"BTC {btc['pct']:+.1f}% | goud {gold['pct']:+.1f}%\n"
+                   f"Oorzaak: <b>{_esc(cause)}</b> ({confidence:.0%})\n")
+            if precedent:
+                msg += f"Precedent: <i>{precedent}</i>\n"
+            msg += f"→ {action}\n<i>{evidence}</i>"
+            await send_telegram(msg)
 
         return {"status": "triggered", **record}
 
