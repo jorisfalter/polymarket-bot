@@ -5,7 +5,14 @@ cd /opt/polymarket-insider || exit 1
 mkdir -p /home/app/sentinel
 LOG=/home/app/sentinel/runs.log
 
-OUT=$(claude -p "$(cat scripts/sentinel.md)" \
+# Pre-fetch headlines here so the model doesn't spend a tool turn on it.
+NEWS=$(python3 scripts/fetch_news.py 2>/dev/null)
+
+OUT=$(claude -p "$(cat scripts/sentinel.md)
+
+## Pre-fetched headlines (this hour)
+$NEWS" \
+  --model sonnet --max-turns 20 \
   --allowedTools Bash Read Write Edit Glob Grep WebSearch WebFetch 2>&1)
 CODE=$?
 
