@@ -128,6 +128,10 @@ BTC +5.3% ($81.4k) mét goud +1.86% → echte trigger om 19:33 UTC. Maar OpenRou
 
 Fixes (2026-09-07): (1) **Anthropic is nu primair** — sinds dezelfde dag op **Opus 5** (`claude-opus-5`): de classificatie ís de trade-beslissing en vuurt ~10x/jaar, dus ~$0.03/call voor het beste oordeel is een no-brainer (~$0.30/jaar). OpenRouter alleen fallback en wordt niet meer aangevuld; (2) mislukte classificatie verbrandt de dagtrigger niet meer → retry elk uur + expliciete ⚠️-melding i.p.v. vaag "unclassified (0%)"; (3) episode 2026-09-03 toegevoegd aan de PRECEDENTS-tabel (17 episodes).
 
+## Short-side onderzocht (2026-09-17): geen edge — bewust long-only
+
+Aanleiding: Tijd-artikel 16 sep ("double whammy: cryptowet strandt en renteverhoging dreigt") — vraag of verkrapping de omgekeerde trade is. Backtest van het spiegel-profiel (BTC-dag ≤−5% mét goud omlaag = reële-rente-schok, n=22 sinds 2023): d+1 **+0.5%**, d+3 +0.4%, d+10 +1.3%; na 10 dagen stond BTC in 13/22 gevallen hóger. BTC-crashes zijn liquidatie-cascades die terugveren — er is geen short-continuation-klasse gevonden. Live bevestigd: na het artikel veerde BTC op (+0.7%, +0.4%). "Renteverhoging *dreigt*" is bovendien woorden-geen-operatie — zelfde filter die 3 sep (Waller) en de april-olieangstpiek correct blokkeerde. Echte verrassings-hikes zijn in het BTC-tijdperk vrijwel zonder precedent (2022-23 was getelegrafeerd) — niet backtestbaar; als er ooit één komt, journalen we hem als nieuw precedent. **Conclusie: long-only is een bewuste keuze, geen omissie.**
+
 ## Judgement-loop (2026-09-03) — "good judgement is historical knowledge"
 
 Principe van Joris: een bot moet (1) historisch precedent zoeken, (2) zijn thesis opschrijven vóór de trade, (3) zijn resultaat opschrijven bij exit. Geïmplementeerd als gesloten cirkel:
