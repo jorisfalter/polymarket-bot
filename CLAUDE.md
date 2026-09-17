@@ -6,6 +6,8 @@
 
 ## What this project is
 
+> **Besluit 2026-09-17 — GEEN echt geld** (per Joris, na 3 weken paper: earnings-gap −1.2/−1.4/−3.0% per tranche in rente-schrik-regime, macro-BTC/olie nog geen echt event). Alles blijft paper/alert-only. Promotie-criteria naar live: **earnings-gap** pas na Q3-cijferseizoen bij n≥20-30 én live-gemiddelde in de buurt van backtest; **macro-BTC** pas na 1-2 correct gespeelde échte monetary_liquidity-events op paper; **olie** heeft geen bot (sentinel-alerts only). Geen van deze drempels mag door een sessie versoepeld worden zonder expliciete vraag van Joris.
+
 > **Status 2026-09-03 — Polymarket-trading is gestopt** (per Joris: "polymarket agent is volledig irrelevant, polymarket doen we niet meer"). De agent blijft `frozen`, detector + dashboards draaien passief door. Actieve focus: **macro-BTC paper trader** (`macro_btc.py`), **earnings-gap alerts** (`earnings_gap.py`, stocks) en het crypto board. Werkprincipe voor alle bots: *good judgement is historical knowledge* — precedent zoeken vóór de trade, thesis vastleggen bij entry, post-mortem + les bij exit (zie judgement-loop in `docs/research/macro-event-btc-bot.md`).
 
 A real-time surveillance system + autonomous AI trading bot for Polymarket. Two purposes (in this order, per `docs/trading-philosophy.md`):
