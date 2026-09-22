@@ -126,6 +126,7 @@ class Settings(BaseSettings):
     macro_btc_trigger_pct: float = 5.0        # BTC >= +5% from UTC day open
     macro_btc_gold_confirm_pct: float = 0.3   # PAXG >= +0.3% same day
     macro_btc_min_confidence: float = 0.8     # LLM confidence floor for entry
+    macro_btc_recheck_confidence: float = 0.7 # Lower bar for rejected-trigger recheck: price already confirmed objectively
     macro_btc_paper_capital: float = 1000.0   # Fictional account size USD
     macro_btc_leverage: float = 2.0           # Notional = capital * leverage
     macro_btc_hard_stop_pct: float = 1.5      # Exit if price -1.5% from entry

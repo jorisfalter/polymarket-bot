@@ -86,6 +86,19 @@ Respond with ONLY a JSON object, no markdown:
  "invalidation": "<observable condition that would prove the thesis wrong>",
  "headline_evidence": "<the 1-2 headlines that support this>", "reasoning": "<one sentence>"}}"""
 
+RECHECK_PROMPT = """You are re-checking a trigger you REJECTED {hours_ago:.0f}h ago. Lesson 2026-09-18: a rejected trigger's own invalidation must be watched — that day a 'short_squeeze_only' verdict wrote the invalidation 'sustained ETF inflows + BTC holding >$80K', those exact conditions materialized within 72h, and BTC ran +7% unplayed.
+
+At rejection: cause={cause}, price=${trigger_price:,.0f}, your invalidation: "{invalidation}"
+Now: price=${price:,.0f} ({move_pct:+.1f}% since rejection, still above the trigger level).
+
+Fresh headlines:
+{headlines}
+
+Has your invalidation materially been met — is there now evidence of continuation-class drivers (an actual operation, sustained institutional inflows, debasement flight) rather than the fading squeeze you diagnosed?
+
+Respond with ONLY a JSON object, no markdown:
+{{"invalidation_met": <true/false>, "confidence": <0.0-1.0>, "evidence": "<1-2 headlines or facts>", "reasoning": "<one sentence>"}}"""
+
 POSTMORTEM_PROMPT = """You closed a paper BTC long. Compare thesis vs reality and extract ONE transferable lesson for future classification of macro-BTC events. Be harsh and specific; "be more careful" is not a lesson.
 
 Thesis at entry: cause={cause}, precedent="{precedent}", expected_path="{expected_path}", invalidation="{invalidation}"
@@ -267,7 +280,14 @@ class MacroBTCPaperTrader:
                 return {"status": "holding", "position": self.state["position"],
                         "btc": btc, "gold": gold}
 
-            # 2. Trigger check — one trigger per UTC day
+            # 2. Rejected-trigger watch: re-check the invalidation for 72h
+            watch = self.state.get("rejected_watch")
+            if watch:
+                res = await self._check_rejected_watch(client, watch, btc)
+                if res:
+                    return res
+
+            # 3. Trigger check — one trigger per UTC day
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             triggered = (btc["pct"] >= settings.macro_btc_trigger_pct
                          and gold["pct"] >= settings.macro_btc_gold_confirm_pct)
@@ -311,6 +331,14 @@ class MacroBTCPaperTrader:
         }
         self._journal(record)
 
+        if not entry_taken:
+            # Rejected trigger -> 72h watch on its own invalidation
+            # (lesson 2026-09-18: ETF-inflow invalidation met, +7% unplayed).
+            self.state["rejected_watch"] = {
+                "trigger_price": btc["last"], "ts": datetime.now(timezone.utc).isoformat(),
+                "cause": cause, "invalidation": (classification or {}).get("invalidation", ""),
+            }
+
         if entry_taken:
             notional = settings.macro_btc_paper_capital * settings.macro_btc_leverage
             self.state["position"] = {
@@ -340,6 +368,57 @@ class MacroBTCPaperTrader:
             await send_telegram(msg)
 
         return {"status": "triggered", **record}
+
+    async def _check_rejected_watch(self, client: httpx.AsyncClient,
+                                    watch: dict, btc: dict) -> Optional[dict]:
+        """Re-check a rejected trigger's own invalidation. Returns a result
+        dict when it acted (entry or expiry), None to continue the cycle."""
+        age_h = (datetime.now(timezone.utc)
+                 - datetime.fromisoformat(watch["ts"])).total_seconds() / 3600
+        price, trig = btc["last"], watch["trigger_price"]
+        if age_h > 72 or price < trig * 0.985:
+            self.state["rejected_watch"] = None
+            self._save_state()
+            self._journal({"event": "WATCH_EXPIRED", "trigger_price": trig,
+                           "price": price, "age_h": round(age_h, 1)})
+            return None
+        # Only spend an LLM call when price holds/extends above the trigger
+        # level after at least a day — the objective half of the invalidation.
+        if age_h < 24 or price < trig * 1.01:
+            return None
+        headlines = await self._fetch_headlines(client)
+        verdict = await self._llm_json(RECHECK_PROMPT.format(
+            hours_ago=age_h, cause=watch.get("cause", "?"),
+            trigger_price=trig, invalidation=watch.get("invalidation", "?"),
+            price=price, move_pct=(price / trig - 1) * 100,
+            headlines="\n".join(f"- {h}" for h in headlines) or "(none)",
+        ))
+        met = bool((verdict or {}).get("invalidation_met"))
+        conf = float((verdict or {}).get("confidence", 0.0))
+        self._journal({"event": "WATCH_RECHECK", "trigger_price": trig, "price": price,
+                       "age_h": round(age_h, 1), "verdict": verdict,
+                       "entry_taken": met and conf >= settings.macro_btc_recheck_confidence})
+        if not (met and conf >= settings.macro_btc_recheck_confidence):
+            return None
+        self.state["rejected_watch"] = None
+        notional = settings.macro_btc_paper_capital * settings.macro_btc_leverage
+        self.state["position"] = {
+            "entry_price": price, "entry_ts": datetime.now(timezone.utc).isoformat(),
+            "notional": notional, "peak_price": price,
+            "cause": "late_entry_invalidation_met", "confidence": conf,
+            "precedent": watch.get("cause", ""),
+            "expected_path": "continuation after rejected-trigger invalidation met",
+            "invalidation": f"close below trigger level ${trig:,.0f}",
+        }
+        self._save_state()
+        from .integrations import send_telegram, _esc
+        await send_telegram(
+            f"🖨️ <b>Macro-BTC late entry</b> (invalidatie van afgewezen trigger uitgekomen)\n"
+            f"Trigger ${trig:,.0f} → nu ${price:,.0f} ({(price/trig-1)*100:+.1f}%)\n"
+            f"→ PAPER LONG ${notional:.0f} notional @ ${price:,.0f}\n"
+            f"<i>{_esc((verdict or {}).get('evidence', ''))}</i>"
+        )
+        return {"status": "late_entry", "price": price, "verdict": verdict}
 
     async def _manage_position(self, price: float, notify: bool = True) -> Optional[dict]:
         """Apply exit rules to the open paper position. Returns exit summary or None."""
