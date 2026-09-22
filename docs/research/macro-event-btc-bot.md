@@ -132,6 +132,12 @@ Fixes (2026-09-07): (1) **Anthropic is nu primair** — sinds dezelfde dag op **
 
 Aanleiding: Tijd-artikel 16 sep ("double whammy: cryptowet strandt en renteverhoging dreigt") — vraag of verkrapping de omgekeerde trade is. Backtest van het spiegel-profiel (BTC-dag ≤−5% mét goud omlaag = reële-rente-schok, n=22 sinds 2023): d+1 **+0.5%**, d+3 +0.4%, d+10 +1.3%; na 10 dagen stond BTC in 13/22 gevallen hóger. BTC-crashes zijn liquidatie-cascades die terugveren — er is geen short-continuation-klasse gevonden. Live bevestigd: na het artikel veerde BTC op (+0.7%, +0.4%). "Renteverhoging *dreigt*" is bovendien woorden-geen-operatie — zelfde filter die 3 sep (Waller) en de april-olieangstpiek correct blokkeerde. Echte verrassings-hikes zijn in het BTC-tijdperk vrijwel zonder precedent (2022-23 was getelegrafeerd) — niet backtestbaar; als er ooit één komt, journalen we hem als nieuw precedent. **Conclusie: long-only is een bewuste keuze, geen omissie.**
 
+## Tweede live trigger: 2026-09-18 — false negative → rejected-trigger watch gebouwd
+
+Fed verhóógde de rente; BTC +5.8% mét goud +0.6% → trigger vuurde ($80.868). Classifier: "short_squeeze_only" (0.72, precedent 2024-08-08 yen-carry bounce) → geen entry. Verdedigbaar oordeel, en hij schreef de exacte invalidatie erbij: *aanhoudende ETF-inflows + BTC boven $80k + zwakke dollar = alsnog continuation*. Die condities printten binnen 72u ($433M inflows vr, $999M op 22 sep — 9e grootste ooit; US-schuldzorgen, zwakkere dollar) en BTC liep door naar $86.6k (**+7% ongespeeld**). Sep 21 (+6.7%) triggerde apart niet: goud vlak (confirmatie-filter).
+
+**Fix (2026-09-22, `4751cb1`)**: een afgewezen trigger wordt een **72u-watch op zijn eigen invalidatie** — houdt de prijs ≥1% boven het triggerniveau na 24u+, dan gaan verse headlines door `RECHECK_PROMPT`; `invalidation_met` met conf ≥0.7 (lagere lat dan koude entry: de prijs bevestigde al objectief) → late paper-entry. Watch vervalt na 72u of onder 98.5% van het triggerniveau. Geen retro-entry gedaan op dit event (+13% chasen na afloop is een andere trade). Les gejournald → voedt volgende classificaties. Episode-uitkomst toevoegen aan PRECEDENTS zodra afgerond.
+
 ## Judgement-loop (2026-09-03) — "good judgement is historical knowledge"
 
 Principe van Joris: een bot moet (1) historisch precedent zoeken, (2) zijn thesis opschrijven vóór de trade, (3) zijn resultaat opschrijven bij exit. Geïmplementeerd als gesloten cirkel:
