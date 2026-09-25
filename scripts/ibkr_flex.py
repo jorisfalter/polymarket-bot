@@ -70,8 +70,9 @@ def summarize(xml_text: str):
     if positions:
         print(f"\nOpen posities ({len(positions)}):")
         for p in positions:
-            print(f"  {p.get('symbol'):8s} {p.get('position'):>10s} @ kost {p.get('costBasisPrice')} "
-                  f"markt {p.get('markPrice')} ({p.get('currency')})")
+            qty = p.get('position') or p.get('quantity') or '?'
+            print(f"  {p.get('symbol'):8s} {qty:>10s} @ kost {p.get('costBasisMoney') or p.get('costBasisPrice')} "
+                  f"markt {p.get('markPrice')} ({p.get('currency') or '-'})")
     cash = list(root.iter("CashReportCurrency"))
     if cash:
         print("\nCash:")
