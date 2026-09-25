@@ -213,6 +213,11 @@ Key in `.env` (`BINANCE_API_KEY`/`BINANCE_SECRET_KEY`, beide machines; settings-
 - Futures-testtruc voor later (geen test-endpoint op fapi): limit-order ver onder de markt plaatsen + direct cancelen.
 - Binance heeft sinds 2026-07-20 ook API-trading voor US stocks (de `/stocks/EQ_<TICKER>` producten) — nog niet gebouwd; earnings-gap blijft alert-only.
 
+## IBKR (opgezet 2026-09-25 — rails klaar, trekker op safe)
+
+- **Flex Web Service** (rapportage, read-only): token + query-id in `.env` (`IBKR_FLEX_TOKEN`/`IBKR_FLEX_QUERY_ID`, geldig tot 2027-08-27). `scripts/ibkr_flex.py` haalt trades/posities/cash/NAV op. Account U10373658.
+- **Executie-infra** (`backend/ibkr_exec.py` + `ib-gateway` in docker-compose): gateway zit achter compose-profile `ibkr` en start NOOIT mee bij een gewone deploy. Activeren = `IBKR_USERNAME`/`IBKR_PASSWORD` in VPS-.env + `docker compose --profile ibkr up -d ib-gateway` + IB Key 2FA-tap op Joris' telefoon. `preview_order()` gebruikt IBKR whatIf = echte commissie/margin zonder te plaatsen. **`place_order()` is hard-gated achter `ibkr_dry_run=True`** — flippen mag alleen op expliciete vraag van Joris én na de promotie-criteria (zie besluit 2026-09-17). Endpoints: `/api/ibkr/quote`, `/api/ibkr/preview`.
+
 ## Risk limits (hard caps — do NOT raise without explicit user approval)
 
 In `backend/config.py`:
