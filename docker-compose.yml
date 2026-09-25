@@ -18,4 +18,23 @@ services:
       timeout: 10s
       retries: 3
 
+  # IBKR Gateway — execution infra, NOT auto-started (profile "ibkr").
+  # Start pas met: docker compose --profile ibkr up -d ib-gateway
+  # Vereist IBKR_USERNAME/IBKR_PASSWORD in .env; login triggert een IB Key
+  # 2FA-push op Joris' telefoon. Alleen loopback; app praat via host-port 4001.
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    container_name: ib-gateway
+    restart: unless-stopped
+    profiles: ["ibkr"]
+    environment:
+      TWS_USERID: ${IBKR_USERNAME}
+      TWS_PASSWORD: ${IBKR_PASSWORD}
+      TRADING_MODE: live
+      READ_ONLY_API: "no"
+      AUTO_RESTART_TIME: "11:59 PM"
+      TWOFA_TIMEOUT_ACTION: restart
+    ports:
+      - "127.0.0.1:4001:4003"   # live API port (socat-forwarded in image)
+
   

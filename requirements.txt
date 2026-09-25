@@ -50,3 +50,4 @@ youtube-transcript-api>=0.6.2  # free transcript fetch, no auth
 pdfplumber>=0.11.0         # parse House Clerk PTR PDFs for congress trades
 beautifulsoup4>=4.12.0     # parse Senate efdsearch HTML responses
 
+ib_async>=1.0.0

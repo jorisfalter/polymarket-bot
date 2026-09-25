@@ -1481,6 +1481,22 @@ async def trigger_agent_cycle():
     return {"ok": True, "thinking": ai_agent._thinking_history[-1] if ai_agent._thinking_history else None}
 
 
+# --- IBKR execution infra (dry-run rails) ----------------------------------
+
+@app.get("/api/ibkr/quote")
+async def ibkr_quote(symbol: str):
+    """Live quote via IB Gateway (None als gateway niet draait)."""
+    from .ibkr_exec import ibkr
+    return await ibkr.get_quote(symbol.upper()) or {"error": "gateway unreachable"}
+
+
+@app.post("/api/ibkr/preview")
+async def ibkr_preview(symbol: str, qty: float = 1, side: str = "BUY"):
+    """whatIf-order: echte commissie/margin van IBKR, plaatst NIETS."""
+    from .ibkr_exec import ibkr
+    return await ibkr.preview_order(symbol.upper(), qty, side.upper()) or {"error": "gateway unreachable"}
+
+
 # --- Macro-event BTC paper trader -----------------------------------------
 
 @app.get("/api/macro-btc/status")

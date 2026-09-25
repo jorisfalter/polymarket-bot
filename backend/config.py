@@ -139,6 +139,19 @@ class Settings(BaseSettings):
     binance_api_key: Optional[str] = None
     binance_secret_key: Optional[str] = None
 
+    # IBKR execution infra (backend/ibkr_exec.py) — rails ready, trigger safe.
+    # ibkr_dry_run flips to False ONLY on explicit user approval (see the
+    # no-real-money decision 2026-09-17 in CLAUDE.md).
+    ibkr_enabled: bool = True
+    ibkr_dry_run: bool = True
+    ibkr_gateway_host: str = "ib-gateway"  # compose service name; Mac dev: localhost + tunnel
+    ibkr_gateway_port: int = 4003          # internal API port in the gateway image
+    ibkr_client_id: int = 17
+    ibkr_username: Optional[str] = None   # only needed by the gateway container
+    ibkr_password: Optional[str] = None
+    ibkr_flex_token: Optional[str] = None
+    ibkr_flex_query_id: Optional[str] = None
+
     # Earnings-gap drift alert (docs/research/earnings-gap-drift.md)
     # Alert-only, manual execution on the stocks board.
     earnings_gap_enabled: bool = True
