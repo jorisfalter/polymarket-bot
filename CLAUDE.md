@@ -27,6 +27,22 @@ Polymarket agent runs three **books**: Core ($5-10), Asymmetric/longshot ($1-2 a
 
 ---
 
+## Genomen beslissingen — niet opnieuw voorstellen zonder nieuwe data
+
+Er werken twee Claude-sessies aan dit project (Mac + VPS). Lees deze lijst vóór je een "fix" voorstelt; elke regel is met een backtest onderbouwd. Wil je er een terugdraaien: kom met nieuwe data, niet met dezelfde redenering.
+
+| Datum | Beslissing | Waarom (bewijs) | Waar |
+|---|---|---|---|
+| 2026-10-03 | **Gap-alerts filteren NIET op earnings.** `earnings_nearby` is alleen een label. | Backtest 15 megacaps 2022-26: maar 38% van de ≥5%-gaps had cijfers, en gaps *zonder* cijfers deden het beter (d10 +4.9% vs +2.2%). Filter = betere helft weggooien. Het signaal is gap-momentum, geen PEAD. | `docs/research/earnings-gap-drift.md` (Correctie 2026-10-03) |
+| 2026-10-03 | **Eén alert per ticker zolang zijn tranches open staan** (≤15 kalenderdagen). Extra gaps → `GAP_SUPPRESSED` in journal, geen Telegram, telt niet. | Watchlist-backtest n=728→370: d3-excess +1.59→+2.19% (t=4.0), d10 +0.81→+2.26%. | `earnings_gap.py` `_counted_alerts()` |
+| 2026-10-03 | **Promotie telt episodes, niet alerts.** Alerts ≤3 dagen uit elkaar = één thema = één datapunt. Drempel blijft 20-30. | De miner-rally 16-18/9 was één bet, vijf keer geteld. Stand bij invoering: 3 complete episodes. | `earnings_gap.py` `_episodes()`, `/api/earnings-gap/status` → `episodes` |
+| 2026-09-22 | Afgewezen macro-BTC trigger = 72u watch op zijn eigen invalidatie. | 18/9 terecht-lijkende afwijzing, invalidatie kwam uit, +7% gemist. | `macro_btc.py` `_check_rejected_watch()` |
+| 2026-09-17 | BTC-short-kant: geen edge, long-only bewust. | Spiegel-backtest n=22: na ≥5%-daling mét goud omlaag gem. +1.3% na 10d. | `macro-event-btc-bot.md` |
+| 2026-09-17 | ETH/alts geen eigen trigger. | ETH ≥5% + goud: n=45, d1 −0.6%, geen edge. | dit bestand |
+| 2026-09-17 | Geen echt geld; promotie-criteria bovenaan dit bestand. | 3 weken paper. | bovenaan |
+
+**Hoe je de gap-stand leest**: `curl -s localhost:8000/api/earnings-gap/status` (op de VPS) → `alerts_counted`, `alerts_dropped_as_duplicate`, `episodes` (gemiddelde per episode per tranche) en `episodes_complete` (= de n voor promotie). Losse OUTCOME-records van gesuppreste alerts in het oude journal tellen niet mee; de telling gebeurt bij het lezen, het journal wordt nooit herschreven.
+
 ## Before you start editing — sync check
 
 This project is worked on from **two machines** (Mac + VPS), both running Claude Code, both able to push to GitHub. Always run this at session start, on whichever side you're on:
