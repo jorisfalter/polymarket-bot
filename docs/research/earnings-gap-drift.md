@@ -93,3 +93,17 @@ Wat de VPS-sessie wél juist zag: de alerts kwamen vooral uit de watchlist (nooi
 3. Melding heet nu "Gap-momentum", toont bron (universe/watchlist) + earnings-label, en waarschuwt bij meerdere alerts tegelijk.
 
 **Bijstelling telregel (zelfde dag):** de eerste episode-regel ketende álle alerts ≤3 dagen uit elkaar. In een cijferseizoen smelt dat onafhankelijke cijfers (NVDA, ORCL…) samen tot één episode — backtest 2024-26: grootste episode 25 alerts, ~43 episodes/jaar. Nu: een cijfer-gap is altijd een eigen episode; alleen gaps zónder cijfers worden geketend tot één thema. Dat geeft ~75 episodes/jaar (universe + watchlist, na dedupe). Bestaande alerts zijn achteraf gelabeld met `ALERT_LABEL`-records (journal blijft append-only). Verwachting: 20-30 episodes rond januari, met het Q3-cijferseizoen (half okt – half nov) als grootste leverancier.
+
+## Out-of-sample test 2026-10-03: GEEN edge in 2018-2021 ⚠️
+
+Alle regels (≥5% gap, dedupe per ticker, tranches 1/3/10) zijn gekozen op 2022-2026. Zelfde regels, zelfde 15 megacaps, op nooit eerder bekeken jaren:
+
+| Periode | n | d1 excess | d3 excess | d10 excess | tranche-mix gem |
+|---|---|---|---|---|---|
+| **2018-2021 (out-of-sample)** | 110 | −0.53% (t=−0.9) | −0.15% (t=−0.2) | +0.15% (t=0.1) | +0.57%, win 58/110 |
+| 2022-2026 (in-sample) | 211 | +0.89% (t=2.2) | +0.88% (t=1.5) | +2.16% (t=2.2) | +1.97%, win 130/211 |
+
+**Conclusie:** de edge is niet robuust over regimes. Waarschijnlijk is het een eigenschap van de AI-tech-hausse 2022-26 (momentum-regime), en mogelijk deels overfitting van de parameters. Gevolgen:
+- De live-steekproef is nu geen formaliteit maar de echte test of het huidige regime nog loopt. Promotie-drempel blijft 20-30 episodes én live-gemiddelde in de buurt van backtest — **niet versoepelen**.
+- Als het regime kantelt (tech-correctie), verwacht dat deze alerts stoppen met werken; dat is geen bug.
+- Nieuws-classificatie ("echte verrassing vs hype") wordt pas onderzocht als de live-data er aanleiding toe geeft.
