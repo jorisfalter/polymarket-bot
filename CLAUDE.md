@@ -6,7 +6,7 @@
 
 ## What this project is
 
-> **Besluit 2026-09-17 — GEEN echt geld** (per Joris, na 3 weken paper: earnings-gap −1.2/−1.4/−3.0% per tranche in rente-schrik-regime, macro-BTC/olie nog geen echt event). Alles blijft paper/alert-only. Promotie-criteria naar live: **earnings-gap** pas na Q3-cijferseizoen bij n≥20-30 én live-gemiddelde in de buurt van backtest; **macro-BTC** pas na 1-2 correct gespeelde échte monetary_liquidity-events op paper; **olie** heeft geen bot (sentinel-alerts only). Geen van deze drempels mag door een sessie versoepeld worden zonder expliciete vraag van Joris.
+> **Besluit 2026-09-17 — GEEN echt geld** (per Joris, na 3 weken paper: earnings-gap −1.2/−1.4/−3.0% per tranche in rente-schrik-regime, macro-BTC/olie nog geen echt event). Alles blijft paper/alert-only. Promotie-criteria naar live: **earnings-gap (gap-momentum)** pas bij n≥20-30 *onafhankelijke episodes* (telling aangescherpt 2026-10-03) én live-gemiddelde in de buurt van backtest; **macro-BTC** pas na 1-2 correct gespeelde échte monetary_liquidity-events op paper; **olie** heeft geen bot (sentinel-alerts only). Geen van deze drempels mag door een sessie versoepeld worden zonder expliciete vraag van Joris.
 
 > **Status 2026-09-03 — Polymarket-trading is gestopt** (per Joris: "polymarket agent is volledig irrelevant, polymarket doen we niet meer"). De agent blijft `frozen`, detector + dashboards draaien passief door. Actieve focus: **macro-BTC paper trader** (`macro_btc.py`), **earnings-gap alerts** (`earnings_gap.py`, stocks) en het crypto board. Werkprincipe voor alle bots: *good judgement is historical knowledge* — precedent zoeken vóór de trade, thesis vastleggen bij entry, post-mortem + les bij exit (zie judgement-loop in `docs/research/macro-event-btc-bot.md`).
 
@@ -106,7 +106,7 @@ The failure mode is not missing knowledge — it's not retrieving known tools be
 | `leaderboard.py` | 325 | Top traders + ☆ watchlist |
 | `intel_feeds.py` | 282 | Newsletters (Matt Levine / Money Stuff etc.) |
 | `macro_btc.py` | 290 | Macro-event BTC **paper** trader: BTC+5%-én-goud-op trigger (hourly), LLM oorzaak-classificatie, paper-entry alleen op `monetary_liquidity`. Zie `docs/research/macro-event-btc-bot.md` |
-| `earnings_gap.py` | 200 | PEAD-alert: dagelijkse scan op ≥5% gap-ups (universe + watchlist) → Telegram-playbook + tranche-outcome-tracking (verkoop in derden na 1/3/10 handelsdagen). Alert-only, manual execution. Zie `docs/research/earnings-gap-drift.md` |
+| `earnings_gap.py` | 260 | **Gap-momentum**-alert (geen PEAD — correctie 2026-10-03): dagelijkse scan op ≥5% gap-ups (universe + watchlist), dedupe per ticker zolang tranches open, telling per episode, earnings alleen als label → Telegram-playbook + tranche-outcome-tracking (verkoop in derden na 1/3/10 handelsdagen). Alert-only, manual execution. Zie `docs/research/earnings-gap-drift.md` |
 | `crypto_data.py` | 260 | Funding rates, basis, spreads |
 | `reddit_data.py` | 256 | WSB scraping |
 | `trade_analysis.py` | 255 | P&L by strategy / pattern / stake bucket — the "Learn from History" backend |

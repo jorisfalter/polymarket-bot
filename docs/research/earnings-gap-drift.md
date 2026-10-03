@@ -68,3 +68,26 @@ Past exact in het bestaande patroon: **Telegram-alert, handmatige uitvoering.**
 Voorstel v1: dagelijkse check na de US-close (≈20:30 UTC) over het universum + de 28-ticker watchlist: gap-up ≥5% vandaag → Telegram-melding met naam, gap, dagverloop en het script ("koop close/morgen open, verkoop na 3 handelsdagen, geen stop nodig gezien horizon — sizing klein"). ~1 melding/week verwacht.
 
 **Status 2026-08-28: gebouwd en live** — `backend/earnings_gap.py`, dagelijkse scan ma-vr 21:15 UTC over universe + stocks-watchlist (45 tickers), Telegram-alert met playbook, en automatische outcome-rapportage (hypothetisch close→close) 3 handelsdagen na elke alert zodat we de edge live meten. Endpoints: `GET /api/earnings-gap/status`, `POST /api/earnings-gap/check`. Eerste echte alerts direct bij lancering: CRM gap +11.9% en NVDA gap +6.3% (27 aug — het Tijd-artikel dat deze note triggerde).
+
+## Correctie 2026-10-03: het is gap-momentum, géén PEAD
+
+Aanleiding: de VPS-sessie zag dat de d10-tranches van de miner-rally (16-18 sep) slecht uitkwamen (CIFR −5/−9/−14%, IREN −6.5%, WULF −9.5%) en dat `earnings_gap.py` nooit checkt of er cijfers waren. Voorstel daar: alleen alerten bij cijfers. **Backtest weerlegt dat** (yfinance earnings-kalender, zelfde 15 megacaps, 2022-2026):
+
+| Gaps ≥5% | n | d1 | d3 | d10 |
+|---|---|---|---|---|
+| mét cijfers (0-4 dagen ervoor) | 103 | +0.35% (t=0.8) | +1.20% (t=1.8) | +2.18% (t=2.0) |
+| **zonder cijfers** | 169 | +1.24% (t=2.5) | +1.76% (t=2.3) | **+4.94% (t=3.6)** |
+
+Mijn aanname "≥5%-gaps in megacaps zijn bijna altijd cijfers" was fout (38%). Het signaal is algemene gap-continuation; een earnings-filter zou de betere helft weggooien. `earnings_nearby` wordt nu alleen als **label** vastgelegd (voor latere analyse), niet als filter.
+
+Wat de VPS-sessie wél juist zag: de alerts kwamen vooral uit de watchlist (nooit getest) en waren gecorreleerd. Watchlist-backtest (29 tickers, 2022-2026):
+
+| | n | d1 excess | d3 excess | d10 excess |
+|---|---|---|---|---|
+| alle gaps | 728 | +0.95% (t=3.4) | +1.59% (t=3.4) | +0.81% (t=1.0) |
+| **1 per ticker zolang tranches open** | 370 | +1.34% (t=3.6) | **+2.19% (t=4.0)** | **+2.26% (t=2.1)** |
+
+**Wijzigingen (2026-10-03):**
+1. Dedupe: een gap in een ticker met open tranches (≤15 kalenderdagen sinds zijn vorige getelde alert) → `GAP_SUPPRESSED` in journal, geen Telegram, telt niet. Retroactief: CIFR 17+18/9 en ORCL 11/9 vallen uit de telling.
+2. Episodes: getelde alerts ≤3 dagen uit elkaar = één episode (één thema). **De promotie-telling (20-30) telt episodes, niet alerts** — dit is een aanscherping van de telling, de drempel zelf is ongewijzigd. Stand: 3 complete episodes (27/8 CRM+NVDA, 8/9 ORCL+QCOM+META, 16/9 miners).
+3. Melding heet nu "Gap-momentum", toont bron (universe/watchlist) + earnings-label, en waarschuwt bij meerdere alerts tegelijk.
