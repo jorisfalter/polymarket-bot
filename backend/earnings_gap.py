@@ -12,9 +12,10 @@ Long-only: down-gaps bounce, never short.
 Counting rules (also applied retroactively to old journal entries):
   - a gap in a ticker that still has open tranches is SUPPRESSED (journaled,
     no Telegram, not counted)
-  - alerts within EPISODE_DAYS of each other form one EPISODE (e.g. the BTC-
-    miner rally of 16-18 Sep 2026); the promotion count (n>=20-30) counts
-    episodes, not alerts
+  - EPISODE = independent data point: an earnings gap is always its own
+    episode; non-earnings gaps <=EPISODE_DAYS apart chain into one theme
+    (e.g. the BTC-miner rally of 16-18 Sep 2026). The promotion count
+    (n>=20-30) counts episodes, not alerts
 
 This module only ALERTS (stocks board = manual execution):
   - Daily after US close: scan universe + stocks watchlist for >=5% overnight
@@ -65,14 +66,24 @@ def _counted_alerts(alerts: list) -> list:
 
 
 def _episodes(alerts: list) -> list:
-    """Chain counted alerts into episodes (correlated same-theme bursts)."""
-    eps = []
+    """Group counted alerts into independent episodes.
+
+    An earnings gap is company-specific news -> always its own episode (NVDA
+    and ORCL reporting in the same week are independent). Gaps WITHOUT
+    confirmed earnings on nearby days are usually one theme (BTC-miner
+    rally) -> chained when <=EPISODE_DAYS apart. Unknown label (None) is
+    treated as non-earnings (conservative). Backtest 2024-26: ~75
+    episodes/yr with this rule vs ~43 when everything chained (that version
+    merged a whole earnings season into one 25-alert episode)."""
+    eps, theme = [], []
     for a in sorted(alerts, key=lambda r: r["date"]):
-        if eps and _days_between(eps[-1][-1]["date"], a["date"]) <= EPISODE_DAYS:
-            eps[-1].append(a)
-        else:
+        if a.get("earnings_nearby") is True:
             eps.append([a])
-    return eps
+        elif theme and _days_between(theme[-1][-1]["date"], a["date"]) <= EPISODE_DAYS:
+            theme[-1].append(a)
+        else:
+            theme.append([a])
+    return sorted(eps + theme, key=lambda ep: ep[0]["date"])
 
 
 def _earnings_nearby(ticker: str, date: str):
@@ -88,6 +99,8 @@ def _earnings_nearby(ticker: str, date: str):
 
 
 def _read_journal() -> list:
+    """Journal is append-only. Labels added later (ALERT_LABEL records, e.g.
+    the 2026-10-03 earnings backfill) are merged onto their ALERT here."""
     if not JOURNAL_PATH.exists():
         return []
     out = []
@@ -97,7 +110,24 @@ def _read_journal() -> list:
                 out.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
+    labels = {(r["ticker"], r["date"]): r for r in out if r.get("event") == "ALERT_LABEL"}
+    for r in out:
+        lab = labels.get((r.get("ticker"), r.get("date")))
+        if r.get("event") == "ALERT" and lab and "earnings_nearby" not in r:
+            r["earnings_nearby"] = lab.get("earnings_nearby")
     return out
+
+
+def backfill_earnings_labels() -> list:
+    """One-off/idempotent: label old ALERTs that lack earnings_nearby."""
+    done = []
+    for r in _read_journal():
+        if r.get("event") == "ALERT" and "earnings_nearby" not in r:
+            lab = _earnings_nearby(r["ticker"], r["date"])
+            _append_journal({"event": "ALERT_LABEL", "ticker": r["ticker"],
+                             "date": r["date"], "earnings_nearby": lab})
+            done.append((r["ticker"], r["date"], lab))
+    return done
 
 
 def _append_journal(record: dict):
@@ -215,9 +245,10 @@ class EarningsGapAlerter:
                 lines.append(f"<b>{a['ticker']}</b> gap {a['gap_pct']:+.1f}%, "
                              f"intraday {a['intraday_pct']:+.1f}%, close ${a['entry_close']:,.2f} "
                              f"({a['source']}, {tag})")
-            if len(alerts) > 1:
-                lines.append(f"⚠️ {len(alerts)} alerts tegelijk = waarschijnlijk één thema; "
-                             f"telt als één episode, size navenant kleiner.")
+            themed = [a for a in alerts if a.get("earnings_nearby") is not True]
+            if len(themed) > 1:
+                lines.append(f"⚠️ {len(themed)} gaps zonder cijfers tegelijk = waarschijnlijk één thema "
+                             f"({', '.join(a['ticker'] for a in themed)}); telt als één episode, size kleiner.")
             tr = settings.earnings_gap_tranches
             lines.append(f"<i>Script: koop close/morgen open in 1 keer; verkoop in derden "
                          f"na {', '.join(str(k) for k in tr)} handelsdagen. Long-only, klein sizen.</i>")
