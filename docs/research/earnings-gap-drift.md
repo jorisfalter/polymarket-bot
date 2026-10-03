@@ -107,3 +107,21 @@ Alle regels (≥5% gap, dedupe per ticker, tranches 1/3/10) zijn gekozen op 2022
 - De live-steekproef is nu geen formaliteit maar de echte test of het huidige regime nog loopt. Promotie-drempel blijft 20-30 episodes én live-gemiddelde in de buurt van backtest — **niet versoepelen**.
 - Als het regime kantelt (tech-correctie), verwacht dat deze alerts stoppen met werken; dat is geen bug.
 - Nieuws-classificatie ("echte verrassing vs hype") wordt pas onderzocht als de live-data er aanleiding toe geeft.
+
+### Per jaar (2026-10-03): edge zit in twee hype-jaren, niet in "stijgende tech"
+
+Tranche-mix (⅓ verkocht na 1/3/10d), 15 megacaps, dedupe per ticker:
+
+| Jaar | Nasdaq (QQQ) | n | gem | t |
+|---|---|---|---|---|
+| 2018 | −2% | 25 | −0.23% | −0.2 |
+| 2019 | +38% | 20 | +0.98% | 1.1 |
+| 2020 | +46% | 46 | +0.94% | 0.7 |
+| 2021 | +29% | 18 | +0.43% | 0.3 |
+| 2022 | −33% | 37 | +0.07% | 0.1 |
+| **2023** | +56% | 35 | **+3.01%** | **3.6** |
+| 2024 | +28% | 43 | +1.44% | 0.9 |
+| **2025** | +21% | 57 | **+4.32%** | **3.7** |
+| 2026 YTD | +17% | 36 | −0.15% | −0.1 |
+
+Een stijgende tech-markt is níet genoeg (2019-21 zwak). De hele edge komt uit 2023 en 2025 (AI-momentumhype); in 2026 is hij tot nu toe weg — consistent met de zwakke live-resultaten. **Verwachting: gap-momentum wordt waarschijnlijk niet de eerste strategie met echt geld.** Alerts blijven lopen tot ~december (meten kost niets); macro-BTC is de sterkere kandidaat (consistent over periodes, alleen weinig events).
