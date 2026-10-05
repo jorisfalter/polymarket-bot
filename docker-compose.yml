@@ -39,5 +39,6 @@ services:
       TWOFACTOR_CODE: ${IBKR_TOTP_SECRET}
       READ_ONLY_API: "no"
       AUTO_RESTART_TIME: "11:59 PM"
+      EXISTING_SESSION_DETECTED_ACTION: primary   # gateway wins over a manual web login as botuser
     ports:
       - "127.0.0.1:4001:4003"   # live API (socat-forwarded)
