@@ -41,4 +41,3 @@ services:
       AUTO_RESTART_TIME: "11:59 PM"
     ports:
       - "127.0.0.1:4001:4003"   # live API (socat-forwarded)
-      - "127.0.0.1:8081:8080"   # controller health
