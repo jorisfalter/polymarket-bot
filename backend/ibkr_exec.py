@@ -98,15 +98,20 @@ class IBKRExecutor:
             if isinstance(state, list):
                 state = state[0] if state else None
             rejects = [m for c, m in errors if c == 201]
-            ok = (state is not None and not rejects
-                  and state.commission < 1e300)
+            ok = state is not None and not rejects
             preview = {"symbol": symbol, "side": side, "qty": qty, "accepted": ok}
             if ok:
+                # whatIf usually returns only a min/max commission band; the
+                # exact `commission` field is an "unset" sentinel (1.8e308).
+                exact = state.commission if state.commission < 1e300 else None
                 preview.update({
-                    "commission": state.commission,
+                    "commission": exact,
+                    "commission_min": state.minCommission if state.minCommission < 1e300 else None,
+                    "commission_max": state.maxCommission if state.maxCommission < 1e300 else None,
                     "commission_currency": state.commissionCurrency,
-                    "init_margin_change": state.initMarginChange,
+                    "equity_with_loan_change": state.equityWithLoanChange,
                     "equity_with_loan_after": state.equityWithLoanAfter,
+                    "init_margin_change": state.initMarginChange,
                 })
             else:
                 preview["reject_reason"] = rejects[0] if rejects else str(errors[-3:])
