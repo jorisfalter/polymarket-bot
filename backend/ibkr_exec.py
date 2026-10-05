@@ -65,6 +65,9 @@ class IBKRExecutor:
         if not ib:
             return None
         try:
+            # Delayed data (type 3): works without a paid real-time
+            # subscription; fine for our day-scale entries.
+            ib.reqMarketDataType(3)
             contract = Stock(symbol, "SMART", "USD")
             await ib.qualifyContractsAsync(contract)
             tick = await ib.reqTickersAsync(contract)
@@ -82,17 +85,29 @@ class IBKRExecutor:
         if not ib:
             return None
         try:
+            errors = []
+            ib.errorEvent += lambda reqId, code, msg, *a: errors.append((code, msg))
             contract = Stock(symbol, "SMART", "USD")
             await ib.qualifyContractsAsync(contract)
             order = MarketOrder(side, qty)
             state = await ib.whatIfOrderAsync(contract, order)
-            preview = {
-                "symbol": symbol, "side": side, "qty": qty,
-                "commission": getattr(state, "maxCommission", None) or state.commission,
-                "commission_currency": state.commissionCurrency,
-                "init_margin_change": state.initMarginChange,
-                "equity_with_loan_after": state.equityWithLoanAfter,
-            }
+            # ib_async returns [] when IBKR rejects the what-if; the reason
+            # arrives as an error event (e.g. 201 insufficient cash).
+            if isinstance(state, list):
+                state = state[0] if state else None
+            if state is None:
+                rejects = [m for c, m in errors if c == 201]
+                preview = {"symbol": symbol, "side": side, "qty": qty,
+                           "accepted": False,
+                           "reject_reason": rejects[0] if rejects else str(errors[-1:])}
+            else:
+                preview = {
+                    "symbol": symbol, "side": side, "qty": qty, "accepted": True,
+                    "commission": state.commission if state.commission < 1e300 else state.maxCommission,
+                    "commission_currency": state.commissionCurrency,
+                    "init_margin_change": state.initMarginChange,
+                    "equity_with_loan_after": state.equityWithLoanAfter,
+                }
             _journal({"event": "PREVIEW", **preview})
             return preview
         finally:
