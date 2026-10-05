@@ -17,6 +17,7 @@ Connection is lazy and per-call; the app runs fine with the gateway down.
 
 Journal: data/ibkr_exec.jsonl (PREVIEW / DRY_RUN_ORDER / ORDER records).
 """
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -89,25 +90,26 @@ class IBKRExecutor:
             ib.errorEvent += lambda reqId, code, msg, *a: errors.append((code, msg))
             contract = Stock(symbol, "SMART", "USD")
             await ib.qualifyContractsAsync(contract)
-            order = MarketOrder(side, qty)
+            order = MarketOrder(side, qty, tif="DAY")
             state = await ib.whatIfOrderAsync(contract, order)
-            # ib_async returns [] when IBKR rejects the what-if; the reason
-            # arrives as an error event (e.g. 201 insufficient cash).
+            # IBKR's verdict (e.g. 201 insufficient cash / verification
+            # needed) arrives as an async error event shortly after.
+            await asyncio.sleep(3)
             if isinstance(state, list):
                 state = state[0] if state else None
-            if state is None:
-                rejects = [m for c, m in errors if c == 201]
-                preview = {"symbol": symbol, "side": side, "qty": qty,
-                           "accepted": False,
-                           "reject_reason": rejects[0] if rejects else str(errors[-1:])}
-            else:
-                preview = {
-                    "symbol": symbol, "side": side, "qty": qty, "accepted": True,
-                    "commission": state.commission if state.commission < 1e300 else state.maxCommission,
+            rejects = [m for c, m in errors if c == 201]
+            ok = (state is not None and not rejects
+                  and state.commission < 1e300)
+            preview = {"symbol": symbol, "side": side, "qty": qty, "accepted": ok}
+            if ok:
+                preview.update({
+                    "commission": state.commission,
                     "commission_currency": state.commissionCurrency,
                     "init_margin_change": state.initMarginChange,
                     "equity_with_loan_after": state.equityWithLoanAfter,
-                }
+                })
+            else:
+                preview["reject_reason"] = rejects[0] if rejects else str(errors[-3:])
             _journal({"event": "PREVIEW", **preview})
             return preview
         finally:
