@@ -26,7 +26,7 @@ services:
   # factors live in the VPS .env; blast radius = mis-invested funds, never
   # withdrawn. Health: http://ib-gateway:8080/health (200 = logged in).
   ib-gateway:
-    image: ghcr.io/code-hustler-ft3d/ibg-controller:latest
+    image: ghcr.io/code-hustler-ft3d/ibg-controller@sha256:a62023992fd1d705a9cb8d23c3fb449204cfc24ef0c3a4e25f7baa51311d7070  # pinned 2026-10-30 (audit A-06): review upstream before bumping
     container_name: ib-gateway
     restart: unless-stopped
     profiles: ["ibkr"]
