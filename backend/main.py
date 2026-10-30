@@ -2258,7 +2258,7 @@ async def run_research_agent():
 
 
 @app.get("/api/playbook")
-async def get_playbook_content(board: str = Query("polymarket", regex="^(polymarket|stocks|crypto)$")):
+async def get_playbook_content(board: str = Query("polymarket", pattern="^(polymarket|stocks|crypto)$")):
     """Serve a strategy playbook for one of the three boards."""
     docs_dir = Path(__file__).parent.parent / "docs"
     file_map = {
