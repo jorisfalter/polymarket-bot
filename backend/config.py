@@ -183,9 +183,8 @@ class Settings(BaseSettings):
     # their Telegram sends are gated (send_telegram_legacy in integrations.py).
     telegram_legacy_enabled: bool = False
 
-    # Dashboard auth — magic-link login via Telegram. If auth_secret is unset,
-    # auth is DISABLED (fail-open) so a misconfigured deploy never locks the
-    # user out. Set AUTH_SECRET in .env to enable.
+    # Dashboard auth — magic-link login via Telegram. AUTH_SECRET is REQUIRED:
+    # without it every route except /healthz returns 503 (fail-closed).
     auth_secret: Optional[str] = None
     public_url: str = "https://polymarket.ai-tigers.com"  # base for magic-link URLs
 

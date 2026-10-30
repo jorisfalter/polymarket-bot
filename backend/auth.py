@@ -15,8 +15,10 @@ Security model:
   the configured Telegram chat. There is no password to leak.
 - The session cookie is HMAC-signed with AUTH_SECRET; it cannot be forged
   without the secret. It carries only an expiry timestamp.
-- If AUTH_SECRET is unset, auth is disabled (fail-open) — a misconfigured
-  deploy must never lock the user out of their own dashboard.
+- If AUTH_SECRET is unset the app fails CLOSED: every route except
+  /healthz returns 503 (security audit A-10, 2026-10-30).
+- POST /api/auth/request-link is throttled (per IP + global, in-memory —
+  the app runs a single uvicorn worker) so it can't spam Telegram.
 
 Pending tokens live in-memory: a container restart between request-link
 and verify invalidates an unused token. Acceptable — the window is 10 min
@@ -26,7 +28,7 @@ import hashlib
 import hmac
 import secrets
 import time
-from typing import Dict
+from typing import Dict, List, Optional
 
 from loguru import logger
 
@@ -41,8 +43,47 @@ _pending_tokens: Dict[str, float] = {}
 
 
 def auth_enabled() -> bool:
-    """Auth only runs when a secret is configured. No secret = fail-open."""
+    """True when a secret is configured. No secret = app serves 503 (fail-closed)."""
     return bool(settings.auth_secret)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# request-link throttling (in-memory; single uvicorn worker)
+# ──────────────────────────────────────────────────────────────────────
+
+REQUEST_LINK_PER_IP_MAX = 3
+REQUEST_LINK_PER_IP_WINDOW = 15 * 60       # 15 minutes
+REQUEST_LINK_GLOBAL_MAX = 10
+REQUEST_LINK_GLOBAL_WINDOW = 60 * 60       # 1 hour
+
+_request_link_by_ip: Dict[str, List[float]] = {}
+_request_link_global: List[float] = []
+
+
+def check_request_link_rate(client_ip: str, now: Optional[float] = None) -> Optional[int]:
+    """Record a request-link attempt. Returns None if allowed, otherwise the
+    number of seconds until the caller may retry. Every attempt that is
+    allowed counts toward both limits; rejected attempts don't extend them."""
+    now = time.time() if now is None else now
+
+    _request_link_global[:] = [t for t in _request_link_global
+                               if now - t < REQUEST_LINK_GLOBAL_WINDOW]
+    for ip in list(_request_link_by_ip):
+        kept = [t for t in _request_link_by_ip[ip] if now - t < REQUEST_LINK_PER_IP_WINDOW]
+        if kept:
+            _request_link_by_ip[ip] = kept
+        else:
+            del _request_link_by_ip[ip]
+
+    ip_hits = _request_link_by_ip.get(client_ip, [])
+    if len(ip_hits) >= REQUEST_LINK_PER_IP_MAX:
+        return max(1, int(ip_hits[0] + REQUEST_LINK_PER_IP_WINDOW - now) + 1)
+    if len(_request_link_global) >= REQUEST_LINK_GLOBAL_MAX:
+        return max(1, int(_request_link_global[0] + REQUEST_LINK_GLOBAL_WINDOW - now) + 1)
+
+    _request_link_by_ip.setdefault(client_ip, []).append(now)
+    _request_link_global.append(now)
+    return None
 
 
 # ──────────────────────────────────────────────────────────────────────

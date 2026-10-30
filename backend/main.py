@@ -578,12 +578,16 @@ app = FastAPI(
 )
 
 # CORS for frontend
+# The dashboard is served same-origin from this app (and `run.py` dev is
+# same-origin on localhost:8000 too), so the browser never needs CORS. Only
+# the production origin is allowed; never "*" together with credentials
+# (security audit A-10, 2026-10-30).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://polymarket.ai-tigers.com"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -597,15 +601,21 @@ _AUTH_EXEMPT_EXACT = {"/login", "/healthz"}
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    """Gate every request behind a valid session cookie. Fail-open when no
-    AUTH_SECRET is configured so a misconfigured deploy can't lock the user
-    out of their own dashboard."""
+    """Gate every request behind a valid session cookie. Fail CLOSED when no
+    AUTH_SECRET is configured: everything except the health probe returns 503
+    (security audit A-10 — fail-open exposed the whole API on a bad deploy)."""
     from .auth import auth_enabled, verify_session_cookie, COOKIE_NAME
 
-    if not auth_enabled():
-        return await call_next(request)
-
     path = request.url.path
+    if not auth_enabled():
+        if path == "/healthz":
+            return await call_next(request)
+        return JSONResponse(
+            {"error": "auth_not_configured",
+             "detail": "AUTH_SECRET is not set; dashboard disabled."},
+            status_code=503,
+        )
+
     if path in _AUTH_EXEMPT_EXACT or any(path.startswith(p) for p in _AUTH_EXEMPT_PREFIXES):
         return await call_next(request)
 
@@ -634,9 +644,23 @@ async def serve_login():
 
 
 @app.post("/api/auth/request-link")
-async def auth_request_link():
-    """Generate a magic token and send the login link to Telegram."""
-    from .auth import send_magic_link
+async def auth_request_link(request: Request):
+    """Generate a magic token and send the login link to Telegram.
+    Throttled per client IP and globally (see auth.check_request_link_rate)
+    so the public endpoint can't be used to spam the Telegram chat."""
+    from .auth import send_magic_link, check_request_link_rate
+    client_ip = (
+        request.headers.get("cf-connecting-ip", "").strip()
+        or (request.client.host if request.client else "unknown")
+    )
+    retry_after = check_request_link_rate(client_ip)
+    if retry_after is not None:
+        logger.warning(f"request-link throttled for {client_ip}")
+        return JSONResponse(
+            {"ok": False, "error": "Te veel aanvragen. Probeer het later opnieuw."},
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+        )
     ok = await send_magic_link()
     if ok:
         return {"ok": True, "message": "Login-link verstuurd naar Telegram."}
