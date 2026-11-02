@@ -121,6 +121,13 @@
                 <div id="portfolios-list"><div class="empty">Loading…</div></div>
             </div>
 
+            <!-- Consumer-trend lane (paper) -->
+            <div class="panel" style="margin-top: 20px;">
+                <h3>🛍️ Consumer-trend lane <span class="sub">— social arbitrage (Camillo), paper · dagelijkse Claude-sentinel · geen Telegram</span> <span class="count" id="consumer-count">0</span></h3>
+                <div id="consumer-stats" style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;"></div>
+                <div id="consumer-list"><div class="empty">Loading…</div></div>
+            </div>
+
             <!-- WSB Pulse -->
             <div class="grid-2" style="margin-top: 20px;">
                 <div class="panel">
@@ -535,6 +542,34 @@
             } catch (e) { console.error('portfolios', e); }
         }
 
+        function fmtEx(v) { if (v == null) return '–'; return `<span class="${v >= 0 ? 'pnl-positive' : 'pnl-negative'}">${(v >= 0 ? '+' : '') + v.toFixed(1)}%</span>`; }
+
+        async function loadConsumer() {
+            try {
+                const r = await fetch('/api/consumer/status');
+                const d = await r.json();
+                const th = d.theses || [], watch = d.watch || [];
+                document.getElementById('consumer-count').textContent = th.length;
+                const s20 = d.stats?.d20 || {}, s60 = d.stats?.d60 || {};
+                document.getElementById('consumer-stats').innerHTML =
+                    `d20: n=${s20.n || 0}${s20.n ? ` · gem ${fmtEx(s20.avg)} · win ${Math.round(s20.win_rate * 100)}%` : ''} &nbsp;|&nbsp; ` +
+                    `d60: n=${s60.n || 0}${s60.n ? ` · gem ${fmtEx(s60.avg)} · win ${Math.round(s60.win_rate * 100)}%` : ''}${s60.t != null ? ` · t=${s60.t}` : ''} &nbsp;|&nbsp; ` +
+                    `compleet ${d.complete || 0}/20 voor promotie · ${d.duplicates || 0} dubbel genegeerd`;
+                const el = document.getElementById('consumer-list');
+                if (!th.length && !watch.length) { el.innerHTML = '<div class="empty">Nog geen theses — de sentinel draait dagelijks om 14:40 UTC.</div>'; return; }
+                const rows = th.map(t => `<tr title="${escapeHtml((t.thesis || '') + '\n\nInvalidatie: ' + (t.invalidation || ''))}">
+                        <td>${escapeHtml((t.ts || '').slice(0, 10))}</td>
+                        <td><b>${escapeHtml(t.ticker || '')}</b> ${t.direction === 'short' ? '🔻' : '🔺'}</td>
+                        <td>${escapeHtml((t.trend || '').slice(0, 70))}</td>
+                        <td class="num">${t.confidence != null ? t.confidence : '–'}</td>
+                        <td class="num">${fmtEx(t.to_date)}</td><td class="num">${fmtEx(t.d20)}</td><td class="num">${fmtEx(t.d60)}</td>
+                    </tr>`).join('');
+                const w = watch.slice(0, 8).map(x => `<div style="font-size:11px;color:var(--text-muted);padding:2px 0;">👀 ${escapeHtml((x.ts || '').slice(0, 10))} · <b>${escapeHtml(x.ticker || 'privé')}</b> · ${escapeHtml((x.trend || '').slice(0, 90))}</div>`).join('');
+                el.innerHTML = (th.length ? `<table class="tbl"><tr><th>Datum</th><th>Ticker</th><th>Trend</th><th class="num">Conf</th><th class="num">Tot nu</th><th class="num">d20</th><th class="num">d60</th></tr>${rows}</table>` : '')
+                    + (w ? `<div style="margin-top:10px;font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:600;">Watch (geen needle mover of al ingeprijsd)</div>${w}` : '');
+            } catch (e) { console.error('consumer', e); }
+        }
+
         async function loadWSB() {
             try {
                 const r = await fetch('/api/stocks/wsb');
@@ -595,12 +630,14 @@
         loadForm4();
         loadSC13();
         loadWSB();
+        loadConsumer();
         setInterval(loadSqueezes, 120000);   // 2 min
         setInterval(loadPortfolios, 600000); // 10 min
         setInterval(loadTrades, 600000);     // 10 min
         setInterval(loadForm4, 1800000);     // 30 min
         setInterval(loadSC13, 1800000);      // 30 min
         setInterval(loadWSB, 600000);        // 10 min
+        setInterval(loadConsumer, 1800000);  // 30 min
     </script>
 </body>
 </html>

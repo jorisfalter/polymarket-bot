@@ -33,6 +33,8 @@ Er werken twee Claude-sessies aan dit project (Mac + VPS). Lees deze lijst vóó
 
 | Datum | Beslissing | Waarom (bewijs) | Waar |
 |---|---|---|---|
+| 2026-11-02 | **Geen mechanische consumer-trend-alert op Wikipedia-pageviews**; wel een judgement-lane (paper). | Backtest 75 consumentenmerken 2016-26: piek ≥3× baseline → d5/d20/d60 excess +2.3/+1.4/+2.0%, alle t<1.5, medianen ≈0; ratio 2 idem. Wikipedia-piek = al information parity. Lane: `consumer_lane.py` + dagelijkse sentinel, promotie pas bij n≥20 complete d60-theses. | `docs/research/camillo-social-arbitrage.md` |
+| 2026-11-02 | Reddit geeft 403 vanaf de VPS (publieke JSON) — WSB-scraper geeft stil een lege lijst. Niet omzeilen; officiële route = Reddit OAuth-app (Joris moet aanvragen). | Getest: r/wallstreetbets en andere subs 403. | `backend/reddit_data.py` |
 | 2026-10-03 | **Gap-momentum heeft GEEN edge out-of-sample (2018-2021).** Live-test blijft verplicht; drempel niet versoepelen. | Zelfde regels op nooit-geziene jaren: d10 excess +0.15% (t=0.1), d1/d3 negatief, vs +2.2% in 2022-26. Edge is regime-gebonden en/of overfit. Per jaar: alleen 2023 (+3.0%, t=3.6) en 2025 (+4.3%, t=3.7) sterk; 2019-21 zwak ondanks tech-bull; 2022 en 2026 YTD ≈ 0. Verwachting: niet de eerste strategie met echt geld; macro-BTC is sterkere kandidaat. | `earnings-gap-drift.md` (Out-of-sample test) |
 | 2026-10-03 | **Gap-alerts filteren NIET op earnings.** `earnings_nearby` is alleen een label. | Backtest 15 megacaps 2022-26: maar 38% van de ≥5%-gaps had cijfers, en gaps *zonder* cijfers deden het beter (d10 +4.9% vs +2.2%). Filter = betere helft weggooien. Het signaal is gap-momentum, geen PEAD. | `docs/research/earnings-gap-drift.md` (Correctie 2026-10-03) |
 | 2026-10-03 | **Eén alert per ticker zolang zijn tranches open staan** (≤15 kalenderdagen). Extra gaps → `GAP_SUPPRESSED` in journal, geen Telegram, telt niet. | Watchlist-backtest n=728→370: d3-excess +1.59→+2.19% (t=4.0), d10 +0.81→+2.26%. | `earnings_gap.py` `_counted_alerts()` |
@@ -124,6 +126,7 @@ The failure mode is not missing knowledge — it's not retrieving known tools be
 | `intel_feeds.py` | 282 | Newsletters (Matt Levine / Money Stuff etc.) |
 | `macro_btc.py` | 290 | Macro-event BTC **paper** trader: BTC+5%-én-goud-op trigger (hourly), LLM oorzaak-classificatie, paper-entry alleen op `monetary_liquidity`. Zie `docs/research/macro-event-btc-bot.md` |
 | `earnings_gap.py` | 260 | **Gap-momentum**-alert (geen PEAD — correctie 2026-10-03): dagelijkse scan op ≥5% gap-ups (universe + watchlist), dedupe per ticker zolang tranches open, telling per episode, earnings alleen als label → Telegram-playbook + tranche-outcome-tracking (verkoop in derden na 1/3/10 handelsdagen). Alert-only, manual execution. Zie `docs/research/earnings-gap-drift.md` |
+| `consumer_lane.py` | 220 | **Consumer-trend lane** (social arbitrage, paper): valideert + dedupet theses van de dagelijkse consumer-sentinel, scoort d20/d60 excess vs SPY. CLI `check`/`add`/`status`. Geen alerts. Zie `docs/research/camillo-social-arbitrage.md` |
 | `crypto_data.py` | 260 | Funding rates, basis, spreads |
 | `reddit_data.py` | 256 | WSB scraping |
 | `trade_analysis.py` | 255 | P&L by strategy / pattern / stake bucket — the "Learn from History" backend |
@@ -182,6 +185,8 @@ The failure mode is not missing knowledge — it's not retrieving known tools be
 ## News sentinel (hourly, headless Claude op de VPS)
 
 De news-first laag bovenop de prijs-trigger-bots (2026-09-07): een **uurlijkse cron als `app`-user op de VPS host** (niet in Docker) draait `scripts/news_sentinel.sh` → headless Claude Code (`claude -p`, subscription-auth uit `/home/app/.claude`) met missie `scripts/sentinel.md`. Cyclus: nieuws ophalen (`scripts/fetch_news.py`, Google News RSS) → novelty-check tegen `/home/app/sentinel/state.json` → bij een materieel event: precedent zoeken in `docs/research/`, falsifieerbare thesis + invalidation naar `/home/app/sentinel/journal.jsonl`, en bij confidence ≥0.7 Telegram via `scripts/send_telegram.py`. **Plaatst nooit orders** — paper-theses + alerts only. De meeste uren eindigt hij in een NOOP (<1 min). Logs: `/home/app/sentinel/runs.log`. Auth: langlevende token (`claude setup-token`, ~1 jaar) in `/home/app/.claude/sentinel_oauth_token` (600, app-only), door de wrapper als `CLAUDE_CODE_OAUTH_TOKEN` gezet — sinds 2026-10-07, omdat de interactieve OAuth-sessie elke paar weken verliep. Bij auth-falen stuurt de wrapper max 1x/dag een Telegram-waarschuwing.
+
+**Consumer sentinel (dagelijks 14:40 UTC, 2026-11-02)**: zelfde opzet (cron als `app`, zelfde token), maar `scripts/consumer_sentinel.sh` + missie `scripts/consumer_sentinel.md`. Leest consumer-signalen (`scripts/fetch_consumer.py`: Google News, App Store-charts, Google Trends), beoordeelt needle mover vs marktwaarde en information parity, en schrijft via `docker exec polymarket-insider python -m backend.consumer_lane add` naar `data/consumer_theses.jsonl`. **Geen Telegram** — alleen het /stocks-paneel. Log: `/home/app/sentinel/consumer_runs.log`.
 
 ## Manual analysis flows (the 3 dashboard buttons)
 

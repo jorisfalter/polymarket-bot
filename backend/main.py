@@ -1557,6 +1557,15 @@ async def earnings_gap_check(notify: bool = True):
     return await earnings_gap.run_daily_check(notify=notify)
 
 
+# --- Consumer-trend lane (paper, social arbitrage) -------------------------
+
+@app.get("/api/consumer/status")
+async def consumer_status():
+    """Scored consumer-sentinel theses (d20/d60 excess vs SPY). Paper only."""
+    from .consumer_lane import get_status
+    return await asyncio.to_thread(get_status)
+
+
 # --- Market-maker (Pad 2) endpoints --------------------------------------
 
 @app.get("/api/maker/status")

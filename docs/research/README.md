@@ -15,6 +15,7 @@ Distilled summaries of trading strategies, insider patterns, and platform ideas 
 | [levine-preying-on-leveraged-etfs.md](levine-preying-on-leveraged-etfs.md) | LETF close-rebalance loop (Korea/SK Hynix). BTC-angle + US next-day reversion getest: te dun. Watch: nieuwe single-stock LETF-lanceringen. |
 | [earnings-gap-drift.md](earnings-gap-drift.md) | PEAD: gap-up ≥5% in liquide tech → +1.19% excess in 3d (t=2.9, n=266). Long-only, entry close gap-dag, hold 3d. Sterkste geteste signaal. |
 | [oil-geo-spikes.md](oil-geo-spikes.md) | Olie-spikes: alleen aanhoudende fysieke flow-reductie continueert (5/5, +14.2% d10); dreiging/risk-premium rot weg. "Koop barrels, geen headlines." |
+| [camillo-social-arbitrage.md](camillo-social-arbitrage.md) | Social arbitrage (Camillo, MFM jul 2026). Wikipedia-aandachtspiek → aandeel: geen edge (n=157, alle t<1.5). Gebouwd als judgement-lane (dagelijkse Claude-sentinel, paper, /stocks). |
 
 ## Adding a new research doc
 1. One file per idea. Name it `<author>-<topic>.md` or `<case-slug>.md`.

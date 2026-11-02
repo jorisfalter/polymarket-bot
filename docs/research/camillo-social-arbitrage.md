@@ -31,9 +31,11 @@ Per jaar wisselt het teken (2021 d20 −8%, 2022 −9%, 2024 +11%): ruis, geen r
 
 **Besluit**: geen mechanische pageview-alert bouwen. Niet opnieuw voorstellen met andere drempels op dezelfde data; dat is parameter-jagen (zie de out-of-sample-les in `earnings-gap-drift.md`).
 
-## Wat wél kan: judgement-lane in de sentinel (paper)
-Camillo's edge zit in het oordeel, niet in een drempel. Een backtest kan dat niet testen; alleen een live track record kan het. Opzet (nog niet gebouwd):
-- **Bronnen, legitiem en gratis**: Google News RSS ("sold out", "viral", "waitlist", "shortage"), Apple top-charts (live), Google Trends daily trending RSS. Wikipedia-pageviews alleen als check op *information parity* ("is het al mainstream?"), niet als trigger.
-- **Claude-oordeel per kandidaat**: welke ticker, omzetimpact relatief aan de marktwaarde, al in de koers (pre-20d return, analistennieuws)?
-- **Output**: falsifieerbare thesis + invalidatie in het journal, paper-uitkomst op d20/d60. Alleen dashboard; Telegram pas na bewezen track record.
-- **Promotie**: zoals bij de andere bots. Eerst n≥20 paper-theses met een gemiddelde dat duidelijk boven nul ligt.
+## Gebouwd 2026-11-02: consumer-lane (paper, judgement-first)
+Camillo's edge zit in het oordeel, niet in een drempel. Een backtest kan dat niet testen; alleen een live track record kan het.
+- **Cron (app)**: `40 14 * * *` → `scripts/consumer_sentinel.sh` → headless Claude met missie `scripts/consumer_sentinel.md`. Log: `/home/app/sentinel/consumer_runs.log`; novelty-state: `/home/app/sentinel/consumer_state.json`.
+- **Bronnen** (`scripts/fetch_consumer.py`, stdlib, legitiem en gratis): Google News RSS consumer-queries (sold out / viral / waitlist / fastest-growing / backlash), Apple App Store top-charts US met movers t.o.v. een snapshot (`/home/app/sentinel/consumer/charts/`), Google Trends daily US. Wikipedia-pageviews alleen als check op *information parity* (ratio >3 = al mainstream), niet als trigger.
+- **Oordeel per kandidaat**: ticker → `python -m backend.consumer_lane check` (marktwaarde, omzet, pre-20d excess, wiki-ratio) → needle mover (<~2% van de omzet = `watch`) → information parity (pre20 >+15% of wiki >3 = `watch`) → precedent → `thesis` met invalidatie.
+- **Opslag/score**: `backend/consumer_lane.py` valideert (verplichte velden, long/short) en dedupet per ticker over 60 dagen (`DUPLICATE`, telt niet). Journal: `data/consumer_theses.jsonl` (append-only). Score = excess vs SPY op d20/d60 vanaf de close van de eerste handelsdag ná de thesis (shorts teken-omgedraaid).
+- **Zichtbaar**: `/stocks` → paneel 🛍️ Consumer-trend lane; API `GET /api/consumer/status`. **Geen Telegram, geen orders.**
+- **Promotie**: pas Telegram/geld na n≥20 complete (d60) theses met een gemiddelde dat duidelijk boven nul ligt. Niet versoepelen zonder expliciete vraag van Joris.
