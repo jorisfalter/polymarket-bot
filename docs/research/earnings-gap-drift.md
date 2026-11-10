@@ -125,3 +125,8 @@ Tranche-mix (⅓ verkocht na 1/3/10d), 15 megacaps, dedupe per ticker:
 | 2026 YTD | +17% | 36 | −0.15% | −0.1 |
 
 Een stijgende tech-markt is níet genoeg (2019-21 zwak). De hele edge komt uit 2023 en 2025 (AI-momentumhype); in 2026 is hij tot nu toe weg — consistent met de zwakke live-resultaten. **Verwachting: gap-momentum wordt waarschijnlijk niet de eerste strategie met echt geld.** Alerts blijven lopen tot ~december (meten kost niets); macro-BTC is de sterkere kandidaat (consistent over periodes, alleen weinig events).
+
+## Live-correctie 2026-11-10: marktbrede dagen + excess vs QQQ
+- **6 november 2026**: 19 gaps op één opening, de dag na QQQ −6,5% en SMH −11,2%. Dat is een marktbrede rebound, geen bedrijfsnieuws. Zeven ervan hadden toevallig cijfers en telden daardoor als losse episodes. Nieuwe regel: bij **≥5 getelde gaps op één dag** ketenen ook de cijfer-gaps als één thema-episode (`MARKET_WIDE_MIN`). Effect: 4-9 nov van 8 naar 1 episode.
+- **Excess vs QQQ**: de backtest meet excess, de live-meldingen toonden ruwe rendementen. Elke OUTCOME krijgt nu `bench_return_pct` + `excess_pct`; oude outcomes zijn gelabeld via `OUTCOME_LABEL`. Stand op 10 nov (n=39/20/17): d1 ruw +3,0% → excess **+1,9%**, d3 −0,8% → **−0,5%**, d10 −6,7% → **−6,2%** (3/17 winst). Het verval na dag 1 is dus geen marktbeta; het zit in de aandelen zelf.
+- QQQ is een grove benchmark voor watchlist-small/midcaps (miners, nucleair). Voor de promotievraag telt de episode-excess (`d10_excess` per episode).

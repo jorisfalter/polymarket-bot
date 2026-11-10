@@ -44,6 +44,8 @@ UNIVERSE = ["NVDA", "META", "MSFT", "GOOGL", "AMZN", "TSLA", "AMD", "AVGO",
 
 SUPPRESS_CAL_DAYS = 15   # ~10 trading days: a ticker's tranches are still open
 EPISODE_DAYS = 3         # alerts <=3 calendar days apart chain into one episode
+MARKET_WIDE_MIN = 5      # >=5 counted gaps on one day = market-wide move, not company news
+BENCH = "QQQ"            # outcomes also scored as excess vs this (backtest numbers are excess)
 
 
 def _days_between(a: str, b: str) -> int:
@@ -74,10 +76,18 @@ def _episodes(alerts: list) -> list:
     rally) -> chained when <=EPISODE_DAYS apart. Unknown label (None) is
     treated as non-earnings (conservative). Backtest 2024-26: ~75
     episodes/yr with this rule vs ~43 when everything chained (that version
-    merged a whole earnings season into one 25-alert episode)."""
+    merged a whole earnings season into one 25-alert episode).
+
+    Exception (2026-11-10): on a day with >=MARKET_WIDE_MIN gaps the move is
+    market-wide (6 Nov: 19 gaps on the open after QQQ -6.5%, SMH -11%), so
+    earnings gaps that day are NOT independent — they chain like theme gaps.
+    Before this rule that one rebound day counted as 7+ episodes."""
+    per_day = {}
+    for a in alerts:
+        per_day[a["date"]] = per_day.get(a["date"], 0) + 1
     eps, theme = [], []
     for a in sorted(alerts, key=lambda r: r["date"]):
-        if a.get("earnings_nearby") is True:
+        if a.get("earnings_nearby") is True and per_day[a["date"]] < MARKET_WIDE_MIN:
             eps.append([a])
         elif theme and _days_between(theme[-1][-1]["date"], a["date"]) <= EPISODE_DAYS:
             theme[-1].append(a)
@@ -115,7 +125,49 @@ def _read_journal() -> list:
         lab = labels.get((r.get("ticker"), r.get("date")))
         if r.get("event") == "ALERT" and lab and "earnings_nearby" not in r:
             r["earnings_nearby"] = lab.get("earnings_nearby")
+    bench = {(r["ticker"], r["date"], r["hold_days"]): r for r in out
+             if r.get("event") == "OUTCOME_LABEL"}
+    for r in out:
+        if r.get("event") == "OUTCOME" and "bench_return_pct" not in r:
+            lab = bench.get((r.get("ticker"), r.get("date"), r.get("hold_days")))
+            if lab:
+                r["bench_return_pct"] = lab["bench_return_pct"]
+                r["excess_pct"] = lab["excess_pct"]
     return out
+
+
+def _bench_return(bench_df, date: str, k: int):
+    """Benchmark close->close from the alert date to the k-th trading day after."""
+    if bench_df is None:
+        return None
+    idx = bench_df.index.strftime("%Y-%m-%d")
+    start = bench_df[idx == date]
+    later = bench_df[idx > date]
+    if start.empty or len(later) < k:
+        return None
+    return float(later["Close"].iloc[k - 1]) / float(start["Close"].iloc[-1]) - 1
+
+
+def backfill_bench_labels() -> list:
+    """Idempotent: add QQQ excess to OUTCOMEs recorded before 2026-11-10."""
+    todo = [r for r in _read_journal() if r.get("event") == "OUTCOME" and "excess_pct" not in r]
+    if not todo:
+        return []
+    import yfinance as yf
+    df = yf.download(BENCH, period="1y", interval="1d", progress=False, auto_adjust=True)
+    if hasattr(df.columns, "levels"):
+        df.columns = df.columns.get_level_values(0)
+    done = []
+    for r in todo:
+        b = _bench_return(df, r["date"], r["hold_days"])
+        if b is None:
+            continue
+        rec = {"event": "OUTCOME_LABEL", "ticker": r["ticker"], "date": r["date"],
+               "hold_days": r["hold_days"], "bench_return_pct": round(b * 100, 2),
+               "excess_pct": round(r["return_pct"] - b * 100, 2)}
+        _append_journal(rec)
+        done.append(rec)
+    return done
 
 
 def backfill_earnings_labels() -> list:
@@ -160,7 +212,7 @@ class EarningsGapAlerter:
         tickers = sorted(set(UNIVERSE) | set(watchlist))
 
         try:
-            data = await asyncio.to_thread(_download_history, tickers)
+            data = await asyncio.to_thread(_download_history, tickers + [BENCH])
         except Exception as e:
             logger.warning(f"earnings_gap: yfinance download failed: {e}")
             return {"status": "error", "error": str(e)}
@@ -171,6 +223,10 @@ class EarningsGapAlerter:
         counted_hist = _counted_alerts([r for r in journal if r.get("event") == "ALERT"])
 
         alerts, suppressed, frames = [], [], {}
+        try:
+            frames[BENCH] = data[BENCH].dropna(subset=["Close"])
+        except (KeyError, TypeError):
+            pass
         for tik in tickers:
             try:
                 df = data[tik].dropna(subset=["Close"])
@@ -202,6 +258,10 @@ class EarningsGapAlerter:
         # Only counted alerts get outcomes; old duplicate alerts stay in the
         # journal but are skipped from here on.
         outcomes = self._due_outcomes(journal, frames)
+        try:
+            await asyncio.to_thread(backfill_bench_labels)
+        except Exception as e:
+            logger.warning(f"earnings_gap: bench backfill failed: {e}")
 
         for a in alerts + suppressed:
             _append_journal(a)
@@ -230,9 +290,14 @@ class EarningsGapAlerter:
                     continue
                 exit_close = float(later["Close"].iloc[k - 1])
                 ret = exit_close / r["entry_close"] - 1
-                out.append({"event": "OUTCOME", "ticker": r["ticker"], "date": r["date"],
-                            "entry_close": r["entry_close"], "exit_close": round(exit_close, 2),
-                            "return_pct": round(ret * 100, 2), "hold_days": k})
+                rec = {"event": "OUTCOME", "ticker": r["ticker"], "date": r["date"],
+                       "entry_close": r["entry_close"], "exit_close": round(exit_close, 2),
+                       "return_pct": round(ret * 100, 2), "hold_days": k}
+                b = _bench_return(frames.get(BENCH), r["date"], k)
+                if b is not None:
+                    rec["bench_return_pct"] = round(b * 100, 2)
+                    rec["excess_pct"] = round((ret - b) * 100, 2)
+                out.append(rec)
         return out
 
     async def _notify(self, alerts: list, outcomes: list):
@@ -246,7 +311,10 @@ class EarningsGapAlerter:
                              f"intraday {a['intraday_pct']:+.1f}%, close ${a['entry_close']:,.2f} "
                              f"({a['source']}, {tag})")
             themed = [a for a in alerts if a.get("earnings_nearby") is not True]
-            if len(themed) > 1:
+            if len(alerts) >= MARKET_WIDE_MIN:
+                lines.append(f"⚠️ {len(alerts)} gaps op één dag = marktbrede beweging, geen bedrijfsnieuws; "
+                             f"telt als één episode (ook de cijfer-gaps). Size als één positie.")
+            elif len(themed) > 1:
                 lines.append(f"⚠️ {len(themed)} gaps zonder cijfers tegelijk = waarschijnlijk één thema "
                              f"({', '.join(a['ticker'] for a in themed)}); telt als één episode, size kleiner.")
             tr = settings.earnings_gap_tranches
@@ -258,13 +326,16 @@ class EarningsGapAlerter:
             lines.append("📊 <b>Gap-momentum resultaat</b> (hypothetisch, close→close)")
             for o in outcomes:
                 emoji = "✅" if o["return_pct"] > 0 else "❌"
+                vs = (f", {BENCH} {o['bench_return_pct']:+.1f}% → excess {o['excess_pct']:+.1f}%"
+                      if "excess_pct" in o else "")
                 lines.append(f"{emoji} <b>{o['ticker']}</b> ({o['date']}): "
                              f"${o['entry_close']:,.2f} → ${o['exit_close']:,.2f} "
-                             f"= {o['return_pct']:+.1f}% na {o['hold_days']}d (tranche)")
+                             f"= {o['return_pct']:+.1f}% na {o['hold_days']}d{vs}")
             # Rolling live stats per tranche — every result arrives in its
             # historical context (backtest excess: d1 +0.8%, d3 +1.2%, d10 +2.6%).
             st = self.get_status()
             parts = [f"verkoop-na-{k}d: {s['wins']} van {s['n']} winst, gem {s['avg_return_pct']:+.1f}%"
+                     + (f" (excess vs {BENCH} {s['avg_excess_pct']:+.1f}%)" if s.get("avg_excess_pct") is not None else "")
                      for k, s in st["stats"].items() if s["n"]]
             if parts:
                 lines.append(f"<i>Live score per tranche — {' | '.join(parts)}</i>")
@@ -290,6 +361,9 @@ class EarningsGapAlerter:
                 vals = [o["return_pct"] for o in outcomes if o["hold_days"] == k
                         and (o["ticker"], o["date"]) in {(a["ticker"], a["date"]) for a in ep}]
                 row[f"d{k}"] = round(sum(vals) / len(vals), 2) if len(vals) == len(ep) else None
+                ex = [o["excess_pct"] for o in outcomes if o["hold_days"] == k and "excess_pct" in o
+                      and (o["ticker"], o["date"]) in {(a["ticker"], a["date"]) for a in ep}]
+                row[f"d{k}_excess"] = round(sum(ex) / len(ex), 2) if len(ex) == len(ep) else None
             per_episode.append(row)
         complete = [e for e in per_episode if e[f"d{last_k}"] is not None]
         per_tranche = {}
@@ -300,6 +374,10 @@ class EarningsGapAlerter:
                 "avg_return_pct": round(sum(o["return_pct"] for o in sub) / len(sub), 2)
                 if sub else None,
             }
+            ex = [o["excess_pct"] for o in sub if "excess_pct" in o]
+            per_tranche[k]["n_excess"] = len(ex)
+            per_tranche[k]["wins_excess"] = sum(1 for v in ex if v > 0)
+            per_tranche[k]["avg_excess_pct"] = round(sum(ex) / len(ex), 2) if ex else None
         return {
             "enabled": settings.earnings_gap_enabled,
             "threshold_pct": settings.earnings_gap_threshold_pct,
@@ -312,6 +390,8 @@ class EarningsGapAlerter:
             "stats": per_tranche,
             "episodes": per_episode,
             "episodes_complete": len(complete),
+            "benchmark": BENCH,
+            "market_wide_min": MARKET_WIDE_MIN,
         }
 
 
