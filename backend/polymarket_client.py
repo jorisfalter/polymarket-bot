@@ -280,20 +280,59 @@ class PolymarketClient:
         return []
     
     # ==================== DATA API (User/Portfolio) ====================
-    
+    # The v1 Data API (/trades, /positions, /pnl, /v1/leaderboard) returns
+    # 410 Gone since ~Nov 2026; the detector silently produced 0 alerts.
+    # v2 lives under /v2, uses snake_case fields and cursor pagination
+    # (no offset). _v2() maps records back to the v1 camelCase keys so the
+    # rest of the codebase keeps working unchanged.
+
+    _V1_KEYS = {
+        "proxy_wallet": "proxyWallet", "condition_id": "conditionId", "token_id": "asset",
+        "event_slug": "eventSlug", "outcome_index": "outcomeIndex", "transaction_hash": "transactionHash",
+        "usdc_size": "usdcSize", "profile_image": "profileImage",
+        # positions
+        "current_size": "size", "avg_price": "avgPrice", "current_price": "curPrice",
+        "current_value": "currentValue", "total_cost_usdc": "initialValue", "total_pnl": "cashPnl",
+        "percent_pnl": "percentPnl", "realized_pnl": "realizedPnl", "end_date": "endDate",
+        "negative_risk": "negativeRisk",
+        # leaderboard
+        "user_id": "proxyWallet", "user_name": "userName", "volume": "vol", "x_username": "xUsername",
+    }
+
+    @classmethod
+    def _to_v1(cls, rec: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(rec)
+        for k, v in rec.items():
+            if k in cls._V1_KEYS:
+                out.setdefault(cls._V1_KEYS[k], v)
+        return out
+
+    async def _v2(self, path: str, params: Dict[str, Any], max_items: int = 500) -> List[Dict[str, Any]]:
+        """GET /v2/<path>, follow cursor pages up to max_items, return v1-shaped records."""
+        rows: List[Dict[str, Any]] = []
+        q = {k: v for k, v in params.items() if v is not None}
+        q["limit"] = min(500, max_items)
+        while len(rows) < max_items:
+            r = await self.client.get(f"{self.data_url}/v2/{path}", params=q,
+                                      headers={"Accept": "application/json"})
+            r.raise_for_status()
+            j = r.json()
+            data = j.get("data", []) if isinstance(j, dict) else (j or [])
+            rows += data
+            p = j.get("pagination", {}) if isinstance(j, dict) else {}
+            if not data or not p.get("has_more") or not p.get("next_cursor"):
+                break
+            q["cursor"] = p["next_cursor"]
+        return [self._to_v1(x) for x in rows[:max_items]]
+
     async def get_user_positions(self, address: str) -> List[Dict[str, Any]]:
         """Get all positions for a wallet address"""
         try:
-            response = await self.client.get(
-                f"{self.data_url}/positions",
-                params={"user": address}
-            )
-            response.raise_for_status()
-            return response.json()
+            return await self._v2("positions", {"user": address}, max_items=1000)
         except Exception as e:
             logger.error(f"Error fetching positions for {address}: {e}")
             return []
-            
+
     async def get_user_trades(
         self,
         address: str,
@@ -301,12 +340,7 @@ class PolymarketClient:
     ) -> List[Dict[str, Any]]:
         """Get trade history for a wallet"""
         try:
-            response = await self.client.get(
-                f"{self.data_url}/trades",
-                params={"user": address, "limit": limit}
-            )
-            response.raise_for_status()
-            return response.json()
+            return await self._v2("trades", {"user": address}, max_items=limit)
         except Exception as e:
             logger.error(f"Error fetching trades for {address}: {e}")
             return []
@@ -318,12 +352,7 @@ class PolymarketClient:
     ) -> List[Dict[str, Any]]:
         """Get trade history for a specific market by conditionId"""
         try:
-            response = await self.client.get(
-                f"{self.data_url}/trades",
-                params={"market": condition_id, "limit": limit}
-            )
-            response.raise_for_status()
-            return response.json()
+            return await self._v2("trades", {"condition": condition_id}, max_items=limit)
         except Exception as e:
             logger.error(f"Error fetching trades for market {condition_id}: {e}")
             return []
@@ -351,28 +380,16 @@ class PolymarketClient:
             if category:
                 params["category"] = category
 
-            response = await self.client.get(
-                f"{self.data_url}/v1/leaderboard",
-                params=params
-            )
-            response.raise_for_status()
-            return response.json()
+            params.pop("limit", None)
+            return await self._v2("leaderboard", params, max_items=limit)
         except Exception as e:
             logger.error(f"Error fetching leaderboard: {e}")
             return []
-            
+
     async def get_user_profit_loss(self, address: str) -> Optional[Dict[str, Any]]:
-        """Get P&L summary for a wallet"""
-        try:
-            response = await self.client.get(
-                f"{self.data_url}/pnl",
-                params={"user": address}
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"Error fetching P&L for {address}: {e}")
-            return None
+        """P&L summary for a wallet. The v1 /pnl endpoint is gone (410) and v2
+        has no equivalent; callers already treat None as 'unknown'."""
+        return None
     
     # ==================== BULK OPERATIONS ====================
     
@@ -393,32 +410,20 @@ class PolymarketClient:
         all_trades = []
         cutoff = datetime.utcnow() - timedelta(hours=hours)
         
-        # Strategy 1: Try Data API trades endpoint (has real wallet addresses)
-        # Paginate to get up to 1500 trades (3 pages of 500)
-        for page_offset in range(0, 1500, 500):
-            try:
-                response = await self.client.get(
-                    f"{self.data_url}/trades",
-                    params={"limit": 500, "offset": page_offset}
-                )
-                if response.status_code == 200:
-                    trades = response.json()
-                    if isinstance(trades, list) and trades:
-                        if page_offset == 0:
-                            logger.info(f"Got {len(trades)} trades from Data API (page 1)")
-                        for trade in trades:
-                            trade["maker"] = trade.get("user") or trade.get("proxyWallet") or trade.get("maker")
-                            trade["market"] = trade.get("conditionId") or trade.get("market") or trade.get("marketId")
-                            trade["market_question"] = trade.get("title") or trade.get("question") or trade.get("market_question", "")
-                            trade["market_slug"] = trade.get("slug") or trade.get("market_slug", "")
-                            all_trades.append(trade)
-                        if len(trades) < 500:
-                            break  # No more pages
-                    else:
-                        break
-            except Exception as e:
-                logger.debug(f"Data API trades not available: {e}")
-                break
+        # Strategy 1: Data API v2 trades, server-side filtered to >= min_notional
+        # (filter_type=CASH). Up to 1500 large trades, newest first — far more
+        # coverage than the old "last 1500 trades of any size".
+        try:
+            trades = await self._v2("trades", {"filter_type": "CASH", "filter_amount": int(min_notional)},
+                                    max_items=1500)
+            for trade in trades:
+                trade["maker"] = trade.get("proxyWallet") or trade.get("user") or trade.get("maker")
+                trade["market"] = trade.get("conditionId") or trade.get("market")
+                trade["market_question"] = trade.get("title") or trade.get("market_question", "")
+                trade["market_slug"] = trade.get("slug") or trade.get("market_slug", "")
+                all_trades.append(trade)
+        except Exception as e:
+            logger.warning(f"Data API v2 trades failed: {e}")
 
         if all_trades:
             logger.info(f"Total from Data API: {len(all_trades)} trades ({(len(all_trades)-1)//500 + 1} pages)")
@@ -552,13 +557,7 @@ class PolymarketClient:
     async def get_wallet_trade_count(self, address: str) -> int:
         """Lightweight check: fetch minimal trades to determine wallet activity level."""
         try:
-            response = await self.client.get(
-                f"{self.data_url}/trades",
-                params={"user": address, "limit": 10}
-            )
-            response.raise_for_status()
-            data = response.json()
-            return len(data) if isinstance(data, list) else 0
+            return len(await self._v2("trades", {"user": address}, max_items=10))
         except Exception:
             return -1  # Unknown, don't penalize
 
@@ -607,11 +606,12 @@ class PolymarketClient:
         last_trade = None
         
         for trade in trades:
-            market_id = trade.get("market")
+            market_id = trade.get("conditionId") or trade.get("market")
             if market_id:
                 unique_markets.add(market_id)
-            
-            notional = float(trade.get("size", 0)) * float(trade.get("price", 0)) / 100
+
+            # Data API prices are 0-1, so size*price is already USD
+            notional = float(trade.get("size", 0)) * float(trade.get("price", 0))
             total_volume += notional
             
             trade_time = trade.get("timestamp")
