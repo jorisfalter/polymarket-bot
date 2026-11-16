@@ -72,6 +72,24 @@ def load_watchlist() -> List[Dict]:
     return json.loads(WATCHLIST_PATH.read_text())
 
 
+def add_wallet(wallet: str, label: str, source: str, markets: str = "any") -> str:
+    """Add a wallet named in a claim (news/X/newsletter). Idempotent."""
+    wallet = wallet.strip().lower()
+    if not re.fullmatch(r"0x[0-9a-f]{40}", wallet):
+        return f"REJECT: not a 0x address: {wallet}"
+    try:
+        re.compile(markets)
+    except re.error:
+        return f"REJECT: bad markets regex: {markets}"
+    wl = load_watchlist()
+    if any(w["wallet"].lower() == wallet for w in wl):
+        return f"EXISTS: {wallet}"
+    wl.append({"wallet": wallet, "label": label[:40], "source": source[:300], "markets": markets,
+               "added": _now()})
+    WATCHLIST_PATH.write_text(json.dumps(wl, indent=1))
+    return f"ADDED: {wallet} ({label}) markets={markets}"
+
+
 def _load_state() -> Dict:
     try:
         return json.loads(STATE_PATH.read_text())
@@ -139,7 +157,9 @@ async def poll():
                 newest = max(newest, int(t.get("timestamp", 0)))
                 if t.get("type") != "TRADE" or t.get("side") != "BUY":
                     continue
-                if not MARKET_FILTER.search(t.get("title") or ""):
+                # per-wallet market filter: "any", or a regex (default: earnings)
+                filt = w.get("markets") or MARKET_FILTER.pattern
+                if filt != "any" and not re.search(filt, t.get("title") or "", re.I):
                     continue
                 if float(t.get("usdc_size") or 0) < MIN_USDC:
                     continue
@@ -233,6 +253,14 @@ if __name__ == "__main__":
     import asyncio, sys
     if len(sys.argv) > 1 and sys.argv[1] == "status":
         print(json.dumps(get_status(), indent=1, default=str)[:4000])
+    elif len(sys.argv) > 1 and sys.argv[1] == "add":
+        # python -m backend.sharp_follow add <0xwallet> <label> <source> [markets-regex|any]
+        if len(sys.argv) < 5:
+            sys.exit("usage: add <0xwallet> <label> <source> [markets-regex|any]")
+        print(add_wallet(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5] if len(sys.argv) > 5 else "any"))
+    elif len(sys.argv) > 1 and sys.argv[1] == "list":
+        for w in load_watchlist():
+            print(w["wallet"], w.get("label"), w.get("markets", "earnings"), "|", w.get("source", "")[:80])
     else:
         asyncio.run(poll())
         asyncio.run(resolve())
