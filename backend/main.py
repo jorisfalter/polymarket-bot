@@ -516,6 +516,14 @@ async def lifespan(app: FastAPI):
         day_of_week='mon-fri', hour=21, minute=15,
         id='earnings_gap_job',
     )
+    # Sharp-wallet follower (paper): watch known sharp wallets on earnings
+    # markets every minute, score a paper follow when the market resolves.
+    # docs/research/kpmg-auditor-pattern.md
+    from . import sharp_follow
+    scheduler.add_job(sharp_follow.poll, 'interval', minutes=1,
+                      id='sharp_follow_poll_job', max_instances=1, coalesce=True)
+    scheduler.add_job(sharp_follow.resolve, 'interval', minutes=30,
+                      id='sharp_follow_resolve_job', max_instances=1, coalesce=True)
     scheduler.add_job(
         run_daily_summary,
         'cron',
@@ -1558,6 +1566,13 @@ async def earnings_gap_check(notify: bool = True):
 
 
 # --- Consumer-trend lane (paper, social arbitrage) -------------------------
+
+@app.get("/api/sharp-follow/status")
+async def sharp_follow_status():
+    """Paper follows of known sharp wallets on Polymarket earnings markets."""
+    from .sharp_follow import get_status
+    return await asyncio.to_thread(get_status)
+
 
 @app.get("/api/consumer/status")
 async def consumer_status():

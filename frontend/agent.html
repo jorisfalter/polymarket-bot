@@ -183,6 +183,13 @@
                 </div>
             </div>
 
+            <!-- Sharp-wallet follower (paper) — docs/research/kpmg-auditor-pattern.md -->
+            <div class="panel" style="margin-bottom:12px;">
+                <h3>🎯 Sharp-wallet follower <span style="font-weight:400;font-size:12px;color:var(--text-muted);">— earnings markets, paper $100 per signal, no orders</span> <span class="count" id="sharp-count">0</span></h3>
+                <div id="sharp-stats" style="font-size:13px;margin:6px 0 10px;"></div>
+                <div id="sharp-list"><div class="empty">Loading…</div></div>
+            </div>
+
             <!-- Top row: Open positions + Strategy P&L -->
             <div class="dash-grid">
                 <div class="panel">
@@ -227,5 +234,30 @@
     </div>
 
     <script src="/static/agent.js?v=6"></script>
+    <script>
+    async function loadSharp() {
+        try {
+            const r = await fetch('/api/sharp-follow/status');
+            if (!r.ok) return;
+            const d = await r.json();
+            const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+            document.getElementById('sharp-count').textContent = d.n_signals;
+            document.getElementById('sharp-stats').innerHTML =
+                `Watching <b>${d.watching}</b> wallets · signals <b>${d.n_signals}</b> · resolved <b>${d.n_resolved}</b>` +
+                (d.n_resolved ? ` · won <b>${d.won}/${d.n_resolved}</b> · paper P&amp;L <b>${d.paper_pnl_usd >= 0 ? '+' : ''}$${d.paper_pnl_usd}</b> (${d.paper_return_pct}% per signal)` : '');
+            const el = document.getElementById('sharp-list');
+            if (!d.signals.length) { el.innerHTML = '<div class="empty">No signals yet. A signal = a watched wallet buying on an earnings market.</div>'; return; }
+            el.innerHTML = d.signals.slice(0, 25).map(s => {
+                const res = s.won === undefined ? '⏳ open' : (s.won ? `✅ ${s.paper_pnl >= 0 ? '+' : ''}$${s.paper_pnl}` : `❌ $${s.paper_pnl}`);
+                const fill = s.follow_avg_price ? `follow @ ${(+s.follow_avg_price).toFixed(3)}` : 'no book';
+                return `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
+                    <b>${esc(s.label)}</b> · ${esc(s.title)} → <b>${esc(s.outcome)}</b> $${Math.round(s.their_usdc)} @ ${(+s.their_price).toFixed(3)}
+                    · seen after ${s.delay_s}s · ${fill} · depth $${Math.round(s.book_depth_usd || 0)} · ${res}
+                    <span style="color:var(--text-muted);font-size:11px;"> ${esc((s.ts || '').slice(0, 16).replace('T', ' '))}</span></div>`;
+            }).join('');
+        } catch (e) { console.error('sharp', e); }
+    }
+    loadSharp(); setInterval(loadSharp, 60000);
+    </script>
 </body>
 </html>
