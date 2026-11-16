@@ -542,6 +542,10 @@ class PolymarketClient:
                 
                 trade["timestamp"] = trade_time
                 trade["side"] = trade.get("side") or trade.get("type") or "BUY"
+                # The detector's Trade model works in cents (notional = shares*price/100);
+                # Data API prices are 0-1. Same conversion get_market_trades_deep does.
+                p = float(trade.get("price", 0) or 0)
+                trade["price"] = p * 100 if p <= 1 else p
                 
                 # Filter by notional
                 if trade.get("notional_usd", 0) >= min_notional:
