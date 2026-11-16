@@ -53,3 +53,12 @@ Reading:
   - wallets selected on past behaviour;
   - no fees.
 - **Next step if pursued:** live paper-follow of known sharp earnings-market wallets. Not built.
+
+## Discovery backtest 2026-11-16: sharp wallets on all 2026 earnings markets
+Script: `scripts/research/sharp_wallet_backtest.py`. 1,208 closed earnings markets (Jan–Nov 2026), all trades. Wallets are picked on TRAIN (< 1 Jul) and measured on TEST (≥ 1 Jul).
+
+- **"High win rate" wallets** (≥5 bets, ≥75% won, ≥$1k), 186 wallets: TEST 88% won, but at an average price of 0.97. That is +0.8% per bet in the ≥0.90 bucket. They are certainty-buyers, not informed traders.
+- **Winners at uncertain prices** (≥5 TRAIN bets below 0.70, ≥70% won), 22 wallets: on TEST bets below 0.70 they **won 31/33 at an average price of 0.49**, about +126% per bet. Everyone else won 43% there.
+- **Follow test on those 33 bets:** after 1 minute, **19 of 33 had already moved to ≥0.99 or ≤0.01**, so the result was already public. Following the bets that were still open gave +1 min +8.5% (n=14), +10 min +19% (n=11), +1 h +16% (n=7).
+- **Reading:** most of their edge is *results sniping*. They buy seconds after the earnings release, before Polymarket reprices. A follower is too late. The real tech edge on these markets is parsing the release (8-K, PR wire) and buying within seconds. That is not built.
+- **Action:** the 22 wallets were added to `data/sharp_wallets.json` (35 watched in total), so the live follower measures what is still followable.
