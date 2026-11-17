@@ -14,17 +14,19 @@ from .config import settings
 
 # Twitter accounts to follow for market intelligence
 TWITTER_ACCOUNTS = [
+    # Polymarket insider / suspicious-wallet reporters (handles checked by Joris 2026-11-17;
+    # the March list had three that did not exist: EventWavesPM, zaborado, elikiiii)
+    "EventWavesIO",      # EventWaves (KPMG wallets, Feb 2026)
+    "Polysights",        # "Insider Finder": posts fresh wallets betting big
+    "lookonchain",       # On-chain tracker, flags Polymarket insiders
+    "zachxbt",           # Investigations; insiders front-ran his Axiom exposé
     "unusual_whales",    # Options flow, insider trades
     "DeItaone",          # Breaking financial news
     "Fxhedgers",         # Macro, geopolitics
-    "zaborado",          # Polymarket watcher
-    "EventWavesPM",      # Polymarket insider analysis
-    "elikiiii",          # Polymarket analytics
     # Iran/geopolitics focused
     "IntelDoge",         # OSINT, military movements
     "sentdefender",      # Defense/conflict intel
     "BNONews",           # Breaking news alerts
-    "idaborat1",         # Middle East OSINT
     "jackdetsch",        # Pentagon reporter
     "NatashaBertrand",   # CNN national security
 ]

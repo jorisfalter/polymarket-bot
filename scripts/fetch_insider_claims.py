@@ -33,6 +33,10 @@ X_QUERIES = [
     "site:x.com polymarket insider wallet",
     "site:x.com polymarket suspicious fresh wallet bet",
     "site:x.com polymarket leak before announcement",
+    # accounts that post suspicious wallets (verified 2026-11-17); Google lags hours
+    "site:x.com/EventWavesIO",
+    "site:x.com/Polysights insider",
+    "site:x.com/lookonchain polymarket",
 ]
 RSS = [("https://eventwaves.substack.com/feed", "EventWaves")]
 
