@@ -105,7 +105,8 @@ async def run_cycle():
             events = []
         # Upbit's own notices: the aggregator misses some Upbit listings
         try:
-            r = await c.get(UPBIT, params={"os": "web", "page": 1, "per_page": 20, "category": "trade"})
+            r = await c.get(UPBIT, params={"os": "web", "page": 1, "per_page": 20, "category": "trade"},
+                            headers={"Accept": "application/json"})
             for n in r.json()["data"]["notices"]:
                 t = n.get("title", "")
                 if not re.search(r"신규 거래지원|디지털 자산 추가", t) or "취소" in t:
