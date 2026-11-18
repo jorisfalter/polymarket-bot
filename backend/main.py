@@ -524,6 +524,9 @@ async def lifespan(app: FastAPI):
                       id='sharp_follow_poll_job', max_instances=1, coalesce=True)
     scheduler.add_job(sharp_follow.resolve, 'interval', minutes=30,
                       id='sharp_follow_resolve_job', max_instances=1, coalesce=True)
+    from . import listing_fade
+    scheduler.add_job(listing_fade.run_cycle, 'interval', minutes=2,
+                      id='listing_fade_job', max_instances=1, coalesce=True)
     scheduler.add_job(
         run_daily_summary,
         'cron',
@@ -1566,6 +1569,13 @@ async def earnings_gap_check(notify: bool = True):
 
 
 # --- Consumer-trend lane (paper, social arbitrage) -------------------------
+
+@app.get("/api/listing-fade/status")
+async def listing_fade_status():
+    """Paper shorts of coins after a CEX spot-listing pump (Hyperliquid, BTC-hedged)."""
+    from .listing_fade import get_status
+    return await asyncio.to_thread(get_status)
+
 
 @app.get("/api/sharp-follow/status")
 async def sharp_follow_status():
