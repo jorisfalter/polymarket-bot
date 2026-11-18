@@ -18,6 +18,7 @@ Paper only: no orders, no Telegram. Journal: data/listing_fade.jsonl (append-onl
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,11 +31,13 @@ DATA = Path(__file__).resolve().parent.parent / "data"
 JOURNAL = DATA / "listing_fade.jsonl"
 FEED = "https://cryptolisting.ws/data/recent-announcements.json"
 HL = "https://api.hyperliquid.xyz/info"
+UPBIT = "https://api-manager.upbit.com/api/v1/announcements"
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 Chrome/130 Safari/537.36"}
 
 NOTIONAL = 100.0
 COST_PCT = 0.25
 HOLD_H = 24
+STOP_PCT = 20.0  # close the short if the coin rises 20% above entry (2-year backtest: squeezes up to -122%)
 EPISODE_GAP_MS = 3 * 86400_000
 MAX_EVENT_AGE_MS = 45 * 60_000  # only act on fresh announcements (the feed keeps months)
 ALIASES = {"MANTRA": "OM"}
@@ -100,6 +103,18 @@ async def run_cycle():
         except Exception as e:
             logger.warning(f"listing_fade: feed unavailable: {e}")
             events = []
+        # Upbit's own notices: the aggregator misses some Upbit listings
+        try:
+            r = await c.get(UPBIT, params={"os": "web", "page": 1, "per_page": 20, "category": "trade"})
+            for n in r.json()["data"]["notices"]:
+                t = n.get("title", "")
+                if not re.search(r"신규 거래지원|디지털 자산 추가", t) or "취소" in t:
+                    continue
+                us = int(datetime.fromisoformat(n["first_listed_at"]).timestamp() * 1_000_000)
+                for tk in re.findall(r"\(([A-Z0-9]{2,12})\)", t):
+                    events.append({"cex": "upbit", "ticker": tk, "type": "spot_listing", "detected_at_us": us})
+        except Exception as e:
+            logger.debug(f"listing_fade: upbit notices unavailable: {e}")
         last_coin = {}
         for r in j:
             if r.get("event") == "DETECTED":
@@ -144,10 +159,11 @@ async def run_cycle():
 
         # 3. exit
         for r in (x for x in _read() if x.get("event") == "ENTER" and x["event_id"] not in exited):
-            if now_ms < r["entry_ms"] + HOLD_H * 3600_000:
-                continue
             px, btc = mids.get(r["coin"]), mids.get("BTC")
             if not px or not btc:
+                continue
+            stopped = px >= r["entry_px"] * (1 + STOP_PCT / 100)
+            if now_ms < r["entry_ms"] + HOLD_H * 3600_000 and not stopped:
                 continue
             try:
                 fh = await _hl(c, {"type": "fundingHistory", "coin": r["coin"], "startTime": r["entry_ms"],
@@ -159,6 +175,7 @@ async def run_cycle():
             btc_leg = (btc / r["btc_px"] - 1) * 100
             net = short + btc_leg + funding - COST_PCT
             _append({"event": "EXIT", "ts": _now(), "event_id": r["event_id"], "coin": r["coin"],
+                     "reason": "stop" if stopped else "24h",
                      "exit_px": px, "btc_exit_px": btc, "short_pct": round(short, 2),
                      "btc_leg_pct": round(btc_leg, 2), "funding_pct": round(funding, 3),
                      "net_pct": round(net, 2), "pnl_usd": round(NOTIONAL * net / 100, 2)})
@@ -183,7 +200,8 @@ def get_status() -> Dict:
         "won": sum(1 for x in nets if x > 0),
         "mean_net_pct": round(sum(nets) / len(nets), 2) if nets else None,
         "pnl_usd": round(sum(r["pnl_usd"] for r in ex.values()), 2),
-        "backtest": "Apr-Nov 2026: n=21, +7.1%/episode after costs, 18/21 won",
+        "backtest": "Upbit Aug 2024-Nov 2026 (4h, 20% stop): n=76, +4.4%/episode, 55/76 won, t=3.0; "
+                    "Apr-Nov 2026 (1h): n=21, +7.1%, 18/21",
         "episodes": sorted(rows, key=lambda r: r.get("ts") or "", reverse=True)[:50],
     }
 

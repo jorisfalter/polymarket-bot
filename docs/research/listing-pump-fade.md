@@ -38,6 +38,28 @@ median +7.7%, 18/21, t=3.9. The effect is listing-specific.
 By exchange: Upbit 18 episodes (+7.4%, 15 won), Binance 2, Bithumb 1. First half +5.9%,
 second half +8.1%. Worst cases −19% (SPX, Jun), −8.5%, −8% (NIL, CRV, Aug): short squeezes.
 
+## Longer test: two years of Upbit listings (added same day)
+Upbit's own notice API (`api-manager.upbit.com/api/v1/announcements?category=trade`, 816
+notices since 2017, 425 listings; use `first_listed_at`, skip titles with 취소 = cancelled).
+Hyperliquid 4h candles reach back ~820 days, so entry = open of the first 4h candle after the
+notice (0-4h late). Scratchpad `hl/fade_upbit.py`.
+
+| Upbit, Aug 2024 - Nov 2026, n=77 | mean | median | won | t |
+|---|---|---|---|---|
+| no stop | +2.0% | +4.7% | 55/77 | 0.8 |
+| vs alt basket | +4.2% | +6.4% | 65/77 | 1.9 |
+| stop 15% (+2% slippage) | +3.9% | +4.7% | 52/76 | 2.7 |
+| **stop 20%** | **+4.4%** | +5.0% | 55/76 | **3.0** |
+| stop 30% | +4.3% | +5.0% | 55/76 | 2.7 |
+
+Per year (no stop): 2024 +4.2% (n=11), 2025 +0.5% (n=42), 2026 +3.7% (n=24). 2025 holds the
+squeezes: HYPER −122%, XPL −71%, 0G −63%, AZTEC −48%, AVNT −26% (Sep 2025 launch frenzy).
+Filtering out coins that traded < 7 days on Hyperliquid does not remove them. Same window on
+1h candles (n=16): +7.8%, 14/16, t=3.1.
+
+So the median trade is a reliable ~+5%, but the left tail is fat: **a stop is required**. The
+paper bot uses a 20% stop (checked every 2 min).
+
 ## Caveats
 - n=21, one 7-month regime; mostly Upbit (Korean retail pump).
 - Survivorship: only coins still listed on Hyperliquid today.
