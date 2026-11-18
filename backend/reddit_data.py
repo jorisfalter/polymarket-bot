@@ -89,22 +89,19 @@ async def fetch_subreddit_posts(subreddit: str = "wallstreetbets", sort: str = "
     if cached and datetime.utcnow() - cached["timestamp"] < _cache_ttl:
         return cached["posts"]
 
-    from .config import settings
-    use_proxy = bool(settings.trade_proxy_url)
-    if use_proxy:
-        url = f"{settings.trade_proxy_url}/reddit/{subreddit}/{sort}"
-        headers = {"Authorization": f"Bearer {settings.trade_proxy_secret}"}
-    else:
-        url = f"{REDDIT_BASE}/r/{subreddit}/{sort}.json"
-        headers = {"User-Agent": REDDIT_UA}
-
+    # Since 2026-11-18: the host cron scripts/reddit_snapshot.sh writes `sudo reddit-read`
+    # (official OAuth) output to data/reddit/<sub>_<sort>.json. The Fly proxy is gone and
+    # reddit.com/.json returns 403 from the VPS, so the file is the only source.
+    snap = Path(__file__).resolve().parent.parent / "data" / "reddit" / f"{subreddit}_{sort}.json"
     posts: List[Dict] = []
     try:
-        async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
-            r = await client.get(url, params={"limit": limit})
-            r.raise_for_status()
-            data = r.json() or {}
-        children = data.get("data", {}).get("children", []) or []
+        if not snap.exists():
+            raise FileNotFoundError(f"{snap.name} missing (is the reddit_snapshot cron installed?)")
+        age_h = (datetime.utcnow().timestamp() - snap.stat().st_mtime) / 3600
+        if age_h > 3:
+            logger.warning(f"Reddit snapshot {snap.name} is {age_h:.0f}h old")
+        data = json.loads(snap.read_text()) or {}
+        children = (data.get("data", {}).get("children", []) or [])[:limit]
         for c in children:
             d = c.get("data", {}) or {}
             posts.append({
